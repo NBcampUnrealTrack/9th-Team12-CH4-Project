@@ -1,0 +1,4 @@
+RowName,ClassId,StatTag,ValuePerLevel
+NewRow,Default,"(TagName=""Stat.Resource.Health.Max"")",15
+NewRow_0,Default,"(TagName=""Stat.Resource.Mana.Max"")",10
+NewRow_1,Default,"(TagName=""Stat.Defense.Armor"")",5

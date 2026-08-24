@@ -1,0 +1,75 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Character/TDCharacterBase.h"
+#include "TDEnemyBase.generated.h"
+
+class UAbilitySystemComponent;
+class UDataTable;
+class UTDAttributeSet;
+class UTDStatComponent;
+
+/**
+ * 몬스터의 베이스 클래스.
+ *
+ * 플레이어와 달리 스탯 컴포넌트를 자기가 소유한다. 몬스터는 죽으면 액터째 사라지고
+ * 리스폰이 곧 재스폰이므로, 스탯이 액터보다 오래 살아남을 이유가 없다.
+ *
+ * 스탯은 DT_MonsterDefinition 의 행에서 읽어온다. 종류별로 1행이며 레벨 스케일은
+ * FScalableFloat 이 담당하므로, 같은 행으로 1레벨 몬스터와 50레벨 몬스터를 모두 만든다.
+ */
+UCLASS()
+class TD_PROJECT_API ATDEnemyBase : public ATDCharacterBase
+{
+	GENERATED_BODY()
+
+public:
+	ATDEnemyBase();
+
+	virtual UTDStatComponent* GetStatComponent() const override;
+
+	/**
+	 * 몬스터는 ASC 를 자기가 소유한다. 죽으면 액터째 사라지므로 PlayerState 처럼
+	 * 오래 사는 자리에 둘 이유가 없다. Owner 와 Avatar 가 모두 자기 자신이다.
+	 */
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	/**
+	 * 정의와 레벨을 지정하고 스탯을 다시 초기화한다. 스포너가 호출한다.
+	 * 서버에서만 동작하며, 배치형 몬스터는 에디터에서 설정한 값으로 BeginPlay 에 초기화된다.
+	 */
+	void InitializeFromDefinition(FName InMonsterId, int32 InLevel);
+
+	int32 GetLevel() const { return Level; }
+
+protected:
+	virtual void BeginPlay() override;
+
+	/** 테이블 행을 읽어 스탯 컴포넌트의 기본값을 채운다. 서버 전용. */
+	void ApplyDefinition();
+
+	/** DT_MonsterDefinition. RowName 이 MonsterId 다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Monster")
+	TObjectPtr<UDataTable> MonsterTable;
+
+	/** 조회할 행 이름. */
+	UPROPERTY(EditAnywhere, Category = "TD|Monster")
+	FName MonsterId;
+
+	/** FScalableFloat 커브를 읽을 레벨. */
+	UPROPERTY(EditAnywhere, Category = "TD|Monster", meta = (ClampMin = "1"))
+	int32 Level = 1;
+
+private:
+	/** 스탯 계산 결과를 어트리뷰트에 기록한다. 플레이어의 PlayerState 가 하는 일과 같다. */
+	void UpdateVitalAttributes();
+
+	UPROPERTY(VisibleAnywhere, Category = "TD|Stats")
+	TObjectPtr<UTDStatComponent> StatComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "TD|Abilities")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY()
+	TObjectPtr<UTDAttributeSet> AttributeSet;
+};

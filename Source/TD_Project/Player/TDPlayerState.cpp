@@ -62,6 +62,9 @@ void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	// 캐릭터 목록은 본인만 본다. 남이 어떤 캐릭터를 가졌는지 알 이유가 없다.
 	DOREPLIFETIME_CONDITION(ATDPlayerState, CharacterSlots, COND_OwnerOnly);
 
+	// 스탯창은 자기 것만 본다. 남에게 보여야 하는 것은 전투력뿐이고 그쪽은 위에서 전원에게 간다.
+	DOREPLIFETIME_CONDITION(ATDPlayerState, ReplicatedStats, COND_OwnerOnly);
+
 	// 선택 여부는 소유자만 알면 되지만, 나중에 "선택 중" 상태를 남에게 보여줄 수 있으므로
 	// 조건을 걸지 않는다. bool 하나라 비용이 없다.
 	DOREPLIFETIME(ATDPlayerState, bCharacterSelected);
@@ -201,7 +204,51 @@ void ATDPlayerState::SetSavedVitalRatios(float InHealthRatio, float InManaRatio)
 void ATDPlayerState::HandleStatsChanged()
 {
 	UpdateCombatPower();
+	UpdateReplicatedStats();
 	UpdateVitalAttributes();
+}
+
+float ATDPlayerState::GetReplicatedStat(FGameplayTag Stat) const
+{
+	const FTDStatSnapshot* Found = ReplicatedStats.FindByPredicate(
+		[Stat](const FTDStatSnapshot& Snapshot) { return Snapshot.Stat == Stat; });
+
+	return Found ? Found->Value : 0.f;
+}
+
+void ATDPlayerState::UpdateReplicatedStats()
+{
+	if (!HasAuthority() || StatComponent == nullptr)
+	{
+		return;
+	}
+
+	// 보낼 목록은 DT_StatDefinition 이 정한다. 테이블에 행을 추가하면 여기도 자동으로 늘어난다.
+	const TArray<FGameplayTag> DefinedStats = StatComponent->GetDefinedStats();
+
+	TArray<FTDStatSnapshot> NewSnapshot;
+	NewSnapshot.Reserve(DefinedStats.Num());
+
+	for (const FGameplayTag& Stat : DefinedStats)
+	{
+		NewSnapshot.Emplace(Stat, StatComponent->GetStat(Stat));
+	}
+
+	// 값이 그대로면 복제하지 않는다. 이동 속도만 바뀌어도 15개를 다시 보내는 것을 막는다.
+	if (ReplicatedStats == NewSnapshot)
+	{
+		return;
+	}
+
+	ReplicatedStats = MoveTemp(NewSnapshot);
+
+	// 서버에서는 OnRep 이 불리지 않으므로 여기서 직접 알린다.
+	OnStatsReplicated.Broadcast();
+}
+
+void ATDPlayerState::OnRep_ReplicatedStats()
+{
+	OnStatsReplicated.Broadcast();
 }
 
 void ATDPlayerState::UpdateVitalAttributes()

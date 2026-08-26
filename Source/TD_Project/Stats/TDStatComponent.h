@@ -117,6 +117,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Stats")
 	float GetCombatPower() const;
 
+	/**
+	 * DT_StatDefinition 에 정의된 스탯 태그 전부.
+	 *
+	 * 복제용 스냅샷을 만들 때 "무엇을 보낼지"의 목록이 된다. 테이블에 행을 추가하면
+	 * 자동으로 따라오므로, 스탯이 늘어도 복제 코드를 고칠 일이 없다.
+	 *
+	 * 조회된 스탯만 담기는 CachedStats 와 다르다 — 그쪽은 아직 아무도 안 물어본 스탯이 빠져 있다.
+	 */
+	TArray<FGameplayTag> GetDefinedStats() const;
+
 	/** 소스나 기본값이 바뀌어 스탯이 갱신됐을 때. UI 갱신은 Tick이 아니라 이걸 구독한다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Stats")
 	FTDOnStatsChanged OnStatsChanged;

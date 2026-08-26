@@ -76,6 +76,40 @@ struct FTDStatModifier
 };
 
 /**
+ * 계산이 끝난 스탯 하나. 클라이언트에 결과만 보내기 위한 것이다.
+ *
+ * UTDStatComponent 는 복제되지 않는다 — 모디파이어 원본을 보내면 계산 규칙까지
+ * 클라이언트가 알아야 하고, 그러면 서버와 어긋날 여지가 생긴다.
+ * 대신 서버가 계산한 최종값만 이 구조체로 실어 보낸다.
+ *
+ * 태그를 값과 함께 보내는 이유는 순서에 의존하지 않기 위해서다. 인덱스로만 보내면
+ * 스탯 목록의 순서가 바뀌는 순간 화면에 엉뚱한 값이 조용히 표시된다.
+ */
+USTRUCT(BlueprintType)
+struct FTDStatSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stat")
+	FGameplayTag Stat;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stat")
+	float Value = 0.f;
+
+	FTDStatSnapshot() = default;
+
+	FTDStatSnapshot(FGameplayTag InStat, float InValue)
+		: Stat(InStat), Value(InValue)
+	{
+	}
+
+	bool operator==(const FTDStatSnapshot& Other) const
+	{
+		return Stat == Other.Stat && Value == Other.Value;
+	}
+};
+
+/**
  * 모디파이어 묶음 하나를 가리키는 핸들.
  *
  * 개별 모디파이어가 아니라 소스 단위로 등록/제거하기 위한 것.

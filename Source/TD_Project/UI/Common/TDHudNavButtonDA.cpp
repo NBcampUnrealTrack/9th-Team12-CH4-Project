@@ -3,20 +3,10 @@
 
 #include "TDHudNavButtonDA.h"
 
-FButtonStyle UTDHudNavButtonDA::GetStyle(bool bSelected) const
+FButtonStyle UTDHudNavButtonDA::GetStyle(bool /*bSelected*/) const
 {
-	if (!bSelected)
-	{
-		return DefaultStyle;
-	}
-
-	FButtonStyle Result = DefaultStyle;
-
-	// 선택된 동안 호버하거나 눌러도 선택 이미지 유지
-	Result.SetNormal(SelectedBrush);
-	Result.SetHovered(SelectedBrush);
-	Result.SetPressed(SelectedBrush);
-
-	return Result;
+	// 선택 상태는 메뉴 로직에서만 사용합니다.
+	// 시각 상태는 UButton의 Normal/Hovered/Pressed 동작을 그대로 유지합니다.
+	return DefaultStyle;
 	
 }

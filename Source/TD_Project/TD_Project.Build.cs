@@ -17,6 +17,7 @@ public class TD_Project : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{"UMG",
+			"CommonUI",
 			"Slate",
 			"SlateCore"
 		});

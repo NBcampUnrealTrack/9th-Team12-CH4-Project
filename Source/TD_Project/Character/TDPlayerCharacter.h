@@ -4,6 +4,10 @@
 #include "Character/TDCharacterBase.h"
 #include "TDPlayerCharacter.generated.h"
 
+class UInputAction;
+class UInputMappingContext;
+struct FInputActionValue;
+
 /**
  * 플레이어가 조종하는 캐릭터.
  *
@@ -16,6 +20,8 @@ class TD_PROJECT_API ATDPlayerCharacter : public ATDCharacterBase
 	GENERATED_BODY()
 
 public:
+	ATDPlayerCharacter();
+
 	virtual UTDStatComponent* GetStatComponent() const override;
 
 	virtual UTDProgressionComponent* GetProgressionComponent() const override;
@@ -33,6 +39,56 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 
 	virtual void OnRep_PlayerState() override;
+
+	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+	// ══ 조작 ═══════════════════════════════════════════════════════════════
+	//
+	// 조작과 관련된 것은 전부 여기 모여 있다. 새 조작을 추가할 때 볼 곳은 세 군데다.
+	//
+	//   1. 아래 액션 목록에 UInputAction 프로퍼티를 추가
+	//   2. 그 아래 핸들러 블록에 함수를 추가
+	//   3. .cpp 의 SetupPlayerInputComponent 안 "바인딩 목록" 에 한 줄 추가
+	//
+	// 에셋은 코드에 박지 않는다(D45). BP_Player 에서 지정하며, 비어 있으면
+	// 그 조작만 조용히 빠지고 나머지는 정상 동작한다.
+	//
+	// Enhanced Input 만 쓴다(D44). BindAxisKey 같은 레거시 경로는 리매핑이 안 된다.
+
+protected:
+	/** 빙의한 뒤 활성화할 입력 묶음. BP_Player 에서 IMC_* 를 지정한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input")
+	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+
+	// ── 액션 목록 ─────────────────────────────────────────
+
+	/** 이동. **Axis2D** 여야 한다 — X 가 좌우, Y 가 앞뒤다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
+	TObjectPtr<UInputAction> MoveAction;
+
+	/** 점프. Digital(bool). 누르는 동안 유지되면 높이 뛴다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
+	TObjectPtr<UInputAction> JumpAction;
+
+	/** 평타. Digital(bool). 실제 판정과 쿨타임은 UTDCombatComponent 가 서버에서 처리한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
+	TObjectPtr<UInputAction> AttackAction;
+
+	// ── 핸들러 ────────────────────────────────────────────
+
+	/**
+	 * 이동. 컨트롤러 회전이 아니라 월드 축을 기준으로 움직인다 —
+	 * 탑다운에서는 카메라가 어디를 보든 "위" 키가 항상 같은 방향이어야 하기 때문이다.
+	 */
+	void Move(const FInputActionValue& Value);
+
+	void StartJump();
+	void StopJump();
+
+	/** 서버에 공격을 요청한다. 검증·쿨타임·히트박스는 전부 서버 몫이다. */
+	void Attack();
+
+	// ══════════════════════════════════════════════════════════════════════
 
 private:
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */

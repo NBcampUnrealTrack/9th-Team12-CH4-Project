@@ -15,11 +15,15 @@ public class TD_Project : ModuleRules
 		// 전부 헤더에서 상속하거나 멤버로 쓰므로 Private 이 아니라 Public 이어야 한다.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "GameplayAbilities", "GameplayTasks", "AIModule", "NetCore" });
 
+		// Paper2D 는 UPaperFlipbookComponent, PaperZD 는 애니메이션 상태 머신.
+		// 헤더에서는 전방 선언만 쓰므로 Private 으로 충분하다.
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{"UMG",
 			"CommonUI",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"Paper2D",
+			"PaperZD"
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

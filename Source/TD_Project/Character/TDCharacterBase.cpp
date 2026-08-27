@@ -1,9 +1,14 @@
 #include "Character/TDCharacterBase.h"
-
+#include "Combat/TDCombatComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+
+ATDCharacterBase::ATDCharacterBase()
+{
+	CombatComponent = CreateDefaultSubobject<UTDCombatComponent>(TEXT("CombatComponent"));
+}
 
 void ATDCharacterBase::BeginPlay()
 {

@@ -10,6 +10,7 @@
 class UAbilitySystemComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
+class UTDCombatComponent;
 
 /** 캐릭터가 사망했을 때. AI 가 행동을 멈추거나 보상을 지급할 지점이다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterDeath);
@@ -25,8 +26,14 @@ UCLASS(Abstract)
 class TD_PROJECT_API ATDCharacterBase : public ACharacter, public IGenericTeamAgentInterface, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
-
+	
 public:
+	
+	ATDCharacterBase();
+
+	UFUNCTION(BlueprintPure, Category = "TD|Combat")
+	UTDCombatComponent* GetCombatComponent() const { return CombatComponent; }
+	
 	/**
 	 * IAbilitySystemInterface.
 	 *
@@ -56,7 +63,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsDead() const { return bIsDead; }
-
+	
+	/**
+	 * 사망 처리. 체력이 0 이 됐을 때 호출한다(S4 이후).
+	 * 여러 번 불려도 한 번만 동작하므로 호출부에서 중복을 걱정하지 않아도 된다.
+	 */
+	virtual void HandleDeath();
+	
+	
 	/**
 	 * 이 캐릭터의 스탯 컴포넌트. 없으면 nullptr 가 발생한다.
 	 */
@@ -93,12 +107,6 @@ protected:
 	void BindToStatComponent();
 
 	/**
-	 * 사망 처리. 체력이 0 이 됐을 때 호출한다(S4 이후).
-	 * 여러 번 불려도 한 번만 동작하므로 호출부에서 중복을 걱정하지 않아도 된다.
-	 */
-	virtual void HandleDeath();
-
-	/**
 	 * 소속 팀. 값 배정(플레이어 0 / 몬스터 1 등)은 AI 담당과 맞춰야 하므로
 	 * 코드에 박지 않고 블루프린트에서 지정한다.
 	 */
@@ -111,4 +119,8 @@ private:
 
 	/** 서버 기준 값이다. 복제는 사망 처리가 실제로 붙는 S4 에서 함께 정한다. */
 	bool bIsDead = false;
+	
+	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Combat")
+	TObjectPtr<UTDCombatComponent> CombatComponent;
 };

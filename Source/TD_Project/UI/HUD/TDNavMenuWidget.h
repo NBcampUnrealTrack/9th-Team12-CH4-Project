@@ -5,7 +5,7 @@
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDNavMenuWidget.generated.h"
 
-class UTDHudNavButtonDA;
+class UTDButtonStyleDA;
 class UTDNavMenuButtonWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnNavMenuRequested, ETDNavMenuType, MenuType);
@@ -44,7 +44,7 @@ protected:
 	TObjectPtr<UTDNavMenuButtonWidget> SystemEntry;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Button Style")
-		TObjectPtr<UTDHudNavButtonDA> ButtonStyleData;
+	TObjectPtr<UTDButtonStyleDA> ButtonStyleData;
 
 private:
 	UPROPERTY(Transient)

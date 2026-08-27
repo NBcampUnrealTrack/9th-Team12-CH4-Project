@@ -3,7 +3,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
-#include "UI/Common/TDHudNavButtonDA.h"
+#include "UI/Common/TDButtonStyleDA.h"
 
 void UTDNavMenuButtonWidget::NativePreConstruct()
 {
@@ -46,7 +46,7 @@ void UTDNavMenuButtonWidget::SetSelected(bool bInSelected)
 	RefreshStyle();
 }
 
-void UTDNavMenuButtonWidget::SetStyleData(UTDHudNavButtonDA* InStyleData)
+void UTDNavMenuButtonWidget::SetStyleData(UTDButtonStyleDA* InStyleData)
 {
 	StyleData = InStyleData;
 	RefreshStyle();

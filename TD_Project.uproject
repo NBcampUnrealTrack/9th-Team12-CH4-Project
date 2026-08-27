@@ -11,6 +11,11 @@
 			"AdditionalDependencies": [
 				"UMG"
 			]
+		},
+		{
+			"Name": "TD_ProjectEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [

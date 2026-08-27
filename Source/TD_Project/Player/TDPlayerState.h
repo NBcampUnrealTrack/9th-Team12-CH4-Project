@@ -176,6 +176,10 @@ protected:
 	UFUNCTION()
 	void HandleStatsChanged();
 
+	/** 레벨업 시 체력·마나를 가득 채운다. 최대치 갱신과는 별개인 게임 규칙이다. */
+	UFUNCTION()
+	void HandleLevelUp(int32 NewLevel, int32 PreviousLevel);
+
 private:
 	void UpdateCombatPower();
 

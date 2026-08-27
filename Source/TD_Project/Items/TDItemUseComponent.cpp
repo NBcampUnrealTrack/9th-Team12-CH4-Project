@@ -429,6 +429,51 @@ bool UTDItemUseComponent::ApplyUseEffect(FGameplayTag EffectTag, float Value)
 		return bRestored;
 	}
 
+	// 경험치 계열. 둘 다 결국 AddExp 로 흘러가고, 얼마를 줄지 정하는 방식만 다르다.
+	if (EffectTag == TDTags::Item_Effect_GainExp.GetTag()
+		|| EffectTag == TDTags::Item_Effect_LevelUp.GetTag())
+	{
+		UTDProgressionComponent* Progression = GetProgression();
+		if (Progression == nullptr)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ApplyUseEffect: 성장 컴포넌트가 없어 경험치를 줄 수 없다."));
+			return false;
+		}
+
+		int32 ExpToGive = 0;
+
+		if (EffectTag == TDTags::Item_Effect_GainExp.GetTag())
+		{
+			ExpToGive = FMath::RoundToInt(Value);
+		}
+		else
+		{
+			// 레벨업권. Value 는 경험치가 아니라 **상한 레벨**이다.
+			//
+			// 상한 미만이면 다음 레벨까지 필요한 만큼을 줘서 확실히 한 칸 올린다.
+			// 상한 이상이면 상한 레벨 한 구간만큼의 고정량만 준다 — 그러지 않으면
+			// 만렙 직전에 쓸수록 이득이 커져 무한 레벨업권이 된다.
+			const int32 CapLevel = FMath::RoundToInt(Value);
+
+			ExpToGive = (Progression->GetLevel() < CapLevel)
+				? Progression->GetExpToNextLevel()
+				: Progression->GetExpSpanForLevel(CapLevel);
+		}
+
+		if (ExpToGive <= 0)
+		{
+			// 만렙이거나 곡선에 없는 레벨을 상한으로 지정한 경우다. 아이템을 소모하지 않는다.
+			UE_LOG(LogTemp, Log,
+				TEXT("ApplyUseEffect: '%s' 로 줄 경험치가 없다 (만렙이거나 상한 레벨이 곡선 밖)."),
+				*EffectTag.ToString());
+			return false;
+		}
+
+		Progression->AddExp(ExpToGive);
+		return true;
+	}
+
 	UE_LOG(LogTemp, Warning, TEXT("ApplyUseEffect: 알 수 없는 효과 '%s'."), *EffectTag.ToString());
 	return false;
 }

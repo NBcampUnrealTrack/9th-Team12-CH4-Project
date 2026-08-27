@@ -77,4 +77,8 @@ public:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugDamage(float Amount);
+
+	/** 경험치를 지급한다. 레벨업 판정까지 서버에서 일어난다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugAddExp(int32 Amount);
 };

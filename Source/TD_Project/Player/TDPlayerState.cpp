@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "Character/TDCharacterBase.h"
 #include "Core/TDGameplayTags.h"
 #include "Engine/World.h"
 #include "Game/TDGameMode.h"
@@ -41,6 +42,13 @@ void ATDPlayerState::BeginPlay()
 	if (HasAuthority() && StatComponent != nullptr)
 	{
 		StatComponent->OnStatsChanged.AddDynamic(this, &ATDPlayerState::HandleStatsChanged);
+
+		// 레벨업하면 체력·마나를 가득 채운다. 최대치가 오르는 것과 별개인 게임 규칙이라
+		// UpdateVitalAttributes 가 아니라 여기서 따로 처리한다.
+		if (ProgressionComponent != nullptr)
+		{
+			ProgressionComponent->OnLevelUp.AddDynamic(this, &ATDPlayerState::HandleLevelUp);
+		}
 
 		// 구독은 늦었다. 컴포넌트들의 BeginPlay 는 위의 Super::BeginPlay() 안에서 이미 끝났고,
 		// 그때 나간 OnStatsChanged 는 아직 구독 전이라 받지 못했다.
@@ -199,6 +207,34 @@ void ATDPlayerState::SetSavedVitalRatios(float InHealthRatio, float InManaRatio)
 {
 	SavedHealthRatio = FMath::Clamp(InHealthRatio, 0.f, 1.f);
 	SavedManaRatio = FMath::Clamp(InManaRatio, 0.f, 1.f);
+}
+
+void ATDPlayerState::HandleLevelUp(int32 NewLevel, int32 PreviousLevel)
+{
+	if (!HasAuthority() || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 시체는 채우지 않는다. 그러지 않으면 죽은 채로 경험치만 받아도 되살아나,
+	// 레벨업이 부활 수단이 되어버린다. 부활은 부활 로직이 담당해야 한다.
+	//
+	// 최대치가 오른 것은 HandleStatsChanged 가 이미 반영했으므로 여기서 빠져나가도 문제없다.
+	const ATDCharacterBase* Character = Cast<ATDCharacterBase>(GetPawn());
+	if (Character != nullptr && Character->IsDead())
+	{
+		return;
+	}
+
+	// 레벨업 시 체력·마나를 가득 채운다. 최대치 갱신은 이미 HandleStatsChanged 가
+	// 처리했으므로, 여기서는 현재값만 최대치로 끌어올리면 된다.
+	AbilitySystemComponent->SetNumericAttributeBase(
+		UTDAttributeSet::GetHealthAttribute(),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()));
+
+	AbilitySystemComponent->SetNumericAttributeBase(
+		UTDAttributeSet::GetManaAttribute(),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxManaAttribute()));
 }
 
 void ATDPlayerState::HandleStatsChanged()

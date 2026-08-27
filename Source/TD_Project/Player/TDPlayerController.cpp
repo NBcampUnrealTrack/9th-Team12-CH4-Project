@@ -127,6 +127,31 @@ void ATDPlayerController::ServerDebugGiveTestCharacters_Implementation()
 #endif
 }
 
+void ATDPlayerController::ServerDebugAddExp_Implementation(int32 Amount)
+{
+#if !UE_BUILD_SHIPPING
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	UTDProgressionComponent* Progression = PlayerState->FindComponentByClass<UTDProgressionComponent>();
+	if (Progression == nullptr)
+	{
+		return;
+	}
+
+	Progression->AddExp(Amount);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 경험치 %d 지급. Level %d, 누적 %d, 다음까지 %d (%.0f%%)"),
+		Amount,
+		Progression->GetLevel(),
+		Progression->GetExp(),
+		Progression->GetExpToNextLevel(),
+		Progression->GetLevelProgress() * 100.f);
+#endif
+}
+
 void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
 {
 #if !UE_BUILD_SHIPPING

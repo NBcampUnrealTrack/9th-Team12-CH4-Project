@@ -98,7 +98,9 @@ def convert(src_dir, name):
     out_dir = os.path.join(src_dir, OUT_DIR_NAME)
     os.makedirs(out_dir, exist_ok=True)
 
-    with open(os.path.join(out_dir, name), "w", encoding="utf-8", newline="") as f:
+    # BOM 을 붙인다(utf-8-sig). 없으면 엑셀이 시스템 코드페이지로 읽어서
+    # 한글이 깨진 채로 열리고, 그 상태로 저장하면 그대로 굳는다.
+    with open(os.path.join(out_dir, name), "w", encoding="utf-8-sig", newline="") as f:
         csv.writer(f).writerows(out)
 
     note = " (빈 행 %d개 제거)" % dropped if dropped else ""

@@ -9,7 +9,7 @@ class UButton;
 class UImage;
 class UTextBlock;
 class UTexture2D;
-class UTDHudNavButtonDA;
+class UTDButtonStyleDA;
 class UTDNavMenuButtonWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -31,7 +31,7 @@ public:
 	void SetSelected(bool bInSelected);
 
 	UFUNCTION(BlueprintCallable, Category = "Navigation")
-	void SetStyleData(UTDHudNavButtonDA* InStyleData);
+	void SetStyleData(UTDButtonStyleDA* InStyleData);
 
 	void SetMenuType(ETDNavMenuType InMenuType);
 
@@ -57,7 +57,7 @@ protected:
 
 private:
 	UPROPERTY(Transient)
-	TObjectPtr<UTDHudNavButtonDA> StyleData;
+	TObjectPtr<UTDButtonStyleDA> StyleData;
 
 	ETDNavMenuType MenuType = ETDNavMenuType::Inventory;
 	bool bSelected = false;

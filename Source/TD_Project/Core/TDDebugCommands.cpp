@@ -101,7 +101,12 @@ namespace TDDebugCommands
 
 		if (VisitedCount == 0)
 		{
-			UE_LOG(LogTDDebug, Warning, TEXT("대상 캐릭터를 찾지 못했다. (필터: '%s')"), *NameFilter);
+			// 캐릭터 선택 전에는 Pawn 이 아예 없다(D54). 버그로 오해하기 쉬우므로 다음 단계를 알려준다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("대상 캐릭터를 찾지 못했다. (필터: '%s')\n"
+					 "    캐릭터를 고르기 전에는 Pawn 이 스폰되지 않는다.\n"
+					 "    TD.GiveTestCharacters → TD.SelectCharacter <번호> 순서로 진행할 것."),
+				*NameFilter);
 		}
 
 		return VisitedCount;
@@ -136,10 +141,23 @@ namespace TDDebugCommands
 				UE_LOG(LogTDDebug, Log, TEXT("%s  (성장 컴포넌트 없음)"), *Character.GetName());
 			}
 
+			// 로컬 계산과 복제된 값을 나란히 찍는다. 서버에서는 같지만 클라이언트에서는
+			// 로컬이 테이블 기본값이라 크게 차이 난다 — 스탯창이 어느 쪽을 써야 하는지 보여준다.
+			const ATDPlayerState* StatOwner = Cast<ATDPlayerState>(Character.GetPlayerState());
+
 			for (const FGameplayTag& Stat : DisplayStats)
 			{
-				UE_LOG(LogTDDebug, Log, TEXT("    %-40s %.3f"),
-					*Stat.ToString(), StatComponent->GetStat(Stat));
+				if (StatOwner != nullptr)
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("    %-40s %8.3f  (복제 %.3f)"),
+						*Stat.ToString(), StatComponent->GetStat(Stat), StatOwner->GetReplicatedStat(Stat));
+				}
+				else
+				{
+					// 몬스터는 PlayerState 가 없다. 스탯 복제도 필요 없다.
+					UE_LOG(LogTDDebug, Log, TEXT("    %-40s %8.3f"),
+						*Stat.ToString(), StatComponent->GetStat(Stat));
+				}
 			}
 
 			// 둘을 나란히 찍는다. 서버에서는 같은 값이지만, 클라이언트에서는

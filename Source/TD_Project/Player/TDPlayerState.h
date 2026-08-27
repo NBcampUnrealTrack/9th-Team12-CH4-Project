@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerState.h"
 #include "Save/TDPlayerSaveData.h"
+#include "Stats/TDStatTypes.h"
 #include "TDPlayerState.generated.h"
 
 class UAbilitySystemComponent;
@@ -24,6 +25,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterSlotsChanged);
 
 /** 캐릭터 선택이 확정됐을 때. 선택 화면을 닫는 신호다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterSelected);
+
+/** 서버가 계산한 스탯이 도착했을 때. 스탯창이 이걸 받아 갱신한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnStatsReplicated);
 
 /**
  * 플레이어의 스탯 컴포넌트가 실제로 붙는 곳.
@@ -78,6 +82,29 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Stats")
 	FTDOnCombatPowerChanged OnCombatPowerChanged;
+
+	// ── 스탯 스냅샷 ───────────────────────────────────────
+
+	/**
+	 * 서버가 계산한 스탯 최종값. **스탯창은 이걸 읽어야 한다.**
+	 *
+	 * UTDStatComponent 는 복제되지 않으므로 클라이언트에서 GetStat() 을 부르면
+	 * DT_StatDefinition 의 기본값이 나온다 — 실제 값이 아니다.
+	 *
+	 * 남의 스탯창을 볼 일이 없으므로 COND_OwnerOnly 로 보낸다. 남에게 보여야 하는 것은
+	 * 전투력뿐이고 그쪽은 따로 전원에게 복제된다.
+	 *
+	 * @return 목록에 없는 스탯이면 0. DT_StatDefinition 에 행이 있는 스탯만 담긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Stats")
+	float GetReplicatedStat(FGameplayTag Stat) const;
+
+	UFUNCTION(BlueprintPure, Category = "TD|Stats")
+	const TArray<FTDStatSnapshot>& GetReplicatedStats() const { return ReplicatedStats; }
+
+	/** 스탯 스냅샷이 갱신됐을 때. 스탯창은 Tick 이 아니라 이걸 구독한다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Stats")
+	FTDOnStatsReplicated OnStatsReplicated;
 
 	// ── 직업 ──────────────────────────────────────────────
 
@@ -151,6 +178,19 @@ protected:
 
 private:
 	void UpdateCombatPower();
+
+	/** 정의된 스탯을 전부 계산해 스냅샷으로 옮긴다. 값이 그대로면 복제하지 않는다. */
+	void UpdateReplicatedStats();
+
+	UFUNCTION()
+	void OnRep_ReplicatedStats();
+
+	/**
+	 * 스탯 15종이면 대략 120바이트다. 소유자에게만, 그리고 값이 실제로 바뀔 때만 나간다.
+	 * 장착·레벨업 순간에만 갱신되므로 상시 부하는 없다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedStats)
+	TArray<FTDStatSnapshot> ReplicatedStats;
 
 	/**
 	 * 스탯 계산 결과를 AttributeSet 의 최대치에 기록한다.

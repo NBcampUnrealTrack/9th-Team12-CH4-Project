@@ -28,4 +28,19 @@ public:
 	 * "공격자 없는 피해"용. ApplyDamage 의 마지막 구간과 같은 경로를 쓴다.
 	 */
 	static void ApplyRawDamage(AActor* Target, float Amount);
+
+	/**
+	 * 체력 회복의 단일 진입점. 포션·회복 스킬·리젠이 전부 여기를 거친다.
+	 *
+	 * 데미지와 달리 지금은 GE 를 태우지 않고 어트리뷰트를 직접 올린다.
+	 * 회복에는 방어력 계산도 사망 판정도 없어서 우편함(메타 어트리뷰트)이 필요 없기 때문이다.
+	 * "회복량 +20%" 나 "회복 불가" 같은 것이 생기면 이 함수 안쪽만 GE 경로로 바꾸면 되고,
+	 * 부르는 쪽은 손대지 않아도 된다 — 진입점을 하나로 두는 이유가 그것이다.
+	 *
+	 * @return 실제로 회복이 일어났으면 true. 이미 가득 찼거나 죽었으면 false.
+	 */
+	static bool RestoreHealth(AActor* Target, float Amount);
+
+	/** 마나 회복. RestoreHealth 와 같은 규칙을 따른다. */
+	static bool RestoreMana(AActor* Target, float Amount);
 };

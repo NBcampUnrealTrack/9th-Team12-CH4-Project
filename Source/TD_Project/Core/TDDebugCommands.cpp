@@ -612,6 +612,16 @@ namespace TDDebugCommands
 		const float Amount = FCString::Atof(*Args[0]);
 		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
 
+		// ApplyRawDamage 는 서버 권한을 요구한다. 클라이언트 창에서 그냥 부르면
+		// 조용히 무시되고 로그만 "피해 적용됨"처럼 보여 오해하기 쉽다.
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugDamage(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 %.0f 피해를 요청했다. (자기 캐릭터만 / 결과는 서버 로그에)"), Amount);
+			return;
+		}
+
 		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
 		{
 			UTDCombatStatics::ApplyRawDamage(&Character, Amount);

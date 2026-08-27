@@ -12,6 +12,8 @@
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+#include "Combat/TDCombatStatics.h"
+#include "Combat/TDCombatComponent.h"
 
 /**
  * 개발용 콘솔 명령.
@@ -598,6 +600,76 @@ namespace TDDebugCommands
 				*PlayerState.GetPlayerName(), SlotIndex, bSelected ? TEXT("성공") : TEXT("실패"));
 		});
 	}
+	
+	static void Damage(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Damage <양> [이름필터]"));
+			return;
+		}
+
+		const float Amount = FCString::Atof(*Args[0]);
+		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
+
+		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
+		{
+			UTDCombatStatics::ApplyRawDamage(&Character, Amount);
+
+			// 결과 확인. 어트리뷰트는 ASC 를 통해 읽는다.
+			if (UAbilitySystemComponent* ASC = Character.GetAbilitySystemComponent())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("%s — %.0f 피해. 체력 %.1f / %.1f%s"),
+					*Character.GetName(), Amount,
+					ASC->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()),
+					ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
+					Character.IsDead() ? TEXT(" [사망]") : TEXT(""));
+			}
+		});
+	}
+
+	static void Hit(const TArray<FString>& Args, UWorld* World)
+	{
+		const FString NameFilter = Args.IsValidIndex(0) ? Args[0] : FString();
+
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		ATDCharacterBase* Attacker = PC ? Cast<ATDCharacterBase>(PC->GetPawn()) : nullptr;
+		if (Attacker == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Hit: 플레이어 캐릭터가 없다. TD.SelectCharacter 로 먼저 스폰할 것."));
+			return;
+		}
+
+		ForEachCharacter(World, NameFilter, [Attacker](ATDCharacterBase& Target)
+		{
+			if (&Target == Attacker)
+			{
+				return;   // 자해 방지
+			}
+
+			const FTDDamageResult Result = UTDCombatStatics::ApplyDamage(
+				Attacker, &Target, FGameplayTagContainer());
+
+			UE_LOG(LogTDDebug, Log, TEXT("%s → %s — %.1f 피해%s%s"),
+				*Attacker->GetName(), *Target.GetName(), Result.FinalDamage,
+				Result.bCritical ? TEXT(" (크리티컬!)") : TEXT(""),
+				Target.IsDead() ? TEXT(" [사망]") : TEXT(""));
+		});
+	}
+	
+	static void Attack(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		ATDCharacterBase* Attacker = PC ? Cast<ATDCharacterBase>(PC->GetPawn()) : nullptr;
+
+		if (Attacker == nullptr || Attacker->GetCombatComponent() == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Attack: 플레이어 캐릭터가 없다."));
+			return;
+		}
+
+		Attacker->GetCombatComponent()->ServerRequestAttack();
+	}
 }
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpStats(
@@ -659,5 +731,20 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSelectCharacter(
 	TEXT("TD.SelectCharacter"),
 	TEXT("캐릭터를 선택하고 Pawn 을 스폰한다. 사용법: TD.SelectCharacter <슬롯번호>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SelectCharacter));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDamage(
+	TEXT("TD.Damage"),
+	TEXT("고정 수치의 피해를 직접 적용한다(공식 미경유). 사용법: TD.Damage <양> [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Damage));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDHit(
+	TEXT("TD.Hit"),
+	TEXT("플레이어가 대상을 공격한다(스탯·공식 경유). 사용법: TD.Hit [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Hit));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDAttack(
+	TEXT("TD.Attack"),
+	TEXT("전방 히트박스로 공격한다(쿨타임·팀 판정 포함). 사용법: TD.Attack"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Attack));
 
 #endif // !UE_BUILD_SHIPPING

@@ -31,6 +31,18 @@ ATDGameMode::ATDGameMode()
 	// APlayerState::CopyProperties 가 옮기는 값뿐이고, 우리가 추가한 필드는 거기 없다.
 	// 이쪽은 세이브에서 다시 읽는 것으로 처리하므로 오버라이드하지 않는다.
 	bUseSeamlessTravel = true;
+
+	// 일시정지를 금지한다. MO 라 한 사람이 멈추면 서버 전체가 멈춘다 —
+	// Pause 는 클라이언트 개인의 화면이 아니라 서버 월드의 시간을 세우는 동작이기 때문이다.
+	//
+	// 기본값이 true 이므로 반드시 명시적으로 꺼야 한다. AGameModeBase::AllowPausing 은
+	//   return bPauseable || GetNetMode() == NM_Standalone;
+	// 이라, 이 값이 false 여도 Standalone 에서는 여전히 멈출 수 있다. 엔진 하드코딩이라
+	// 막을 수 없지만, 실제 게임은 항상 서버에 붙으므로 문제되지 않는다.
+	//
+	// ESC 메뉴나 인벤토리를 열 때 게임이 멈추길 기대하면 안 된다는 뜻이기도 하다.
+	// UI 는 입력만 가져가고 월드는 계속 돌아간다.
+	bPauseable = false;
 }
 
 void ATDGameMode::PreLogin(const FString& Options, const FString& Address,

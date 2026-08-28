@@ -1,5 +1,9 @@
 #include "Player/TDPlayerController.h"
 
+#include "AbilitySystemComponent.h"
+#include "Abilities/TDAttributeSet.h"
+#include "Character/TDCharacterBase.h"
+#include "Combat/TDCombatStatics.h"
 #include "Core/TDGameInstance.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
@@ -120,5 +124,56 @@ void ATDPlayerController::ServerDebugGiveTestCharacters_Implementation()
 	TDPlayerState->SetCharacterSlots(MoveTemp(Slots));
 
 	UE_LOG(LogTemp, Log, TEXT("[치트] 테스트 캐릭터 3개를 넣었다. (%s)"), *TDPlayerState->GetPlayerName());
+#endif
+}
+
+void ATDPlayerController::ServerDebugAddExp_Implementation(int32 Amount)
+{
+#if !UE_BUILD_SHIPPING
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	UTDProgressionComponent* Progression = PlayerState->FindComponentByClass<UTDProgressionComponent>();
+	if (Progression == nullptr)
+	{
+		return;
+	}
+
+	Progression->AddExp(Amount);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 경험치 %d 지급. Level %d, 누적 %d, 다음까지 %d (%.0f%%)"),
+		Amount,
+		Progression->GetLevel(),
+		Progression->GetExp(),
+		Progression->GetExpToNextLevel(),
+		Progression->GetLevelProgress() * 100.f);
+#endif
+}
+
+void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
+{
+#if !UE_BUILD_SHIPPING
+	// AController 에 이미 Character 멤버가 있어 그 이름은 쓸 수 없다(C4458).
+	ATDCharacterBase* TargetCharacter = Cast<ATDCharacterBase>(GetPawn());
+	if (TargetCharacter == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[치트] 조종 중인 캐릭터가 없다. TD.SelectCharacter 로 먼저 스폰할 것."));
+		return;
+	}
+
+	UTDCombatStatics::ApplyRawDamage(TargetCharacter, Amount);
+
+	// 결과를 함께 찍는다. 요청만 보내고 끝나면 실제로 깎였는지 알 수 없다.
+	if (const UAbilitySystemComponent* ASC = TargetCharacter->GetAbilitySystemComponent())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[치트] %.0f 피해. 체력 %.1f / %.1f%s"),
+			Amount,
+			ASC->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()),
+			ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
+			TargetCharacter->IsDead() ? TEXT(" [사망]") : TEXT(""));
+	}
 #endif
 }

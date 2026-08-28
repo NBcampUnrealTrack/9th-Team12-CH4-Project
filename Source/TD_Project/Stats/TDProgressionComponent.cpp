@@ -2,6 +2,7 @@
 
 #include "Core/TDGameplayTags.h"
 #include "Data/TDClassGrowthRow.h"
+#include "Data/TDLevelExpRow.h"
 #include "Engine/DataTable.h"
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
@@ -10,6 +11,7 @@
 namespace
 {
 	const TCHAR* ClassGrowthContext = TEXT("UTDProgressionComponent");
+	const TCHAR* LevelExpContext = TEXT("UTDProgressionComponent::LevelExp");
 
 	/** 직업과 무관하게 모두에게 적용되는 성장 행의 ClassId. */
 	const FName DefaultClassId(TEXT("Default"));
@@ -42,6 +44,14 @@ void UTDProgressionComponent::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("%s: ProgressionComponent 의 ClassGrowthTable(DT_ClassGrowth) 이 지정되지 않았다. "
 				 "레벨 성장이 전혀 적용되지 않는다."),
+			*GetNameSafe(GetOwner()));
+	}
+
+	if (LevelExpTable == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("%s: ProgressionComponent 의 LevelExpTable(DT_LevelExp) 이 지정되지 않았다. "
+				 "경험치가 쌓이기만 하고 레벨이 오르지 않는다."),
 			*GetNameSafe(GetOwner()));
 	}
 
@@ -79,8 +89,11 @@ bool UTDProgressionComponent::SetLevel(int32 NewLevel)
 		return true;
 	}
 
-	Level = ClampedLevel;
-	RefreshStatModifiers();
+	// 경험치를 그 레벨의 시작점으로 맞춘다. 이걸 빼먹으면 다음에 경험치를 받는 순간
+	// 옛 경험치 기준으로 레벨이 다시 계산되어 방금 지정한 값이 사라진다.
+	Exp = GetRequiredExpForLevel(ClampedLevel);
+
+	ApplyLevelChange(ClampedLevel);
 
 	return true;
 }
@@ -114,7 +127,136 @@ void UTDProgressionComponent::AddExp(int32 Amount)
 
 	Exp += Amount;
 
-	// TODO: 필요 경험치 곡선 테이블이 생기면 여기서 레벨업을 판정하고 SetLevel 을 부른다.
+	// 레벨은 저장하지 않는 파생값이다. 경험치가 늘 때마다 다시 구한다.
+	ApplyLevelChange(CalculateLevelFromExp(Exp));
+}
+
+int32 UTDProgressionComponent::CalculateLevelFromExp(int32 TotalExp) const
+{
+	if (LevelExpTable == nullptr)
+	{
+		return Level;
+	}
+
+	TArray<FTDLevelExpRow*> Rows;
+	LevelExpTable->GetAllRows<FTDLevelExpRow>(LevelExpContext, Rows);
+
+	// 요구치를 넘긴 행 중 가장 높은 레벨을 고른다.
+	// 행 순서를 믿지 않는 이유는 시트에서 정렬이 흐트러질 수 있기 때문이다.
+	int32 Result = 1;
+	for (const FTDLevelExpRow* Row : Rows)
+	{
+		if (Row != nullptr && TotalExp >= Row->RequiredTotalExp && Row->Level > Result)
+		{
+			Result = Row->Level;
+		}
+	}
+
+	return Result;
+}
+
+int32 UTDProgressionComponent::GetRequiredExpForLevel(int32 InLevel) const
+{
+	if (LevelExpTable == nullptr)
+	{
+		return 0;
+	}
+
+	TArray<FTDLevelExpRow*> Rows;
+	LevelExpTable->GetAllRows<FTDLevelExpRow>(LevelExpContext, Rows);
+
+	for (const FTDLevelExpRow* Row : Rows)
+	{
+		if (Row != nullptr && Row->Level == InLevel)
+		{
+			return Row->RequiredTotalExp;
+		}
+	}
+
+	return 0;
+}
+
+int32 UTDProgressionComponent::GetMaxLevel() const
+{
+	if (LevelExpTable == nullptr)
+	{
+		return 1;
+	}
+
+	TArray<FTDLevelExpRow*> Rows;
+	LevelExpTable->GetAllRows<FTDLevelExpRow>(LevelExpContext, Rows);
+
+	int32 Result = 1;
+	for (const FTDLevelExpRow* Row : Rows)
+	{
+		if (Row != nullptr && Row->Level > Result)
+		{
+			Result = Row->Level;
+		}
+	}
+
+	return Result;
+}
+
+int32 UTDProgressionComponent::GetExpSpanForLevel(int32 InLevel) const
+{
+	if (InLevel < 1 || InLevel >= GetMaxLevel())
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, GetRequiredExpForLevel(InLevel + 1) - GetRequiredExpForLevel(InLevel));
+}
+
+int32 UTDProgressionComponent::GetExpToNextLevel() const
+{
+	if (Level >= GetMaxLevel())
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, GetRequiredExpForLevel(Level + 1) - Exp);
+}
+
+float UTDProgressionComponent::GetLevelProgress() const
+{
+	if (Level >= GetMaxLevel())
+	{
+		return 1.f;
+	}
+
+	const int32 CurrentBase = GetRequiredExpForLevel(Level);
+	const int32 NextBase = GetRequiredExpForLevel(Level + 1);
+
+	const int32 Span = NextBase - CurrentBase;
+	if (Span <= 0)
+	{
+		// 곡선이 잘못 입력돼 다음 레벨 요구치가 더 낮거나 같은 경우다.
+		return 0.f;
+	}
+
+	return FMath::Clamp(static_cast<float>(Exp - CurrentBase) / Span, 0.f, 1.f);
+}
+
+void UTDProgressionComponent::ApplyLevelChange(int32 NewLevel)
+{
+	const int32 ClampedLevel = FMath::Max(1, NewLevel);
+	if (Level == ClampedLevel)
+	{
+		return;
+	}
+
+	const int32 PreviousLevel = Level;
+	Level = ClampedLevel;
+
+	// 성장 모디파이어가 새 레벨 기준으로 다시 만들어진다.
+	RefreshStatModifiers();
+
+	// 서버에서는 OnRep 이 없으므로 직접 알린다.
+	OnLevelUp.Broadcast(Level, PreviousLevel);
+
+	UE_LOG(LogTemp, Log, TEXT("%s — 레벨 %d → %d (누적 경험치 %d)"),
+		*GetNameSafe(GetOwner()), PreviousLevel, Level, Exp);
 }
 
 int32 UTDProgressionComponent::GetRemainingSkillPoints() const
@@ -216,9 +358,17 @@ void UTDProgressionComponent::ReadSaveData(const FTDPlayerSaveData& In)
 	// TODO: In.SaveVersion 이 늘어나면 여기서 옛 형식을 변환한다.
 
 	ClassId = In.ClassId;
-	Level = FMath::Max(1, In.Level);
 	Exp = FMath::Max(0, In.Exp);
 	SkillLevels = In.SkillLevels;
+
+	// 저장된 Level 은 쓰지 않고 경험치로부터 다시 구한다.
+	// 곡선을 조정했다면 기존 캐릭터도 새 기준으로 자동 보정된다(D12).
+	// 테이블이 아직 없으면 저장값을 그대로 살려 데이터를 잃지 않는다.
+	Level = FMath::Max(1, In.Level);
+	if (LevelExpTable != nullptr)
+	{
+		Level = CalculateLevelFromExp(Exp);
+	}
 
 	RefreshStatModifiers();
 }

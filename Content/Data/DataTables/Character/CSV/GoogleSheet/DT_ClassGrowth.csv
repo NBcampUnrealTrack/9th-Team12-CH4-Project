@@ -1,4 +1,0 @@
-Name,ClassId,StatTag,ValuePerLevel
-NewRow,Default,Stat.Resource.Health.Max,15
-NewRow_0,Default,Stat.Resource.Mana.Max,10
-NewRow_1,Default,Stat.Defense.Armor,5

@@ -1,5 +1,6 @@
 #include "Items/TDItemUseComponent.h"
 
+#include "Combat/TDCombatStatics.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDItemRow.h"
 #include "Data/TDItemSetRow.h"
@@ -8,6 +9,7 @@
 #include "Data/TDOptionRow.h"
 #include "Engine/DataTable.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Stats/TDProgressionComponent.h"
@@ -288,6 +290,7 @@ bool UTDItemUseComponent::UseItem(int32 InventorySlot)
 	const FTDItemInstance* Item = Inventory->FindBySlot(InventorySlot);
 	if (Item == nullptr)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("UseItem: 인벤토리 %d번 칸이 비어 있다."), InventorySlot);
 		return false;
 	}
 
@@ -333,14 +336,16 @@ bool UTDItemUseComponent::UseItem(int32 InventorySlot)
 			continue;
 		}
 
-		ApplyUseEffect(Effect->EffectTag, Effect->Value);
-		bAppliedAny = true;
+		// 엘릭서처럼 효과가 여럿이면 하나라도 먹히면 소모한다.
+		// 체력만 가득 찬 상태에서 체력+마나 포션을 쓰는 경우가 여기 해당한다.
+		bAppliedAny |= ApplyUseEffect(Effect->EffectTag, Effect->Value);
 	}
 
 	if (!bAppliedAny)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UseItem: '%s' 에 정의된 효과가 없어 소비하지 않았다."), *ItemId.ToString());
+			TEXT("UseItem: '%s' 의 효과가 하나도 적용되지 않아 소비하지 않았다. "
+				 "(효과 미정의 / 이미 가득 참 / 캐릭터 없음)"), *ItemId.ToString());
 		return false;
 	}
 
@@ -367,28 +372,110 @@ void UTDItemUseComponent::ServerUseItem_Implementation(int32 InventorySlot)
 	UseItem(InventorySlot);
 }
 
-void UTDItemUseComponent::ApplyUseEffect(FGameplayTag EffectTag, float Value)
+AActor* UTDItemUseComponent::GetOwnerCharacter() const
+{
+	const APlayerState* PlayerState = Cast<APlayerState>(GetOwner());
+	return PlayerState ? PlayerState->GetPawn() : nullptr;
+}
+
+bool UTDItemUseComponent::ApplyUseEffect(FGameplayTag EffectTag, float Value)
 {
 	if (EffectTag == TDTags::Item_Effect_ExpandInventory.GetTag())
 	{
-		if (UTDInventoryComponent* Inventory = GetInventory())
+		UTDInventoryComponent* Inventory = GetInventory();
+		if (Inventory == nullptr)
 		{
-			Inventory->SetSlotCapacity(Inventory->GetSlotCapacity() + FMath::RoundToInt(Value));
+			return false;
 		}
-		return;
+
+		// 상한에 걸려 한 칸도 못 늘리면 확장권을 쓰지 않은 것으로 본다.
+		const int32 Before = Inventory->GetSlotCapacity();
+		Inventory->SetSlotCapacity(Before + FMath::RoundToInt(Value));
+
+		if (Inventory->GetSlotCapacity() == Before)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ApplyUseEffect: 인벤토리가 이미 상한(%d칸)이라 확장하지 못했다."), Before);
+			return false;
+		}
+
+		return true;
 	}
 
-	// TODO(S4): 현재 체력·마나는 AttributeSet 이 관리한다. 그쪽이 붙으면 여기서 회복시킨다.
+	// 회복은 PlayerState 가 아니라 월드의 캐릭터에게 적용한다.
 	if (EffectTag == TDTags::Item_Effect_RestoreHealth.GetTag()
 		|| EffectTag == TDTags::Item_Effect_RestoreMana.GetTag())
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("ApplyUseEffect: '%s' 는 아직 구현되지 않았다 (AttributeSet 필요)."),
-			*EffectTag.ToString());
-		return;
+		AActor* Character = GetOwnerCharacter();
+		if (Character == nullptr)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ApplyUseEffect: 조종 중인 캐릭터가 없다. 캐릭터를 선택하기 전에는 회복할 수 없다."));
+			return false;
+		}
+
+		const bool bRestored = (EffectTag == TDTags::Item_Effect_RestoreHealth.GetTag())
+			? UTDCombatStatics::RestoreHealth(Character, Value)
+			: UTDCombatStatics::RestoreMana(Character, Value);
+
+		if (!bRestored)
+		{
+			// 이미 가득 찼거나 죽은 상태다. 아이템을 소모하지 않고 돌려준다.
+			UE_LOG(LogTemp, Log,
+				TEXT("ApplyUseEffect: '%s' 가 적용되지 않았다 (이미 가득 찼거나 사망 상태)."),
+				*EffectTag.ToString());
+		}
+
+		return bRestored;
+	}
+
+	// 경험치 계열. 둘 다 결국 AddExp 로 흘러가고, 얼마를 줄지 정하는 방식만 다르다.
+	if (EffectTag == TDTags::Item_Effect_GainExp.GetTag()
+		|| EffectTag == TDTags::Item_Effect_LevelUp.GetTag())
+	{
+		UTDProgressionComponent* Progression = GetProgression();
+		if (Progression == nullptr)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ApplyUseEffect: 성장 컴포넌트가 없어 경험치를 줄 수 없다."));
+			return false;
+		}
+
+		int32 ExpToGive = 0;
+
+		if (EffectTag == TDTags::Item_Effect_GainExp.GetTag())
+		{
+			ExpToGive = FMath::RoundToInt(Value);
+		}
+		else
+		{
+			// 레벨업권. Value 는 경험치가 아니라 **상한 레벨**이다.
+			//
+			// 상한 미만이면 다음 레벨까지 필요한 만큼을 줘서 확실히 한 칸 올린다.
+			// 상한 이상이면 상한 레벨 한 구간만큼의 고정량만 준다 — 그러지 않으면
+			// 만렙 직전에 쓸수록 이득이 커져 무한 레벨업권이 된다.
+			const int32 CapLevel = FMath::RoundToInt(Value);
+
+			ExpToGive = (Progression->GetLevel() < CapLevel)
+				? Progression->GetExpToNextLevel()
+				: Progression->GetExpSpanForLevel(CapLevel);
+		}
+
+		if (ExpToGive <= 0)
+		{
+			// 만렙이거나 곡선에 없는 레벨을 상한으로 지정한 경우다. 아이템을 소모하지 않는다.
+			UE_LOG(LogTemp, Log,
+				TEXT("ApplyUseEffect: '%s' 로 줄 경험치가 없다 (만렙이거나 상한 레벨이 곡선 밖)."),
+				*EffectTag.ToString());
+			return false;
+		}
+
+		Progression->AddExp(ExpToGive);
+		return true;
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("ApplyUseEffect: 알 수 없는 효과 '%s'."), *EffectTag.ToString());
+	return false;
 }
 
 void UTDItemUseComponent::RefreshEquipmentModifiers()

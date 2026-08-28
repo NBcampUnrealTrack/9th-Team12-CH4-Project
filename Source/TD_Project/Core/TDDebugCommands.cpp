@@ -428,6 +428,44 @@ namespace TDDebugCommands
 		});
 	}
 
+	static void AddExp(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.AddExp <경험치> [이름필터]"));
+			return;
+		}
+
+		const int32 Amount = FCString::Atoi(*Args[0]);
+		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
+
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugAddExp(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 경험치 %d 지급을 요청했다. (자기 캐릭터만 / 결과는 서버 로그에)"), Amount);
+			return;
+		}
+
+		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
+		{
+			UTDProgressionComponent* Progression = Character.GetProgressionComponent();
+			if (Progression == nullptr)
+			{
+				return;
+			}
+
+			Progression->AddExp(Amount);
+
+			UE_LOG(LogTDDebug, Log, TEXT("%s — 경험치 +%d → Level %d, 누적 %d, 다음까지 %d (%.0f%%)"),
+				*Character.GetName(), Amount,
+				Progression->GetLevel(),
+				Progression->GetExp(),
+				Progression->GetExpToNextLevel(),
+				Progression->GetLevelProgress() * 100.f);
+		});
+	}
+
 	static void SetClass(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -612,6 +650,16 @@ namespace TDDebugCommands
 		const float Amount = FCString::Atof(*Args[0]);
 		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
 
+		// ApplyRawDamage 는 서버 권한을 요구한다. 클라이언트 창에서 그냥 부르면
+		// 조용히 무시되고 로그만 "피해 적용됨"처럼 보여 오해하기 쉽다.
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugDamage(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 %.0f 피해를 요청했다. (자기 캐릭터만 / 결과는 서버 로그에)"), Amount);
+			return;
+		}
+
 		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
 		{
 			UTDCombatStatics::ApplyRawDamage(&Character, Amount);
@@ -681,6 +729,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSetLevel(
 	TEXT("TD.SetLevel"),
 	TEXT("레벨을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetLevel <레벨> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetLevel));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
+	TEXT("TD.AddExp"),
+	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSetClass(
 	TEXT("TD.SetClass"),

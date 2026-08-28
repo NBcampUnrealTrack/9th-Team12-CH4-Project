@@ -82,6 +82,8 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_ExpandInventory);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_RestoreHealth);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_RestoreMana);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_GainExp);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_LevelUp);
 
 
 	// ── 존(맵) ────────────────────────────────────────────

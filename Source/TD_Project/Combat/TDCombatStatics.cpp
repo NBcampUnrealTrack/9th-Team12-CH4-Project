@@ -90,3 +90,58 @@ void UTDCombatStatics::ApplyRawDamage(AActor* Target, float Amount)
 	TargetASC->ApplyGameplayEffectToSelf(Effect, 1.f, TargetASC->MakeEffectContext());
 	// → 이 호출이 2단계에서 만든 PostGameplayEffectExecute 를 발동시킨다.
 }
+
+namespace
+{
+	/**
+	 * 회복 공통부. 대상을 검증하고 현재값을 최대치까지 올린다.
+	 *
+	 * @return 값이 실제로 바뀌었으면 true.
+	 */
+	bool RestoreAttribute(AActor* Target, float Amount,
+		const FGameplayAttribute& CurrentAttribute, const FGameplayAttribute& MaxAttribute)
+	{
+		ATDCharacterBase* TargetChar = Cast<ATDCharacterBase>(Target);
+		if (TargetChar == nullptr || !TargetChar->HasAuthority() || Amount <= 0.f)
+		{
+			return false;
+		}
+
+		// 시체는 회복하지 않는다. 부활은 포션이 아니라 별도 경로여야 한다.
+		if (TargetChar->IsDead())
+		{
+			return false;
+		}
+
+		UAbilitySystemComponent* ASC = TargetChar->GetAbilitySystemComponent();
+		if (ASC == nullptr)
+		{
+			return false;
+		}
+
+		const float Current = ASC->GetNumericAttribute(CurrentAttribute);
+		const float Max = ASC->GetNumericAttribute(MaxAttribute);
+
+		// 이미 가득 찼으면 실패로 돌려준다. 부르는 쪽이 아이템을 소모할지 판단한다 —
+		// 풀피에서 포션이 그냥 사라지면 안 되기 때문이다.
+		if (Current >= Max)
+		{
+			return false;
+		}
+
+		ASC->SetNumericAttributeBase(CurrentAttribute, FMath::Min(Current + Amount, Max));
+		return true;
+	}
+}
+
+bool UTDCombatStatics::RestoreHealth(AActor* Target, float Amount)
+{
+	return RestoreAttribute(Target, Amount,
+		UTDAttributeSet::GetHealthAttribute(), UTDAttributeSet::GetMaxHealthAttribute());
+}
+
+bool UTDCombatStatics::RestoreMana(AActor* Target, float Amount)
+{
+	return RestoreAttribute(Target, Amount,
+		UTDAttributeSet::GetManaAttribute(), UTDAttributeSet::GetMaxManaAttribute());
+}

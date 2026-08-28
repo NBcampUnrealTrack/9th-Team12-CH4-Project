@@ -1,0 +1,3 @@
+﻿Name,ItemId,EffectTag,Value
+Exp_Small,ExpPotion,Item.Effect.GainExp,500
+Ticket_Lv30,LevelTicket,Item.Effect.LevelUp,30

@@ -2,12 +2,31 @@
 #include "Combat/TDCombatComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "PaperFlipbookComponent.h"
+#include "PaperZDAnimationComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
 
 ATDCharacterBase::ATDCharacterBase()
 {
 	CombatComponent = CreateDefaultSubobject<UTDCombatComponent>(TEXT("CombatComponent"));
+
+	// ── 2D 표현 ───────────────────────────────────────────
+	// 스프라이트는 캡슐에 붙는다. 충돌은 캡슐이 전담하므로 여기서는 끈다 —
+	// 켜두면 스프라이트 크기가 바뀔 때마다 판정이 따라 움직여 히트박스가 흔들린다.
+	SpriteComponent = CreateDefaultSubobject<UPaperFlipbookComponent>(TEXT("Sprite"));
+	SpriteComponent->SetupAttachment(RootComponent);
+	SpriteComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SpriteComponent->SetGenerateOverlapEvents(false);
+
+	// 스프라이트가 캐릭터 회전을 따라 돌면 옆·뒤를 볼 때 종이처럼 얇아진다.
+	// 회전을 월드 기준으로 고정해 항상 같은 각도로 서 있게 한다.
+	// 정확한 각도는 카메라 세팅에 달렸으므로 블루프린트에서 맞춘다.
+	SpriteComponent->SetUsingAbsoluteRotation(true);
+
+	// 애니메이션 상태 머신. 어떤 플립북을 재생할지 정해 SpriteComponent 에 밀어 넣는다.
+	// AnimInstanceClass 와 RenderComponentRef 지정은 블루프린트 몫이다(플러그인에서 private).
+	AnimationComponent = CreateDefaultSubobject<UPaperZDAnimationComponent>(TEXT("AnimationComponent"));
 }
 
 void ATDCharacterBase::BeginPlay()

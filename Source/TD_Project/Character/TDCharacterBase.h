@@ -8,6 +8,8 @@
 #include "TDCharacterBase.generated.h"
 
 class UAbilitySystemComponent;
+class UPaperFlipbookComponent;
+class UPaperZDAnimationComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
 class UTDCombatComponent;
@@ -33,6 +35,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	UTDCombatComponent* GetCombatComponent() const { return CombatComponent; }
+
+	// ── 2D 표현 ───────────────────────────────────────────
+	// 스프라이트를 그리는 것과 애니메이션을 고르는 것이 분리돼 있다.
+	// ACharacter 가 갖고 있는 Mesh(SkeletalMesh)는 쓰지 않는다 — 지우면
+	// ACharacter 의 기능이 깨지므로 그냥 비워둔다.
+
+	UFUNCTION(BlueprintPure, Category = "TD|Visual")
+	UPaperFlipbookComponent* GetSpriteComponent() const { return SpriteComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "TD|Visual")
+	UPaperZDAnimationComponent* GetAnimationComponent() const { return AnimationComponent; }
 	
 	/**
 	 * IAbilitySystemInterface.
@@ -123,4 +136,18 @@ private:
 	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Combat")
 	TObjectPtr<UTDCombatComponent> CombatComponent;
+
+	/** 실제로 화면에 그려지는 스프라이트. PaperZD 가 이 컴포넌트의 플립북을 갈아 끼운다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TD|Visual", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPaperFlipbookComponent> SpriteComponent;
+
+	/**
+	 * 어떤 애니메이션을 재생할지 정하는 상태 머신.
+	 *
+	 * AnimInstanceClass 와 RenderComponentRef 는 플러그인에서 private 이라
+	 * C++ 로 지정할 수 없다. **블루프린트에서 연결해야 한다** —
+	 * 직업별 교체는 나중에 SetAnimInstanceClass() 로 한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TD|Visual", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPaperZDAnimationComponent> AnimationComponent;
 };

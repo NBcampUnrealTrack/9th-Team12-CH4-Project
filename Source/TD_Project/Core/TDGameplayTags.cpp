@@ -69,6 +69,10 @@ namespace TDTags
 		"체력을 Value 만큼 회복한다.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_RestoreMana, "Item.Effect.RestoreMana",
 		"마나를 Value 만큼 회복한다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_GainExp, "Item.Effect.GainExp",
+		"경험치를 Value 만큼 얻는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_LevelUp, "Item.Effect.LevelUp",
+		"Value 레벨 미만이면 즉시 1레벨업, 그 이상이면 Value 레벨 한 구간만큼의 경험치만 얻는다.");
 
 
 	// ── 존(맵) ────────────────────────────────────────────

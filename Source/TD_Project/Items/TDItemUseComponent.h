@@ -118,14 +118,28 @@ private:
 	 */
 	void RefreshEquipmentModifiers();
 
-	/** 소비 효과 하나를 실제로 적용한다. 태그를 보고 무엇을 할지 정한다. */
-	void ApplyUseEffect(FGameplayTag EffectTag, float Value);
+	/**
+	 * 소비 효과 하나를 실제로 적용한다. 태그를 보고 무엇을 할지 정한다.
+	 *
+	 * @return 효과가 실제로 일어났으면 true. 풀피에서 회복 포션을 쓰는 경우처럼
+	 *         아무 일도 없었으면 false 이고, 그때는 아이템을 소모하지 않는다.
+	 */
+	bool ApplyUseEffect(FGameplayTag EffectTag, float Value);
 
 	const FTDItemRow* FindItemRow(FName ItemId) const;
 
 	UTDInventoryComponent* GetInventory() const;
 	UTDStatComponent* GetStatComponent() const;
 	UTDProgressionComponent* GetProgression() const;
+
+	/**
+	 * 이 컴포넌트의 주인이 조종하는 캐릭터.
+	 *
+	 * 회복은 PlayerState 가 아니라 월드의 캐릭터에게 적용해야 한다 —
+	 * ASC 는 PlayerState 에 있지만 죽고 사는 것은 아바타다.
+	 * 캐릭터를 고르기 전에는 Pawn 이 없으므로 nullptr 이 정상이다.
+	 */
+	AActor* GetOwnerCharacter() const;
 
 	bool HasAuthorityToModify() const;
 

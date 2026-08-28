@@ -11,6 +11,11 @@
 			"AdditionalDependencies": [
 				"UMG"
 			]
+		},
+		{
+			"Name": "TD_ProjectEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [
@@ -32,6 +37,10 @@
 		},
 		{
 			"Name": "CommonUI",
+			"Enabled": true
+		},
+		{
+			"Name": "AudioModulation",
 			"Enabled": true
 		}
 	]

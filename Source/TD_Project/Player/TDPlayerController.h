@@ -68,4 +68,17 @@ public:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveTestCharacters();
+
+	/**
+	 * 자기 캐릭터에게 고정 피해를 적용한다.
+	 *
+	 * ApplyRawDamage 는 서버 권한을 요구하므로 클라이언트 콘솔에서는 조용히 무시된다.
+	 * 2인 PIE 의 클라이언트 창에서도 회복·사망을 테스트할 수 있도록 통로를 연다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugDamage(float Amount);
+
+	/** 경험치를 지급한다. 레벨업 판정까지 서버에서 일어난다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugAddExp(int32 Amount);
 };

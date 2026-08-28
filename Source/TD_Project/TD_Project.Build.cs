@@ -23,7 +23,14 @@ public class TD_Project : ModuleRules
 			"Slate",
 			"SlateCore",
 			"Paper2D",
-			"PaperZD"
+			"PaperZD",
+
+			// 옵션의 볼륨 조절. Control Bus 에 값을 밀어넣는 데만 쓴다.
+			"AudioModulation",
+
+			// UTDAudioSettings 가 UDeveloperSettings 를 상속한다.
+			// 헤더가 보이는 것과 링크되는 것은 별개다(§11-A).
+			"DeveloperSettings"
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

@@ -38,11 +38,30 @@ void UTDTextBlock::SynchronizeProperties()
 	{
 		TGuardValue<bool> ApplyingGuard(bApplyingTypographyStyle, true);
 		SetStyle(ResolvedStyle);
-		return;
+	}
+	else
+	{
+		// Theme 또는 해당 Role이 비어 있으면 Common Text에 직접 지정한 Style을 유지한다.
+		Super::SynchronizeProperties();
 	}
 
-	// Theme 또는 해당 Role이 비어 있으면 Common Text에 직접 지정한 Style을 유지한다.
-	Super::SynchronizeProperties();
+	// 공통 Style 적용이 끝난 뒤 WBP 인스턴스의 예외값을 마지막에 덮어쓴다.
+	ApplyInstanceOverrides();
+}
+
+void UTDTextBlock::ApplyInstanceOverrides()
+{
+	if (bOverrideFontSize)
+	{
+		FSlateFontInfo FontInfo = GetFont();
+		FontInfo.Size = FontSizeOverride;
+		SetFont(FontInfo);
+	}
+
+	if (bOverrideColor)
+	{
+		SetColorAndOpacity(FSlateColor(ColorOverride));
+	}
 }
 
 UTDTypographyThemeDA* UTDTextBlock::ResolveTypographyTheme()

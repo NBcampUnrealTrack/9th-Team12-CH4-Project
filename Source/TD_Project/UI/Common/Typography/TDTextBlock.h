@@ -36,6 +36,26 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography", meta = (ExposeOnSpawn = "true"))
 	TObjectPtr<UTDTypographyThemeDA> TypographyThemeOverride;
 
+	/** Theme의 폰트 크기 대신 이 위젯만 별도 크기를 사용할지 여부. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography|Override",
+		meta = (InlineEditConditionToggle))
+	bool bOverrideFontSize = false;
+
+	/** bOverrideFontSize가 켜진 경우 적용할 폰트 크기. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography|Override",
+		meta = (EditCondition = "bOverrideFontSize", ClampMin = "1.0", UIMin = "1.0"))
+	float FontSizeOverride = 24.0f;
+
+	/** Theme의 색상 대신 이 위젯만 별도 색상을 사용할지 여부. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography|Override",
+		meta = (InlineEditConditionToggle))
+	bool bOverrideColor = false;
+
+	/** bOverrideColor가 켜진 경우 적용할 텍스트 색상. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography|Override",
+		meta = (EditCondition = "bOverrideColor"))
+	FLinearColor ColorOverride = FLinearColor::White;
+
 #if WITH_EDITOR
 	virtual const FText GetPaletteCategory() override;
 #endif
@@ -43,6 +63,7 @@ protected:
 private:
 	UTDTypographyThemeDA* ResolveTypographyTheme();
 	TSubclassOf<UCommonTextStyle> ResolveTextStyle();
+	void ApplyInstanceOverrides();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTDTypographyThemeDA> LoadedDefaultTheme;

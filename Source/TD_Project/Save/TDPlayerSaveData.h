@@ -134,6 +134,9 @@ struct FTDPlayerSaveData
 	 * 벽 안이나 허공에 떨어질 수 있다. 존의 시작 지점은 항상 안전한 자리다.
 	 *
 	 * 비어 있으면(신규 캐릭터) 기본 시작 존으로 보낸다.
+	 *
+	 * 런타임의 `ATDPlayerState::CurrentZoneId` 와 짝이다. 이름이 다른 것은 의도적이다 —
+	 * 저장 시점에서는 "마지막으로 있던 곳"이고, 접속하면 그 값이 곧 "지금 있는 곳"이 된다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	FGameplayTag LastZoneId;

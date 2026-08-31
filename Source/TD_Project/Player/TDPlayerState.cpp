@@ -76,6 +76,38 @@ void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	// 선택 여부는 소유자만 알면 되지만, 나중에 "선택 중" 상태를 남에게 보여줄 수 있으므로
 	// 조건을 걸지 않는다. bool 하나라 비용이 없다.
 	DOREPLIFETIME(ATDPlayerState, bCharacterSelected);
+
+	// 자기가 어느 존에 있는지만 알면 된다. 남의 존은 파티 UI 가 생길 때 조건을 푼다.
+	DOREPLIFETIME_CONDITION(ATDPlayerState, CurrentZoneId, COND_OwnerOnly);
+}
+
+// ── 존 ────────────────────────────────────────────────────
+
+bool ATDPlayerState::SetCurrentZoneId(FGameplayTag NewZoneId)
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SetCurrentZoneId 는 서버에서만 호출해야 한다."));
+		return false;
+	}
+
+	if (CurrentZoneId == NewZoneId)
+	{
+		return false;
+	}
+
+	CurrentZoneId = NewZoneId;
+
+	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
+	OnZoneChanged.Broadcast(CurrentZoneId);
+	ForceNetUpdate();
+
+	return true;
+}
+
+void ATDPlayerState::OnRep_CurrentZoneId()
+{
+	OnZoneChanged.Broadcast(CurrentZoneId);
 }
 
 void ATDPlayerState::SetCharacterClassId(FName NewClassId)

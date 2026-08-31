@@ -5,6 +5,7 @@
 #include "Character/TDCharacterBase.h"
 #include "Combat/TDCombatStatics.h"
 #include "Core/TDGameInstance.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
 #include "Player/TDPlayerState.h"
@@ -175,5 +176,23 @@ void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
 			ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
 			TargetCharacter->IsDead() ? TEXT(" [사망]") : TEXT(""));
 	}
+#endif
+}
+
+void ATDPlayerController::ServerDebugTravelToZone_Implementation(FGameplayTag TargetZoneId, FName EntryName)
+{
+#if !UE_BUILD_SHIPPING
+	ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
+	if (GameMode == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[치트] GameMode 를 찾지 못했다."));
+		return;
+	}
+
+	// 거부 사유는 RequestZoneTravel 이 직접 로그로 남긴다. 여기서는 결과만 요약한다.
+	const bool bMoved = GameMode->RequestZoneTravel(this, TargetZoneId, EntryName);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 존 이동 %s — '%s'"),
+		bMoved ? TEXT("성공") : TEXT("거부됨"), *TargetZoneId.ToString());
 #endif
 }

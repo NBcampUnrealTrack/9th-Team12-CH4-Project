@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
 #include "TDPlayerController.generated.h"
 
 /**
@@ -81,4 +82,12 @@ public:
 	/** 경험치를 지급한다. 레벨업 판정까지 서버에서 일어난다. */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugAddExp(int32 Amount);
+
+	/**
+	 * 지정한 존으로 이동한다. 포탈이 없어도 존 이동을 검증할 수 있게 여는 통로다.
+	 *
+	 * 치트지만 **레벨 제한을 우회하지 않는다** — 서버 판정 자체를 테스트해야 하기 때문이다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugTravelToZone(FGameplayTag TargetZoneId, FName EntryName);
 };

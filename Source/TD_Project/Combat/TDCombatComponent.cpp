@@ -22,6 +22,30 @@ void UTDCombatComponent::ServerRequestAttack_Implementation()
 
 	LastAttackTime = GetWorld()->GetTimeSeconds();
 
+	// 모션은 즉시 시작하고, 판정은 휘두르는 순간까지 미룬다.
+	MulticastOnAttack();
+
+	if (HitDelay <= 0.f)
+	{
+		PerformHit();
+		return;
+	}
+
+	GetWorld()->GetTimerManager().SetTimer(
+		HitTimerHandle, this, &UTDCombatComponent::PerformHit, HitDelay, false);
+	
+}
+
+void UTDCombatComponent::PerformHit()
+{
+	ATDCharacterBase* Owner = Cast<ATDCharacterBase>(GetOwner());
+
+	// 휘두르는 도중에 죽었으면 스윙은 무효다.
+	if (Owner == nullptr || Owner->IsDead())
+	{
+		return;
+	}
+
 	for (AActor* Target : GatherTargets())
 	{
 		const FTDDamageResult Result = UTDCombatStatics::ApplyDamage(
@@ -29,10 +53,14 @@ void UTDCombatComponent::ServerRequestAttack_Implementation()
 
 		if (Result.FinalDamage > 0.f)
 		{
-			// 서버가 판정한 결과를 전원에게 방송 → 각 머신의 OnHit 구독자가 연출을 처리한다.
 			MulticastOnHit(Target, Result.FinalDamage, Result.bCritical);
 		}
 	}
+}
+
+void UTDCombatComponent::MulticastOnAttack_Implementation()
+{
+	OnAttackStarted.Broadcast();
 }
 
 bool UTDCombatComponent::CanAttack() const

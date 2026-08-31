@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDCharacterBase.h"
+#include "Character/TDEnemyBase.h" 
 #include "Core/TDGameplayTags.h"
 #include "GameplayEffect.h"
 #include "Stats/TDStatComponent.h"
@@ -59,6 +60,16 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 
 	ApplyRawDamage(Target, Result.FinalDamage);
 
+	// 이 타격으로 죽었다면 보상은 때린 쪽 몫이다. 죽는 순간의 공격자가 곧 킬러이므로
+	// "마지막 타격자"를 따로 저장·복제할 필요가 없다.
+	if (TargetChar->IsDead())
+	{
+		if (ATDEnemyBase* DeadEnemy = Cast<ATDEnemyBase>(TargetChar))
+		{
+			DeadEnemy->GrantRewards(AttackerChar);
+		}
+	}
+	
 	return Result;
 }
 

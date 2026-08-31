@@ -15,6 +15,8 @@ class UTDButtonStyleDA;
 class UTextBlock;
 class UWidget;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWindowFrameCloseRequested);
+
 /**
  * 
  */
@@ -24,15 +26,17 @@ class TD_PROJECT_API UTDWindowFrameWidget : public UUserWidget
 	GENERATED_BODY()
 	
 public:
+	/** 바깥 Window가 닫기 동작을 직접 처리할 때 사용하는 이벤트다. */
+	UPROPERTY(BlueprintAssignable, Category = "Window Frame")
+	FWindowFrameCloseRequested OnCloseRequested;
+
 	UFUNCTION(BlueprintCallable)
 	void SetTitle(const FText& Title);
 	UFUNCTION(BlueprintCallable)
 	void CloseWindow();
+	UFUNCTION(BlueprintCallable, Category = "Window Frame|Dragging")
+	void SetDraggingEnabled(bool bEnabled);
 
-	/**
-	 * Sets the widget whose Canvas Panel slot is moved while dragging the title bar.
-	 * If unset, the frame automatically finds its outer window and the nearest Canvas Panel slot.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "Window Frame|Dragging")
 	void SetDragTarget(UWidget* InDragTarget);
 	
@@ -55,11 +59,8 @@ protected:
 	TObjectPtr<UTextBlock> TitleText;
 	UPROPERTY(BlueprintReadOnly,meta = (BindWidget))
 	TObjectPtr<UButton> CloseButton;
-
-	/** Transparent Border covering only the title bar. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> DragHandle;
-	
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UNamedSlot> ContentArea;
 

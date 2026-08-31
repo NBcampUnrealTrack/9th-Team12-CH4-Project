@@ -135,6 +135,16 @@ void UTDWindowFrameWidget::SetDragTarget(UWidget* InDragTarget)
 	DragTargetOverride = InDragTarget;
 }
 
+void UTDWindowFrameWidget::SetDraggingEnabled(bool bEnabled)
+{
+	bEnableDragging = bEnabled;
+
+	if (!bEnableDragging)
+	{
+		EndWindowDrag();
+	}
+}
+
 void UTDWindowFrameWidget::CloseWindow()
 {
 	RemoveFromParent();
@@ -142,6 +152,14 @@ void UTDWindowFrameWidget::CloseWindow()
 
 void UTDWindowFrameWidget::HandleCloseClicked()
 {
+	// WindowBase가 연결되어 있으면 바깥 창이 닫기 동작을 처리한다.
+	if (OnCloseRequested.IsBound())
+	{
+		OnCloseRequested.Broadcast();
+		return;
+	}
+
+	// 프레임을 단독으로 사용하는 기존 WBP는 이전 동작을 유지한다.
 	CloseWindow();
 }
 

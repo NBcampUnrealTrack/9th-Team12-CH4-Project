@@ -12,7 +12,7 @@
 void UTDUIManagerSubsystem::Deinitialize()
 {
 	ClearWindowRegistry();
-	SavedWindowPositions.Empty();
+	SavedWindowPlacements.Empty();
 	RootWidget.Reset();
 
 	Super::Deinitialize();
@@ -176,7 +176,16 @@ void UTDUIManagerSubsystem::SaveWindowPosition(
 	{
 		if (const UCanvasPanelSlot* WindowSlot = Cast<UCanvasPanelSlot>(Window->Slot))
 		{
-			SavedWindowPositions.Add(MenuType, WindowSlot->GetPosition());
+			const FAnchors Anchors = WindowSlot->GetAnchors();
+
+			FWindowPlacement Placement;
+			Placement.AnchorMinimum = Anchors.Minimum;
+			Placement.AnchorMaximum = Anchors.Maximum;
+			Placement.Alignment = WindowSlot->GetAlignment();
+			Placement.Position = WindowSlot->GetPosition();
+			Placement.Size = WindowSlot->GetSize();
+			Placement.bAutoSize = WindowSlot->GetAutoSize();
+			SavedWindowPlacements.Add(MenuType, Placement);
 		}
 	}
 }
@@ -185,12 +194,23 @@ void UTDUIManagerSubsystem::RestoreWindowPosition(
 	ETDNavMenuType MenuType,
 	UTDWindowBaseWidget* Window) const
 {
-	const FVector2D* SavedPosition = SavedWindowPositions.Find(MenuType);
-	if (SavedPosition && IsValid(Window))
+	const FWindowPlacement* Placement = SavedWindowPlacements.Find(MenuType);
+	if (Placement && IsValid(Window))
 	{
 		if (UCanvasPanelSlot* WindowSlot = Cast<UCanvasPanelSlot>(Window->Slot))
 		{
-			WindowSlot->SetPosition(*SavedPosition);
+			FAnchors RestoredAnchors;
+			RestoredAnchors.Minimum = Placement->AnchorMinimum;
+			RestoredAnchors.Maximum = Placement->AnchorMaximum;
+			WindowSlot->SetAnchors(RestoredAnchors);
+			WindowSlot->SetAlignment(Placement->Alignment);
+			WindowSlot->SetAutoSize(Placement->bAutoSize);
+			WindowSlot->SetPosition(Placement->Position);
+
+			if (!Placement->bAutoSize)
+			{
+				WindowSlot->SetSize(Placement->Size);
+			}
 		}
 	}
 }

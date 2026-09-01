@@ -39,10 +39,20 @@ public:
 	FTDOnMenuWindowStateChanged OnMenuWindowStateChanged;
 
 private:
+	struct FWindowPlacement
+	{
+		FVector2D AnchorMinimum = FVector2D::ZeroVector;
+		FVector2D AnchorMaximum = FVector2D::ZeroVector;
+		FVector2D Alignment = FVector2D::ZeroVector;
+		FVector2D Position = FVector2D::ZeroVector;
+		FVector2D Size = FVector2D::ZeroVector;
+		bool bAutoSize = false;
+	};
+
 	TWeakObjectPtr<UTDUIRootWidget> RootWidget;
 	TMap<ETDNavMenuType, TWeakObjectPtr<UTDWindowBaseWidget>> OpenWindows;
 	TMap<ETDNavMenuType, TWeakObjectPtr<UTDWindowBaseWidget>> PrecreatedWindows;
-	TMap<ETDNavMenuType, FVector2D> SavedWindowPositions;
+	TMap<ETDNavMenuType, FWindowPlacement> SavedWindowPlacements;
 
 	void ToggleWindow(ETDNavMenuType MenuType);
 	TSubclassOf<UTDWindowBaseWidget> ResolveWindowClass(ETDNavMenuType MenuType);

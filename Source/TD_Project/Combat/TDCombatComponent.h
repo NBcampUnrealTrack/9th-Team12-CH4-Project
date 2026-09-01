@@ -4,8 +4,13 @@
 #include "Components/ActorComponent.h"
 #include "TDCombatComponent.generated.h"
 
-/** 피격 발생. 데미지 텍스트(김선우)·히트 VFX(김희진)가 구독하는 공식 접점. 전 머신에서 불린다. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FTDOnHit, AActor*, Target, float, Damage, bool, bCritical);
+/** 피격 발생. 데미지 텍스트(김선우)·히트 VFX(김희진)가 구독하는 공식 접점. 전 머신에서 불린다.
+ *  HitLocation: 공격자 쪽에서 대상 콜리전에 닿는 지점. 몸 중심이 필요하면 Target 에서 구한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnHit, AActor*, Target, float, Damage, bool, 
+	bCritical, FVector, HitLocation);
+/** 공격 모션 시작. 애니메이션·사운드가 구독한다. 전 머신에서 불린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnAttackStarted);
+
 
 /**
  * 공격 행위를 담당하는 컴포넌트. 쿨타임·히트박스 판정·데미지 호출.
@@ -30,6 +35,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnHit OnHit;
 
+	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
+	FTDOnAttackStarted OnAttackStarted;
+	
 protected:
 	/** 기본 쿨타임(초). 쿨다운회복률 스탯으로 나눠져 실제 쿨타임이 된다. 추후 직업·스킬 테이블로 이관. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0.1"))
@@ -47,9 +55,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat")
 	bool bDrawDebugHitBox = true;
 
+	/** 공격 시작부터 실제 타격 판정까지의 지연(초). 애니메이션의 "휘두르는 순간"에 맞춘다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0"))
+	float HitDelay = 0.4f;
+	
+	/** 공격 시작 방송. 각 머신에서 OnAttackStarted 를 발화시킨다. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastOnAttack();
+
+	/** 지연이 끝난 뒤 실제 판정. 서버 전용. */
+	void PerformHit();
+	
 	/** "맞았다" 방송. 서버가 판정하고 전원이 OnHit 델리게이트로 전달받는다. */
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastOnHit(AActor* Target, float Damage, bool bCritical);
+	void MulticastOnHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation);
 
 	bool CanAttack() const;
 
@@ -59,4 +78,6 @@ protected:
 private:
 	/** 마지막 공격 시각(서버 월드시간). 복제하지 않는다 — 판정은 서버만 하므로. */
 	float LastAttackTime = -1000.f;
+	
+	FTimerHandle HitTimerHandle;
 };

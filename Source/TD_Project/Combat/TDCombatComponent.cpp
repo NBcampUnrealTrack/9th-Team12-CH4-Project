@@ -22,6 +22,30 @@ void UTDCombatComponent::ServerRequestAttack_Implementation()
 
 	LastAttackTime = GetWorld()->GetTimeSeconds();
 
+	// 모션은 즉시 시작하고, 판정은 휘두르는 순간까지 미룬다.
+	MulticastOnAttack();
+
+	if (HitDelay <= 0.f)
+	{
+		PerformHit();
+		return;
+	}
+
+	GetWorld()->GetTimerManager().SetTimer(
+		HitTimerHandle, this, &UTDCombatComponent::PerformHit, HitDelay, false);
+	
+}
+
+void UTDCombatComponent::PerformHit()
+{
+	ATDCharacterBase* Owner = Cast<ATDCharacterBase>(GetOwner());
+
+	// 휘두르는 도중에 죽었으면 스윙은 무효다.
+	if (Owner == nullptr || Owner->IsDead())
+	{
+		return;
+	}
+
 	for (AActor* Target : GatherTargets())
 	{
 		const FTDDamageResult Result = UTDCombatStatics::ApplyDamage(
@@ -29,10 +53,27 @@ void UTDCombatComponent::ServerRequestAttack_Implementation()
 
 		if (Result.FinalDamage > 0.f)
 		{
-			// 서버가 판정한 결과를 전원에게 방송 → 각 머신의 OnHit 구독자가 연출을 처리한다.
-			MulticastOnHit(Target, Result.FinalDamage, Result.bCritical);
+			// 접촉점 근사치: 공격자에서 가장 가까운 대상 콜리전 표면의 점.
+			// 순간 질의라 진짜 충돌점은 없지만, 칼이 닿았을 법한 위치로는 충분하다.
+			FVector HitLocation = Target->GetActorLocation();   // 실패 시 폴백 = 몸 중심
+
+			if (UPrimitiveComponent* TargetRoot = Cast<UPrimitiveComponent>(Target->GetRootComponent()))
+			{
+				FVector ClosestPoint;
+				if (TargetRoot->GetClosestPointOnCollision(Owner->GetActorLocation(), ClosestPoint) >= 0.f)
+				{
+					HitLocation = ClosestPoint;
+				}
+			}
+
+			MulticastOnHit(Target, Result.FinalDamage, Result.bCritical, HitLocation);
 		}
 	}
+}
+
+void UTDCombatComponent::MulticastOnAttack_Implementation()
+{
+	OnAttackStarted.Broadcast();
 }
 
 bool UTDCombatComponent::CanAttack() const
@@ -104,7 +145,7 @@ TArray<AActor*> UTDCombatComponent::GatherTargets() const
 	return Targets;
 }
 
-void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical)
+void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
 {
-	OnHit.Broadcast(Target, Damage, bCritical);
+	OnHit.Broadcast(Target, Damage, bCritical, HitLocation);
 }

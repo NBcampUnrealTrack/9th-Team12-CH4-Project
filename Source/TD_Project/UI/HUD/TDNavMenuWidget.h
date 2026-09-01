@@ -20,6 +20,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Navigation")
 	FTDOnNavMenuRequested OnMenuRequested;
 
+	/** 실제 WindowLayer의 열림 상태에 맞춰 Nav 선택 표시를 갱신한다. */
+	UFUNCTION(BlueprintCallable, Category = "Navigation")
+	void SetMenuSelected(ETDNavMenuType MenuType, bool bSelected);
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;

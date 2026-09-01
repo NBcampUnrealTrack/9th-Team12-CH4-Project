@@ -1,6 +1,6 @@
-#include "TDInventoryWidget.h"
+#include "TDInventoryContentWidget.h"
 
-#include "TDInventorySlotData.h"
+#include "TDInventorySlotListItem.h"
 #include "Components/TileView.h"
 #include "Data/TDItemRow.h"
 #include "Engine/DataTable.h"
@@ -9,15 +9,15 @@
 #include "Items/TDInventoryComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
-UTDInventoryWidget::UTDInventoryWidget(const FObjectInitializer& ObjectInitializer)
+UTDInventoryContentWidget::UTDInventoryContentWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	static ConstructorHelpers::FObjectFinder<UDataTable> ItemTableFinder(
 		TEXT("/Game/Data/DataTables/Item/DT_ItemDefinition.DT_ItemDefinition"));
-	VirtualItemTable = ItemTableFinder.Object;
+	PreviewItemTable = ItemTableFinder.Object;
 }
 
-void UTDInventoryWidget::NativePreConstruct()
+void UTDInventoryContentWidget::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 
@@ -28,14 +28,14 @@ void UTDInventoryWidget::NativePreConstruct()
 			BuildInventoryFromTable(InventoryOverrideTable);
 			BP_OnInventoryRefreshed();
 		}
-		else if (bUseVirtualInventory)
+		else if (bUsePreviewInventory)
 		{
-			BuildVirtualInventory();
+			BuildPreviewInventory();
 		}
 	}
 }
 
-void UTDInventoryWidget::NativeConstruct()
+void UTDInventoryContentWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
@@ -43,7 +43,7 @@ void UTDInventoryWidget::NativeConstruct()
 	RefreshInventory();
 }
 
-void UTDInventoryWidget::NativeDestruct()
+void UTDInventoryContentWidget::NativeDestruct()
 {
 	if (IsValid(InventoryComponent))
 	{
@@ -51,12 +51,12 @@ void UTDInventoryWidget::NativeDestruct()
 	}
 
 	InventoryComponent = nullptr;
-	SlotItems.Reset();
+	SlotListItems.Reset();
 
 	Super::NativeDestruct();
 }
 
-void UTDInventoryWidget::BindInventoryComponent()
+void UTDInventoryContentWidget::BindInventoryComponent()
 {
 	UTDInventoryComponent* NewInventory = nullptr;
 	if (const APlayerController* PlayerController = GetOwningPlayer())
@@ -84,7 +84,7 @@ void UTDInventoryWidget::BindInventoryComponent()
 	}
 }
 
-void UTDInventoryWidget::SetInventoryOverrideTable(UDataTable* InTable)
+void UTDInventoryContentWidget::SetInventoryOverrideTable(UDataTable* InTable)
 {
 	if (InventoryOverrideTable == InTable)
 	{
@@ -95,7 +95,7 @@ void UTDInventoryWidget::SetInventoryOverrideTable(UDataTable* InTable)
 	RefreshInventory();
 }
 
-void UTDInventoryWidget::RefreshInventory()
+void UTDInventoryContentWidget::RefreshInventory()
 {
 	// WBP에서 테스트 테이블을 지정한 경우에만 실제 플레이어 인벤토리를 대체한다.
 	if (IsValid(InventoryOverrideTable))
@@ -110,7 +110,7 @@ void UTDInventoryWidget::RefreshInventory()
 		BindInventoryComponent();
 	}
 
-	SlotItems.Reset();
+	SlotListItems.Reset();
 
 	if (!IsValid(InventoryComponent) || !IsValid(InventoryTileView))
 	{
@@ -123,7 +123,7 @@ void UTDInventoryWidget::RefreshInventory()
 	}
 
 	const int32 Capacity = InventoryComponent->GetSlotCapacity();
-	SlotItems.Reserve(Capacity);
+	SlotListItems.Reserve(Capacity);
 
 	TMap<int32, const FTDItemInstance*> ItemsBySlot;
 	ItemsBySlot.Reserve(InventoryComponent->GetUsedSlotCount());
@@ -139,97 +139,97 @@ void UTDInventoryWidget::RefreshInventory()
 	ListItems.Reserve(Capacity);
 	for (int32 SlotIndex = 0; SlotIndex < Capacity; ++SlotIndex)
 	{
-		UTDInventorySlotData* SlotData = NewObject<UTDInventorySlotData>(this);
-		SlotData->SlotIndex = SlotIndex;
+		UTDInventorySlotListItem* SlotListItem = NewObject<UTDInventorySlotListItem>(this);
+		SlotListItem->SlotIndex = SlotIndex;
 
 		if (const FTDItemInstance* const* FoundItem = ItemsBySlot.Find(SlotIndex))
 		{
-			SlotData->bHasItem = true;
-			SlotData->ItemInstance = **FoundItem;
+			SlotListItem->bHasItem = true;
+			SlotListItem->ItemInstance = **FoundItem;
 
 			if (const FTDItemRow* Definition = InventoryComponent->FindItemDefinition((*FoundItem)->ItemId))
 			{
-				SlotData->DisplayName = Definition->DisplayName;
-				SlotData->Icon = Definition->Icon;
-				SlotData->Rarity = Definition->Rarity;
-				SlotData->ItemType = Definition->ItemType;
-				SlotData->RequiredLevel = Definition->RequiredLevel;
+				SlotListItem->DisplayName = Definition->DisplayName;
+				SlotListItem->Icon = Definition->Icon;
+				SlotListItem->Rarity = Definition->Rarity;
+				SlotListItem->ItemType = Definition->ItemType;
+				SlotListItem->RequiredLevel = Definition->RequiredLevel;
 			}
 		}
 
-		SlotItems.Add(SlotData);
-		ListItems.Add(SlotData);
+		SlotListItems.Add(SlotListItem);
+		ListItems.Add(SlotListItem);
 	}
 
 	InventoryTileView->SetListItems(ListItems);
 	BP_OnInventoryRefreshed();
 }
 
-void UTDInventoryWidget::HandleInventoryChanged()
+void UTDInventoryContentWidget::HandleInventoryChanged()
 {
 	RefreshInventory();
 }
 
-void UTDInventoryWidget::BuildVirtualInventory()
+void UTDInventoryContentWidget::BuildPreviewInventory()
 {
-	BuildInventoryFromTable(VirtualItemTable);
+	BuildInventoryFromTable(PreviewItemTable);
 	BP_OnInventoryRefreshed();
 }
 
-void UTDInventoryWidget::BuildInventoryFromTable(UDataTable* SourceTable)
+void UTDInventoryContentWidget::BuildInventoryFromTable(UDataTable* SourceTable)
 {
 	if (!IsValid(InventoryTileView) || !IsValid(SourceTable))
 	{
 		return;
 	}
 
-	SlotItems.Reset();
+	SlotListItems.Reset();
 
 	TArray<FName> ItemIds = SourceTable->GetRowNames();
 	ItemIds.Sort(FNameLexicalLess());
 
 	const int32 Capacity = FMath::Clamp(
-		FMath::Max(VirtualSlotCapacity, ItemIds.Num()),
+		FMath::Max(PreviewSlotCapacity, ItemIds.Num()),
 		1,
 		UTDInventoryComponent::MaxSlotCapacity);
 
 	TArray<UObject*> ListItems;
 	ListItems.Reserve(Capacity);
-	SlotItems.Reserve(Capacity);
+	SlotListItems.Reserve(Capacity);
 
 	for (int32 SlotIndex = 0; SlotIndex < Capacity; ++SlotIndex)
 	{
-		UTDInventorySlotData* SlotData = NewObject<UTDInventorySlotData>(this);
-		SlotData->SlotIndex = SlotIndex;
+		UTDInventorySlotListItem* SlotListItem = NewObject<UTDInventorySlotListItem>(this);
+		SlotListItem->SlotIndex = SlotIndex;
 
 		if (ItemIds.IsValidIndex(SlotIndex))
 		{
 			const FName ItemId = ItemIds[SlotIndex];
 			const FTDItemRow* Definition = SourceTable->FindRow<FTDItemRow>(
-				ItemId, TEXT("UTDInventoryWidget::BuildInventoryFromTable"), false);
+				ItemId, TEXT("UTDInventoryContentWidget::BuildInventoryFromTable"), false);
 
-			SlotData->bHasItem = true;
-			SlotData->ItemInstance.ItemId = ItemId;
-			SlotData->ItemInstance.SlotIndex = SlotIndex;
-			SlotData->ItemInstance.Count = Definition && Definition->bStackable
+			SlotListItem->bHasItem = true;
+			SlotListItem->ItemInstance.ItemId = ItemId;
+			SlotListItem->ItemInstance.SlotIndex = SlotIndex;
+			SlotListItem->ItemInstance.Count = Definition && Definition->bStackable
 				? FMath::Max(1, Definition->MaxStackSize)
 				: 1;
 
 			if (Definition)
 			{
-				SlotData->DisplayName = Definition->DisplayName;
+				SlotListItem->DisplayName = Definition->DisplayName;
 				// 테스트 테이블은 최대 200행으로 제한되어 있다. 디자이너와 PIE 모두 같은 결과를
 				// 보도록 아이콘을 미리 로드한다. 실제 인벤토리는 기존 비동기 경로를 유지한다.
 				Definition->Icon.LoadSynchronous();
-				SlotData->Icon = Definition->Icon;
-				SlotData->Rarity = Definition->Rarity;
-				SlotData->ItemType = Definition->ItemType;
-				SlotData->RequiredLevel = Definition->RequiredLevel;
+				SlotListItem->Icon = Definition->Icon;
+				SlotListItem->Rarity = Definition->Rarity;
+				SlotListItem->ItemType = Definition->ItemType;
+				SlotListItem->RequiredLevel = Definition->RequiredLevel;
 			}
 		}
 
-		SlotItems.Add(SlotData);
-		ListItems.Add(SlotData);
+		SlotListItems.Add(SlotListItem);
+		ListItems.Add(SlotListItem);
 	}
 
 	InventoryTileView->SetListItems(ListItems);

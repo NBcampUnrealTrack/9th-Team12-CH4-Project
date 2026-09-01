@@ -20,7 +20,7 @@ void UTDNavMenuWidget::NativeConstruct()
 		Entry->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleEntryClicked);
 	}
 
-	SelectEntry(InventoryEntry);
+	SelectEntry(nullptr);
 }
 
 void UTDNavMenuWidget::NativeDestruct()
@@ -62,11 +62,6 @@ void UTDNavMenuWidget::InitializeNavEntries()
 
 void UTDNavMenuWidget::SelectEntry(UTDNavMenuButtonWidget* NewSelectedEntry)
 {
-	if (!NewSelectedEntry)
-	{
-		return;
-	}
-
 	SelectedEntry = NewSelectedEntry;
 
 	for (UTDNavMenuButtonWidget* Entry : NavEntries)
@@ -75,11 +70,59 @@ void UTDNavMenuWidget::SelectEntry(UTDNavMenuButtonWidget* NewSelectedEntry)
 	}
 }
 
+void UTDNavMenuWidget::SetMenuSelected(
+	ETDNavMenuType MenuType,
+	bool bSelected)
+{
+	UTDNavMenuButtonWidget* TargetEntry = nullptr;
+	switch (MenuType)
+	{
+	case ETDNavMenuType::Inventory:
+		TargetEntry = InventoryEntry;
+		break;
+	case ETDNavMenuType::Quest:
+		TargetEntry = QuestEntry;
+		break;
+	case ETDNavMenuType::Character:
+		TargetEntry = CharacterEntry;
+		break;
+	case ETDNavMenuType::Skill:
+		TargetEntry = SkillEntry;
+		break;
+	case ETDNavMenuType::Party:
+		TargetEntry = PartyEntry;
+		break;
+	case ETDNavMenuType::System:
+		TargetEntry = SystemEntry;
+		break;
+	default:
+		break;
+	}
+
+	if (!TargetEntry)
+	{
+		return;
+	}
+
+	if (bSelected)
+	{
+		SelectEntry(TargetEntry);
+	}
+	else if (SelectedEntry == TargetEntry)
+	{
+		SelectEntry(nullptr);
+	}
+	else
+	{
+		TargetEntry->SetSelected(false);
+	}
+}
+
 void UTDNavMenuWidget::HandleEntryClicked(
 	UTDNavMenuButtonWidget* ButtonWidget,
 	ETDNavMenuType MenuType
 )
 {
-	SelectEntry(ButtonWidget);
+	(void)ButtonWidget;
 	OnMenuRequested.Broadcast(MenuType);
 }

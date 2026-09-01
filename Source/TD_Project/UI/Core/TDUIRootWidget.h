@@ -10,6 +10,7 @@ class UCanvasPanel;
 class UOverlay;
 class UVerticalBox;
 class UCommonActivatableWidgetStack;
+class UTDWindowBaseWidget;
 
 /**
  * 
@@ -21,6 +22,9 @@ class TD_PROJECT_API UTDUIRootWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
 	UCommonActivatableWidgetStack* GetScreenStack() const
 	{
 		return ScreenStack;
@@ -46,6 +50,10 @@ public:
 	}
 
 	void SetLoadingVisible(bool bVisible);
+
+	/** WindowLayer에 창을 가운데 정렬하여 추가한다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|UI")
+	bool AddWindow(UTDWindowBaseWidget* WindowWidget);
 
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))

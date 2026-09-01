@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/PlayerController.h"
+#include "Player/TDPlayerController.h"
 #include "TDUITestPlayerController.generated.h"
 
 class UUserWidget;
 
 /** Play 시 인벤토리 UI를 바로 띄우기 위한 임시 PlayerController. */
 UCLASS()
-class TD_PROJECT_API ATDUITestPlayerController : public APlayerController
+class TD_PROJECT_API ATDUITestPlayerController : public ATDPlayerController
 {
 	GENERATED_BODY()
 

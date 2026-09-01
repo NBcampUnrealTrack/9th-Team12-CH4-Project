@@ -6,7 +6,7 @@
 ATDUITestPlayerController::ATDUITestPlayerController()
 {
 	static ConstructorHelpers::FClassFinder<UUserWidget> StartupWidgetFinder(
-		TEXT("/Game/UI/WBP_HUD"));
+		TEXT("/Game/UI/WBP_Root"));
 
 	if (StartupWidgetFinder.Succeeded())
 	{

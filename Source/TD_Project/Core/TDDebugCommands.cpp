@@ -428,6 +428,51 @@ namespace TDDebugCommands
 		});
 	}
 
+	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Zone <존태그> [진입점]   예) TD.Zone Zone.Region1.Field02 West"));
+			return;
+		}
+
+		const FName EntryName = Args.IsValidIndex(1) ? FName(*Args[1]) : NAME_None;
+
+		// 태그가 등록돼 있지 않으면 여기서 걸러낸다. 서버까지 보내면 "테이블에 없다"는
+		// 엉뚱한 사유가 찍혀 오타인지 데이터 누락인지 구분되지 않는다.
+		const FGameplayTag ZoneTag =
+			FGameplayTag::RequestGameplayTag(FName(*Args[0]), /*ErrorIfNotFound=*/ false);
+
+		if (!ZoneTag.IsValid())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("'%s' 는 등록된 게임플레이 태그가 아니다. 오타이거나 태그가 없다."), *Args[0]);
+			return;
+		}
+
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			// 서버(또는 단일 PIE)에서는 로컬 컨트롤러를 직접 쓴다.
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Zone: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		Controller->ServerDebugTravelToZone(ZoneTag, EntryName);
+		UE_LOG(LogTDDebug, Log,
+			TEXT("서버에 '%s'%s 로 이동을 요청했다. (레벨 제한은 우회하지 않는다 / 결과는 서버 로그에)"),
+			*ZoneTag.ToString(),
+			EntryName.IsNone() ? TEXT("") : *FString::Printf(TEXT(" (진입점 %s)"), *EntryName.ToString()));
+	}
+
 	static void AddExp(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -734,6 +779,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
 	TEXT("TD.AddExp"),
 	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDZone(
+	TEXT("TD.Zone"),
+	TEXT("지정한 존으로 이동한다(레벨 제한은 그대로 적용). 사용법: TD.Zone <존태그>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::TravelToZone));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSetClass(
 	TEXT("TD.SetClass"),

@@ -30,6 +30,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterSelected);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnStatsReplicated);
 
 /**
+ * 이 플레이어가 있는 존이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다.
+ *
+ * 구독자는 각자 DT_ZoneEnvironment 에서 자기가 필요한 것만 읽어간다 —
+ * 사운드는 BGM 만, 아트는 라이팅만 본다. PlayerState 가 읽어서 나눠주지 않는다.
+ * 그러면 항목이 늘 때마다 여기를 고쳐야 한다(D69).
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnPlayerZoneChanged, FGameplayTag, NewZoneId);
+
+/**
  * 플레이어의 스탯 컴포넌트가 실제로 붙는 곳.
  *
  * Pawn 이 아니라 여기에 두는 이유는 수명이다. 사망하면 Pawn 은 파괴되지만
@@ -122,7 +131,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Character")
 	FTDOnCharacterClassChanged OnCharacterClassChanged;
 
-	// ── 캐릭터 선택 (D51~D58) ─────────────────────────────
+	// ── 캐릭터 선택─────────────────────────────
 
 	/**
 	 * 이 계정이 보유한 캐릭터 목록. 선택 화면이 읽는다.
@@ -164,8 +173,24 @@ public:
 	/** 서버 전용. 디버그 명령과 세이브 로드가 함께 쓴다. @return 실제로 선택됐으면 true. */
 	bool SelectCharacter(int32 SlotIndex);
 
-	/** 마지막으로 있던 존. 스폰 위치를 정하는 데 쓴다(D51). 비어 있으면 기본 시작 존. */
-	FGameplayTag GetLastZoneId() const { return LastZoneId; }
+	// ── 존 ────────────────────────────────────────────────
+
+	/**
+	 * 지금 있는 존. 접속 직후에는 세이브에서 읽은 "마지막으로 있던 존"이며,
+	 * 그 값이 그대로 스폰 위치를 정하는 데 쓰인다.
+	 *
+	 * GameState 가 아니라 여기 있는 이유는 **플레이어마다 다른 존에 있기 때문**이다.
+	 * 좌표 텔레포트를 고른 이유가 그것이므로, 월드에 하나뿐인 값으로는 표현할 수 없다.
+	 * GameState.ZoneId 는 낮과 밤처럼 월드 전체에 하나인 것만 담는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|World")
+	FGameplayTag GetCurrentZoneId() const { return CurrentZoneId; }
+
+	/** 서버 전용. 텔레포트가 끝난 뒤에 부른다. @return 실제로 바뀌었으면 true. */
+	bool SetCurrentZoneId(FGameplayTag NewZoneId);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|World")
+	FTDOnPlayerZoneChanged OnZoneChanged;
 
 protected:
 	virtual void BeginPlay() override;
@@ -233,8 +258,15 @@ private:
 	/** 고른 슬롯 번호. 세이브를 다시 쓸 때 어느 캐릭터인지 알아야 하므로 서버가 들고 있는다. */
 	int32 SelectedSlotIndex = INDEX_NONE;
 
-	/** 세이브에서 읽어온 마지막 존. 스폰 지점 결정에만 쓰이므로 복제하지 않는다. */
-	FGameplayTag LastZoneId;
+	UFUNCTION()
+	void OnRep_CurrentZoneId();
+
+	/**
+	 * 지금 있는 존. 소유자만 알면 되므로 COND_OwnerOnly 다 —
+	 * 남이 어느 존에 있는지는 파티 UI 가 생기기 전까지 필요 없다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentZoneId)
+	FGameplayTag CurrentZoneId;
 
 	/** GAS 의 중심. 어빌리티·이펙트·어트리뷰트가 전부 여기를 거친다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Abilities")

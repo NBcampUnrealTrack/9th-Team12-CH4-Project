@@ -8,6 +8,34 @@
 struct FTDZoneEnvironmentRow;
 
 /**
+ * 존 이동 요청의 결과. 실패 사유를 클라이언트에 돌려주기 위한 값이다.
+ *
+ * FText 메시지가 아니라 enum 인 이유는 **문구를 UI 가 정해야** 하기 때문이다.
+ * 서버가 "24레벨부터 입장 가능합니다" 를 문자열로 만들어 보내면 현지화도 못 하고
+ * 화면 디자인이 서버 코드에 묶인다.
+ */
+UENUM(BlueprintType)
+enum class ETDZoneTravelResult : uint8
+{
+	Success			UMETA(DisplayName = "성공"),
+
+	/** 입장 레벨이 모자란다. UI 는 존의 RequiredLevel 을 함께 보여주면 된다. */
+	LevelTooLow		UMETA(DisplayName = "레벨 부족"),
+
+	/** DT_ZoneEnvironment 에 그 존이 없다. 데이터 누락이거나 조작된 요청이다. */
+	ZoneNotFound	UMETA(DisplayName = "존 없음"),
+
+	/** 도착 지점을 찾지 못했다. PlayerStart 배치 문제라 플레이어 잘못이 아니다. */
+	NoEntryPoint	UMETA(DisplayName = "도착 지점 없음"),
+
+	/** 도착 지점이 막혀 텔레포트가 실패했다. 다른 플레이어가 서 있는 경우 등. */
+	Blocked			UMETA(DisplayName = "도착 지점 막힘"),
+
+	/** Pawn 이 없거나 권한이 없다. 정상 흐름에서는 나오지 않는다. */
+	InternalError	UMETA(DisplayName = "내부 오류")
+};
+
+/**
  * 서버의 게임 규칙.
  *
  * 데디케이티드 서버에만 존재하며 클라이언트에는 생성되지 않는다.
@@ -83,9 +111,11 @@ public:
 	 *
 	 *                      그래도 이 함수를 거쳐야 한다 — 포탈이 직접 TeleportTo 를 부르면
 	 *                      레벨 검증·ZoneId 갱신·속도 초기화가 전부 빠진다.
-	 * @return 실제로 옮겼으면 true.
+	 * @return 성공 여부와 실패 사유. 호출한 쪽이 클라이언트에 알려줄 수 있도록
+	 *         bool 이 아니라 사유를 돌려준다 — 거부됐는데 화면에 아무 일도 일어나지 않으면
+	 *         플레이어는 "포탈이 고장났다" 고 받아들인다.
 	 */
-	bool RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
+	ETDZoneTravelResult RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
 		FName EntryName = NAME_None, AActor* EntryOverride = nullptr);
 
 	/**
@@ -94,7 +124,7 @@ public:
 	 *
 	 * 부활 자체(체력 회복·상태 해제)는 하지 않는다. 위치만 옮긴다.
 	 */
-	bool TravelToRespawnZone(APlayerController* Player);
+	ETDZoneTravelResult TravelToRespawnZone(APlayerController* Player);
 
 	/** 존 정의를 읽는다. 없으면 nullptr. UI·전투가 규칙을 물을 때도 쓴다. */
 	const FTDZoneEnvironmentRow* FindZoneRow(FGameplayTag ZoneId) const;

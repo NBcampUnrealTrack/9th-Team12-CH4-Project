@@ -1,9 +1,19 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TDPlayerController.generated.h"
+
+/**
+ * 존 이동이 거부됐을 때. 이 클라이언트에서만 불린다.
+ *
+ * UI 가 구독해 "24레벨부터 입장할 수 있습니다" 같은 안내를 띄운다.
+ * 숫자는 DT_ZoneEnvironment 에서 읽으면 된다 — 클라이언트도 그 테이블을 갖고 있다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnZoneTravelFailed,
+	FGameplayTag, TargetZoneId, ETDZoneTravelResult, Reason);
 
 /**
  * 플레이어 한 명의 의도를 나타내는 Controller.
@@ -90,4 +100,23 @@ public:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugTravelToZone(FGameplayTag TargetZoneId, FName EntryName);
+
+public:
+	// ── 존 이동 피드백 ────────────────────────────────────
+
+	/**
+	 * 존 이동이 거부됐을 때 서버가 알려준다. **UI 담당이 구독할 지점이다.**
+	 *
+	 * 사유가 enum 인 이유는 문구를 UI 가 정해야 하기 때문이다. 서버가 완성된 문장을
+	 * 보내면 현지화도 못 하고 화면 디자인이 서버 코드에 묶인다.
+	 *
+	 * 필요한 숫자(입장 레벨 등)는 UI 가 DT_ZoneEnvironment 에서 읽으면 된다 —
+	 * 클라이언트도 그 테이블을 갖고 있다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "TD|World")
+	FTDOnZoneTravelFailed OnZoneTravelFailed;
+
+	/** 서버 전용 호출. 해당 클라이언트에게만 간다. */
+	UFUNCTION(Client, Reliable)
+	void ClientZoneTravelFailed(FGameplayTag TargetZoneId, ETDZoneTravelResult Reason);
 };

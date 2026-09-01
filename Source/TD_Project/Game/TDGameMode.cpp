@@ -262,20 +262,20 @@ const FTDZoneEnvironmentRow* ATDGameMode::FindZoneRow(FGameplayTag ZoneId) const
 	return Found;
 }
 
-bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
+ETDZoneTravelResult ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
 	FName EntryName, AActor* EntryOverride)
 {
 	if (Player == nullptr || !TargetZoneId.IsValid())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("존 이동: 대상이나 목적지가 비어 있다."));
-		return false;
+		return ETDZoneTravelResult::InternalError;
 	}
 
 	ATDPlayerState* PlayerState = Player->GetPlayerState<ATDPlayerState>();
 	if (PlayerState == nullptr)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("존 이동: PlayerState 가 없다."));
-		return false;
+		return ETDZoneTravelResult::InternalError;
 	}
 
 	// 캐릭터를 고르기 전에는 Pawn 이 없다. 옮길 대상 자체가 없는 상태다.
@@ -285,7 +285,7 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 		UE_LOG(LogTemp, Warning,
 			TEXT("존 이동: %s 의 Pawn 이 없다. 캐릭터를 먼저 선택해야 한다."),
 			*PlayerState->GetPlayerName());
-		return false;
+		return ETDZoneTravelResult::InternalError;
 	}
 
 	// 테이블에 없는 존이면 거부한다. 클라이언트가 보낸 태그를 그대로 믿지 않는다는 뜻이기도 하다.
@@ -295,7 +295,7 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 		UE_LOG(LogTemp, Warning,
 			TEXT("존 이동 거부: '%s' 가 DT_ZoneEnvironment 에 없다."),
 			*TargetZoneId.ToString());
-		return false;
+		return ETDZoneTravelResult::ZoneNotFound;
 	}
 
 	// 입장 레벨 검사. 클라이언트가 보내는 것은 의도뿐이고 판정은 서버가 한다.
@@ -309,7 +309,7 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 			UE_LOG(LogTemp, Log,
 				TEXT("존 이동 거부: '%s' 는 %d 레벨부터 입장할 수 있다. (현재 %d)"),
 				*TargetZoneId.ToString(), ZoneRow->RequiredLevel, Level);
-			return false;
+			return ETDZoneTravelResult::LevelTooLow;
 		}
 	}
 
@@ -326,7 +326,7 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 			TEXT("존 이동 취소: '%s' 의 PlayerStart 를 찾지 못했다. "
 			     "PlayerStartTag 가 존 태그와 같은지, Is Spatially Loaded 가 꺼져 있는지 확인할 것(D60)."),
 			*TargetZoneId.ToString());
-		return false;
+		return ETDZoneTravelResult::NoEntryPoint;
 	}
 
 	const FVector TargetLocation = TargetStart->GetActorLocation();
@@ -346,7 +346,7 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 		UE_LOG(LogTemp, Warning,
 			TEXT("존 이동 실패: '%s' 로 텔레포트하지 못했다. 도착 지점이 막혀 있을 수 있다."),
 			*TargetZoneId.ToString());
-		return false;
+		return ETDZoneTravelResult::Blocked;
 	}
 
 	// 카메라도 함께 돌려준다. 텔레포트만 하면 시선이 이전 방향을 향한 채로 남는다.
@@ -358,15 +358,15 @@ bool ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag Targ
 	UE_LOG(LogTemp, Log,
 		TEXT("존 이동: %s → '%s'"), *PlayerState->GetPlayerName(), *TargetZoneId.ToString());
 
-	return true;
+	return ETDZoneTravelResult::Success;
 }
 
-bool ATDGameMode::TravelToRespawnZone(APlayerController* Player)
+ETDZoneTravelResult ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 {
 	const ATDPlayerState* PlayerState = Player ? Player->GetPlayerState<ATDPlayerState>() : nullptr;
 	if (PlayerState == nullptr)
 	{
-		return false;
+		return ETDZoneTravelResult::InternalError;
 	}
 
 	const FTDZoneEnvironmentRow* CurrentRow = FindZoneRow(PlayerState->GetCurrentZoneId());
@@ -383,7 +383,7 @@ bool ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 		UE_LOG(LogTemp, Warning,
 			TEXT("부활 이동 실패: 돌아갈 존을 정하지 못했다. "
 			     "존의 RespawnZoneId 나 GameMode 의 DefaultSpawnZoneTag 를 확인할 것."));
-		return false;
+		return ETDZoneTravelResult::ZoneNotFound;
 	}
 
 	// 부활 지점은 입장 레벨을 따지지 않아야 하지만, 마을은 보통 제한이 없으므로

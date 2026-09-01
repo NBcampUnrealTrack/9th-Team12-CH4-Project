@@ -41,12 +41,22 @@ public:
 	void InitializeFromDefinition(FName InMonsterId, int32 InLevel);
 
 	int32 GetLevel() const { return Level; }
+	
+	/** 처치 보상 지급. 죽인 쪽의 성장 컴포넌트에 경험치를 넣는다. 서버 전용. */
+	void GrantRewards(ATDCharacterBase* Killer);
 
 protected:
 	virtual void BeginPlay() override;
 
 	/** 테이블 행을 읽어 스탯 컴포넌트의 기본값을 채운다. 서버 전용. */
 	void ApplyDefinition();
+	
+	/** 사망 시 콜리전·이동을 멈추고 시체를 잠시 남긴 뒤 파괴한다. */
+	virtual void HandleDeath() override;
+
+	/** 사망 후 시체가 남아 있는 시간(초). 이후 액터가 파괴된다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Monster", meta = (ClampMin = "0"))
+	float CorpseLifetime = 3.f;
 
 	/** DT_MonsterDefinition. RowName 이 MonsterId 다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Monster")
@@ -64,6 +74,12 @@ private:
 	/** 스탯 계산 결과를 어트리뷰트에 기록한다. 플레이어의 PlayerState 가 하는 일과 같다. */
 	void UpdateVitalAttributes();
 
+	/** ApplyDefinition 때 테이블에서 읽어둔 처치 경험치. */
+	int32 ExpReward = 0;
+
+	/** 마지막 프레임에 여럿이 동시 타격해도 보상은 한 번만 나가게 하는 표시. */
+	bool bRewardsGranted = false;
+	
 	UPROPERTY(VisibleAnywhere, Category = "TD|Stats")
 	TObjectPtr<UTDStatComponent> StatComponent;
 

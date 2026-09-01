@@ -5,6 +5,7 @@
 #include "Character/TDCharacterBase.h"
 #include "Combat/TDCombatStatics.h"
 #include "Core/TDGameInstance.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
 #include "Player/TDPlayerState.h"
@@ -176,4 +177,34 @@ void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
 			TargetCharacter->IsDead() ? TEXT(" [사망]") : TEXT(""));
 	}
 #endif
+}
+
+void ATDPlayerController::ServerDebugTravelToZone_Implementation(FGameplayTag TargetZoneId, FName EntryName)
+{
+#if !UE_BUILD_SHIPPING
+	ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
+	if (GameMode == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[치트] GameMode 를 찾지 못했다."));
+		return;
+	}
+
+	// 거부 사유는 RequestZoneTravel 이 직접 로그로 남긴다. 여기서는 결과만 요약한다.
+	const ETDZoneTravelResult Result = GameMode->RequestZoneTravel(this, TargetZoneId, EntryName);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 존 이동 %s — '%s' (사유 %d)"),
+		Result == ETDZoneTravelResult::Success ? TEXT("성공") : TEXT("거부됨"),
+		*TargetZoneId.ToString(), static_cast<int32>(Result));
+#endif
+}
+
+void ATDPlayerController::ClientZoneTravelFailed_Implementation(FGameplayTag TargetZoneId,
+	ETDZoneTravelResult Reason)
+{
+	// 문구는 만들지 않는다. UI 가 이 델리게이트를 받아 자기 형식으로 표시한다.
+	OnZoneTravelFailed.Broadcast(TargetZoneId, Reason);
+
+	// UI 가 붙기 전까지는 로그로만 확인한다.
+	UE_LOG(LogTemp, Log, TEXT("존 이동 거부됨: '%s' (사유 %d)"),
+		*TargetZoneId.ToString(), static_cast<int32>(Reason));
 }

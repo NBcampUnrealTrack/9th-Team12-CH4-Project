@@ -4,8 +4,10 @@
 #include "Components/ActorComponent.h"
 #include "TDCombatComponent.generated.h"
 
-/** 피격 발생. 데미지 텍스트(김선우)·히트 VFX(김희진)가 구독하는 공식 접점. 전 머신에서 불린다. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FTDOnHit, AActor*, Target, float, Damage, bool, bCritical);
+/** 피격 발생. 데미지 텍스트(김선우)·히트 VFX(김희진)가 구독하는 공식 접점. 전 머신에서 불린다.
+ *  HitLocation: 공격자 쪽에서 대상 콜리전에 닿는 지점. 몸 중심이 필요하면 Target 에서 구한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnHit, AActor*, Target, float, Damage, bool, 
+	bCritical, FVector, HitLocation);
 /** 공격 모션 시작. 애니메이션·사운드가 구독한다. 전 머신에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnAttackStarted);
 
@@ -66,7 +68,7 @@ protected:
 	
 	/** "맞았다" 방송. 서버가 판정하고 전원이 OnHit 델리게이트로 전달받는다. */
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastOnHit(AActor* Target, float Damage, bool bCritical);
+	void MulticastOnHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation);
 
 	bool CanAttack() const;
 

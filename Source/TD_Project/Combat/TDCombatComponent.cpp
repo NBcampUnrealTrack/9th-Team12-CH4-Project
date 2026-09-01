@@ -53,7 +53,20 @@ void UTDCombatComponent::PerformHit()
 
 		if (Result.FinalDamage > 0.f)
 		{
-			MulticastOnHit(Target, Result.FinalDamage, Result.bCritical);
+			// 접촉점 근사치: 공격자에서 가장 가까운 대상 콜리전 표면의 점.
+			// 순간 질의라 진짜 충돌점은 없지만, 칼이 닿았을 법한 위치로는 충분하다.
+			FVector HitLocation = Target->GetActorLocation();   // 실패 시 폴백 = 몸 중심
+
+			if (UPrimitiveComponent* TargetRoot = Cast<UPrimitiveComponent>(Target->GetRootComponent()))
+			{
+				FVector ClosestPoint;
+				if (TargetRoot->GetClosestPointOnCollision(Owner->GetActorLocation(), ClosestPoint) >= 0.f)
+				{
+					HitLocation = ClosestPoint;
+				}
+			}
+
+			MulticastOnHit(Target, Result.FinalDamage, Result.bCritical, HitLocation);
 		}
 	}
 }
@@ -132,7 +145,7 @@ TArray<AActor*> UTDCombatComponent::GatherTargets() const
 	return Targets;
 }
 
-void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical)
+void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
 {
-	OnHit.Broadcast(Target, Damage, bCritical);
+	OnHit.Broadcast(Target, Damage, bCritical, HitLocation);
 }

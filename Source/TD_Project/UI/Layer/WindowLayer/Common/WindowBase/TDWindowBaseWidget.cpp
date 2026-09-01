@@ -15,6 +15,7 @@ void UTDWindowBaseWidget::NativePreConstruct()
 void UTDWindowBaseWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	bCloseNotified = false;
 
 	if (WindowFrame)
 	{
@@ -32,6 +33,8 @@ void UTDWindowBaseWidget::NativeConstruct()
 
 void UTDWindowBaseWidget::NativeDestruct()
 {
+	NotifyWindowClosed();
+
 	if (WindowFrame)
 	{
 		WindowFrame->OnCloseRequested.RemoveDynamic(
@@ -56,6 +59,7 @@ void UTDWindowBaseWidget::SetWindowTitle(const FText& InTitle)
 void UTDWindowBaseWidget::CloseWindow_Implementation()
 {
 	// Frame만 제거하지 않고 WindowLayer에 들어간 창 전체를 제거한다.
+	NotifyWindowClosed();
 	RemoveFromParent();
 }
 
@@ -73,4 +77,15 @@ void UTDWindowBaseWidget::ApplyWindowSettings()
 
 	WindowFrame->SetTitle(WindowTitle);
 	WindowFrame->SetDraggingEnabled(bWindowDraggingEnabled);
+}
+
+void UTDWindowBaseWidget::NotifyWindowClosed()
+{
+	if (bCloseNotified)
+	{
+		return;
+	}
+
+	bCloseNotified = true;
+	OnWindowClosed.Broadcast(this);
 }

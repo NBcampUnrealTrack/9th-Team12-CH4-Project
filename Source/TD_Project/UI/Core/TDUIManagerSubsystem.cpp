@@ -1,0 +1,257 @@
+#include "UI/Core/TDUIManagerSubsystem.h"
+
+#include "Blueprint/UserWidget.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "UI/Core/TDUIRootWidget.h"
+#include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
+#include "UI/Settings/TDUISettings.h"
+
+void UTDUIManagerSubsystem::Deinitialize()
+{
+	ClearWindowRegistry();
+	SavedWindowPositions.Empty();
+	RootWidget.Reset();
+
+	Super::Deinitialize();
+}
+
+void UTDUIManagerSubsystem::RegisterRoot(UTDUIRootWidget* InRootWidget)
+{
+	if (!IsValid(InRootWidget) || RootWidget.Get() == InRootWidget)
+	{
+		return;
+	}
+
+	ClearWindowRegistry();
+	RootWidget = InRootWidget;
+
+	// 현재 WBP_Root에 미리 배치된 인벤토리 창이 있으면 첫 프레임부터
+	// 보이지 않게 숨긴 뒤, 첫 Nav 클릭에서 같은 인스턴스를 재사용한다.
+	UCanvasPanel* WindowLayer = InRootWidget->GetWindowLayer();
+	UClass* ResolvedInventoryClass = ResolveWindowClass(ETDNavMenuType::Inventory);
+	if (!WindowLayer || !ResolvedInventoryClass)
+	{
+		return;
+	}
+
+	for (int32 ChildIndex = 0; ChildIndex < WindowLayer->GetChildrenCount(); ++ChildIndex)
+	{
+		UTDWindowBaseWidget* ExistingWindow =
+			Cast<UTDWindowBaseWidget>(WindowLayer->GetChildAt(ChildIndex));
+		if (!IsValid(ExistingWindow) || !ExistingWindow->IsA(ResolvedInventoryClass))
+		{
+			continue;
+		}
+
+		ExistingWindow->SetVisibility(ESlateVisibility::Collapsed);
+		ExistingWindow->OnWindowClosed.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleWindowClosed);
+		PrecreatedWindows.Add(ETDNavMenuType::Inventory, ExistingWindow);
+		break;
+	}
+}
+
+void UTDUIManagerSubsystem::UnregisterRoot(UTDUIRootWidget* InRootWidget)
+{
+	if (RootWidget.Get() != InRootWidget)
+	{
+		return;
+	}
+
+	ClearWindowRegistry();
+	RootWidget.Reset();
+}
+
+void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
+{
+	switch (MenuType)
+	{
+	case ETDNavMenuType::Inventory:
+		ToggleWindow(MenuType);
+		break;
+
+	default:
+		UE_LOG(LogTemp, Verbose,
+			TEXT("UI: 아직 연결되지 않은 메뉴 버튼입니다. (MenuType: %d)"),
+			static_cast<int32>(MenuType));
+		break;
+	}
+}
+
+bool UTDUIManagerSubsystem::IsMenuOpen(ETDNavMenuType MenuType) const
+{
+	const TWeakObjectPtr<UTDWindowBaseWidget>* FoundWindow = OpenWindows.Find(MenuType);
+	const UTDWindowBaseWidget* Window = FoundWindow ? FoundWindow->Get() : nullptr;
+	return IsValid(Window) && Window->GetParent() != nullptr
+		&& Window->GetVisibility() != ESlateVisibility::Collapsed;
+}
+
+void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
+{
+	if (TWeakObjectPtr<UTDWindowBaseWidget>* FoundWindow = OpenWindows.Find(MenuType))
+	{
+		if (UTDWindowBaseWidget* OpenWindow = FoundWindow->Get())
+		{
+			OpenWindow->CloseWindow();
+			return;
+		}
+
+		OpenWindows.Remove(MenuType);
+	}
+
+	UTDUIRootWidget* Root = RootWidget.Get();
+	if (!IsValid(Root))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UI: 인벤토리를 열 수 없습니다. WBP_Root가 UI 관리자에 등록되지 않았습니다."));
+		return;
+	}
+
+	if (TWeakObjectPtr<UTDWindowBaseWidget>* PrecreatedWindow = PrecreatedWindows.Find(MenuType))
+	{
+		if (UTDWindowBaseWidget* Window = PrecreatedWindow->Get())
+		{
+			RestoreWindowPosition(MenuType, Window);
+			Window->SetVisibility(ESlateVisibility::Visible);
+			OpenWindows.Add(MenuType, Window);
+			OnMenuWindowStateChanged.Broadcast(MenuType, true);
+			return;
+		}
+
+		PrecreatedWindows.Remove(MenuType);
+	}
+
+	TSubclassOf<UTDWindowBaseWidget> WindowClass = ResolveWindowClass(MenuType);
+	if (!WindowClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UI: 인벤토리 위젯이 설정되지 않았습니다. 프로젝트 설정 > Game > TD UI > Inventory Window Class를 지정하세요."));
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	APlayerController* PlayerController =
+		LocalPlayer ? LocalPlayer->GetPlayerController(GetWorld()) : nullptr;
+	if (!IsValid(PlayerController))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UI: 인벤토리를 열 수 없습니다. 현재 로컬 플레이어를 찾지 못했습니다."));
+		return;
+	}
+
+	UTDWindowBaseWidget* NewWindow =
+		CreateWidget<UTDWindowBaseWidget>(PlayerController, WindowClass);
+	if (!IsValid(NewWindow))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UI: 인벤토리 위젯 생성에 실패했습니다. Inventory Window Class 설정을 확인하세요."));
+		return;
+	}
+
+	if (!Root->AddWindow(NewWindow))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UI: 인벤토리를 표시할 수 없습니다. WBP_Root의 WindowLayer 연결을 확인하세요."));
+		return;
+	}
+
+	RestoreWindowPosition(MenuType, NewWindow);
+
+	NewWindow->OnWindowClosed.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleWindowClosed);
+	OpenWindows.Add(MenuType, NewWindow);
+	OnMenuWindowStateChanged.Broadcast(MenuType, true);
+}
+
+void UTDUIManagerSubsystem::SaveWindowPosition(
+	ETDNavMenuType MenuType,
+	UTDWindowBaseWidget* Window)
+{
+	if (IsValid(Window))
+	{
+		if (const UCanvasPanelSlot* WindowSlot = Cast<UCanvasPanelSlot>(Window->Slot))
+		{
+			SavedWindowPositions.Add(MenuType, WindowSlot->GetPosition());
+		}
+	}
+}
+
+void UTDUIManagerSubsystem::RestoreWindowPosition(
+	ETDNavMenuType MenuType,
+	UTDWindowBaseWidget* Window) const
+{
+	const FVector2D* SavedPosition = SavedWindowPositions.Find(MenuType);
+	if (SavedPosition && IsValid(Window))
+	{
+		if (UCanvasPanelSlot* WindowSlot = Cast<UCanvasPanelSlot>(Window->Slot))
+		{
+			WindowSlot->SetPosition(*SavedPosition);
+		}
+	}
+}
+
+TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
+	ETDNavMenuType MenuType)
+{
+	switch (MenuType)
+	{
+	case ETDNavMenuType::Inventory:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
+		{
+			return UISettings->InventoryWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	default:
+		return nullptr;
+	}
+}
+
+void UTDUIManagerSubsystem::ClearWindowRegistry()
+{
+	auto RemoveClosedDelegate = [this](
+		TMap<ETDNavMenuType, TWeakObjectPtr<UTDWindowBaseWidget>>& Windows)
+	{
+		for (TPair<ETDNavMenuType, TWeakObjectPtr<UTDWindowBaseWidget>>& Pair : Windows)
+		{
+			if (UTDWindowBaseWidget* Window = Pair.Value.Get())
+			{
+				Window->OnWindowClosed.RemoveDynamic(
+					this,
+					&ThisClass::HandleWindowClosed);
+			}
+		}
+		Windows.Empty();
+	};
+
+	RemoveClosedDelegate(OpenWindows);
+	RemoveClosedDelegate(PrecreatedWindows);
+}
+
+void UTDUIManagerSubsystem::HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow)
+{
+	if (!IsValid(ClosedWindow))
+	{
+		return;
+	}
+
+	for (auto Iterator = OpenWindows.CreateIterator(); Iterator; ++Iterator)
+	{
+		if (Iterator.Value().Get() != ClosedWindow)
+		{
+			continue;
+		}
+
+		const ETDNavMenuType ClosedMenuType = Iterator.Key();
+		SaveWindowPosition(ClosedMenuType, ClosedWindow);
+		Iterator.RemoveCurrent();
+		PrecreatedWindows.Remove(ClosedMenuType);
+		OnMenuWindowStateChanged.Broadcast(ClosedMenuType, false);
+		break;
+	}
+}

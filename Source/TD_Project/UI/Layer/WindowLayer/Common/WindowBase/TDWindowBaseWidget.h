@@ -7,6 +7,12 @@
 #include "TDWindowBaseWidget.generated.h"
 
 class UTDWindowFrameWidget;
+class UTDWindowBaseWidget;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnWindowClosed,
+	UTDWindowBaseWidget*, ClosedWindow
+);
 
 /**
  * Inventory, Character, Equipment, Quest처럼 WindowLayer에 표시되는 창의 공통 베이스다.
@@ -20,6 +26,9 @@ class TD_PROJECT_API UTDWindowBaseWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintAssignable, Category = "Window")
+	FTDOnWindowClosed OnWindowClosed;
+
 	/** 창 제목을 변경하고 현재 프레임에도 즉시 반영한다. */
 	UFUNCTION(BlueprintCallable, Category = "Window")
 	void SetWindowTitle(const FText& InTitle);
@@ -50,8 +59,11 @@ protected:
 	TObjectPtr<UTDWindowFrameWidget> WindowFrame;
 
 private:
+	bool bCloseNotified = false;
+
 	UFUNCTION()
 	void HandleCloseRequested();
 
 	void ApplyWindowSettings();
+	void NotifyWindowClosed();
 };

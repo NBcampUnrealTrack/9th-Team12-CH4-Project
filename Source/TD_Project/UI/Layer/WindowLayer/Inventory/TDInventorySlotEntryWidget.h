@@ -6,6 +6,7 @@
 #include "TDInventorySlotEntryWidget.generated.h"
 
 class UTDInventorySlotListItem;
+class UTDItemSlotVisualWidget;
 
 /** WBP_InventorySlotEntry가 상속할 Tile View Entry 부모. */
 UCLASS(Abstract, Blueprintable)
@@ -23,6 +24,9 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "TD|Inventory", meta = (DisplayName = "On Slot List Item Set"))
 	void BP_OnSlotListItemSet(UTDInventorySlotListItem* InSlotListItem);
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTDItemSlotVisualWidget> SlotVisualWidget;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "TD|Inventory")
 	TObjectPtr<UTDInventorySlotListItem> SlotListItem;

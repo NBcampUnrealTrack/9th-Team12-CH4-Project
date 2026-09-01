@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDHUDLayer.generated.h"
 
 class UTDNavMenuWidget;
@@ -20,8 +21,11 @@ UCLASS()
 class TD_PROJECT_API UTDHUDLayer : public UUserWidget
 {
 	GENERATED_BODY()
-	
+
 protected:
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 		TObjectPtr<UTDPlayerStatusWidget> PlayerStatus;
 
@@ -42,5 +46,11 @@ protected:
 	
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 		TObjectPtr<UTDNavMenuWidget> NavMenu;
-	
+
+private:
+	UFUNCTION()
+	void HandleMenuRequested(ETDNavMenuType MenuType);
+
+	UFUNCTION()
+	void HandleMenuWindowStateChanged(ETDNavMenuType MenuType, bool bIsOpen);
 };

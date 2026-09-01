@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Items/TDItemTypes.h"
-#include "TDInventorySlotData.generated.h"
+#include "TDInventorySlotListItem.generated.h"
 
 class UTexture2D;
 
 
 UCLASS(BlueprintType)
-class TD_PROJECT_API UTDInventorySlotData : public UObject
+class TD_PROJECT_API UTDInventorySlotListItem : public UObject
 {
 	GENERATED_BODY()
 

@@ -1,5 +1,8 @@
 #include "Game/TDGameMode.h"
 
+#include "AbilitySystemComponent.h"
+#include "Abilities/TDAttributeSet.h"
+#include "Character/TDCharacterBase.h"
 #include "Character/TDPlayerCharacter.h"
 #include "Data/TDZoneEnvironmentRow.h"
 #include "Engine/DataTable.h"
@@ -426,4 +429,67 @@ ETDZoneTravelResult ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 	// 부활 지점은 입장 레벨을 따지지 않아야 하지만, 마을은 보통 제한이 없으므로
 	// 같은 경로를 쓴다. 제한이 걸린 존을 부활 지점으로 지정하면 그때 갈라낸다.
 	return RequestZoneTravel(Player, RespawnZone);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  사망·부활
+// ══════════════════════════════════════════════════════════════
+
+bool ATDGameMode::RespawnPlayer(APlayerController* Player)
+{
+	if (Player == nullptr)
+	{
+		return false;
+	}
+
+	ATDCharacterBase* Character = Cast<ATDCharacterBase>(Player->GetPawn());
+	if (Character == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("부활 실패: Pawn 이 없다."));
+		return false;
+	}
+
+	if (!Character->IsDead())
+	{
+		// 버튼과 타이머가 거의 동시에 도착한 경우다. 먼저 온 쪽이 이미 처리했다.
+		return false;
+	}
+
+	ATDPlayerState* PlayerState = Player->GetPlayerState<ATDPlayerState>();
+	if (PlayerState == nullptr)
+	{
+		return false;
+	}
+
+	// 1. 사망 상태를 먼저 푼다. 이동을 막아둔 채로 텔레포트하면 도착 지점에서
+	//    움직이지 못하는 상태가 남을 수 있다.
+	Character->HandleRespawn();
+
+	// 2. 체력·마나를 절반으로. 패널티가 없는 대신 만피로 살아나지는 않는다.
+	if (UAbilitySystemComponent* ASC = PlayerState->GetAbilitySystemComponent())
+	{
+		const float MaxHealth = ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute());
+		const float MaxMana = ASC->GetNumericAttribute(UTDAttributeSet::GetMaxManaAttribute());
+
+		ASC->SetNumericAttributeBase(
+			UTDAttributeSet::GetHealthAttribute(), MaxHealth * RespawnVitalRatio);
+		ASC->SetNumericAttributeBase(
+			UTDAttributeSet::GetManaAttribute(), MaxMana * RespawnVitalRatio);
+	}
+
+	// 3. 부활 지점으로. 그 존이 RespawnZoneId 를 지정하지 않았으면 기본 시작 존이다.
+	//    이동에 실패해도 부활 자체는 유지한다 — 살아 있는데 못 움직이는 것보다
+	//    제자리에서라도 살아나는 편이 낫다.
+	const ETDZoneTravelResult TravelResult = TravelToRespawnZone(Player);
+	if (TravelResult != ETDZoneTravelResult::Success)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("부활은 했지만 부활 지점으로 이동하지 못했다 (사유 %d). 죽은 자리에서 되살아난다."),
+			static_cast<int32>(TravelResult));
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("부활: %s (체력·마나 %.0f%%)"),
+		*PlayerState->GetPlayerName(), RespawnVitalRatio * 100.f);
+
+	return true;
 }

@@ -18,6 +18,14 @@ class UTDCombatComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterDeath);
 
 /**
+ * 되살아났을 때. 사망 UI 를 닫는 신호다.
+ *
+ * 사망과 짝이라 같은 곳에서 브로드캐스트한다. 둘을 하나의 델리게이트에
+ * bool 로 합치지 않는 이유는 구독하는 쪽이 대개 한쪽만 필요해서다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterRespawn);
+
+/**
  * 플레이어와 몬스터의 공통 베이스.
  *
  * 스탯 컴포넌트를 직접 소유하지 않는다. 부착 위치가 자식마다 다르기 때문이다 —
@@ -32,6 +40,8 @@ class TD_PROJECT_API ATDCharacterBase : public ACharacter, public IGenericTeamAg
 public:
 	
 	ATDCharacterBase();
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	UTDCombatComponent* GetCombatComponent() const { return CombatComponent; }
@@ -65,23 +75,34 @@ public:
 	// ── 사망 ──────────────────────────────────────────────
 
 	/**
-	 * 사망 알림. 지금은 아무도 브로드캐스트하지 않는다 —
-	 * 실제 판정은 현재 체력을 AttributeSet 이 관리하는 S4 에서 붙는다.
+	 * 사망 알림. **서버·클라이언트 양쪽에서 불린다.**
 	 *
-	 * 구독 지점을 먼저 열어두는 이유는 협업 때문이다. AI 가 "죽으면 멈춘다"를
-	 * 붙일 자리가 없으면, 나중에 사망 처리를 넣을 때 AI 쪽 코드를 고치게 된다.
+	 * 서버는 HandleDeath 안에서, 클라이언트는 bIsDead 가 복제될 때 OnRep 이 부른다.
+	 * UI 는 이걸 구독해 사망 화면을 띄우면 된다.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnCharacterDeath OnDeath;
 
+	/** 되살아났을 때. 사망 화면을 닫는 신호다. 역시 양쪽에서 불린다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
+	FTDOnCharacterRespawn OnRespawn;
+
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsDead() const { return bIsDead; }
-	
+
 	/**
-	 * 사망 처리. 체력이 0 이 됐을 때 호출한다(S4 이후).
+	 * 사망 처리. 체력이 0 이 됐을 때 호출한다.
 	 * 여러 번 불려도 한 번만 동작하므로 호출부에서 중복을 걱정하지 않아도 된다.
 	 */
 	virtual void HandleDeath();
+
+	/**
+	 * 되살리기. **위치와 체력은 건드리지 않는다** — 사망 상태만 푼다.
+	 *
+	 * 체력 회복과 부활 지점 이동은 게임 규칙이라 `ATDGameMode::RespawnPlayer` 가 맡는다.
+	 * 여기서 함께 하면 몬스터를 되살릴 때도 플레이어 규칙이 딸려온다.
+	 */
+	virtual void HandleRespawn();
 	
 	
 	/**
@@ -130,7 +151,17 @@ private:
 	/** 중복 구독을 막기 위한 표시. 플레이어는 PlayerState 복제 시점이 일정하지 않아 여러 번 시도된다. */
 	bool bBoundToStatComponent = false;
 
-	/** 서버 기준 값이다. 복제는 사망 처리가 실제로 붙는 S4 에서 함께 정한다. */
+	UFUNCTION()
+	void OnRep_IsDead();
+
+	/**
+	 * 서버가 정하고 전원에게 복제한다.
+	 *
+	 * 소유자 전용이 아닌 이유는 남의 사망도 보여야 하기 때문이다 —
+	 * 파티원의 상태 표시, 시체에 공격이 안 들어가는 판정, 사망 애니메이션 전부
+	 * 다른 클라이언트에서도 알아야 한다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_IsDead)
 	bool bIsDead = false;
 	
 	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */

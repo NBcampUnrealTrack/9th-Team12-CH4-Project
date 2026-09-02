@@ -42,6 +42,20 @@ public:
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
+	// ── 사망·부활 ─────────────────────────────────────────
+
+	/**
+	 * 조작을 막고 그 자리에 멈춘다. 시체를 파괴하지 않는 이유는 D11 과 같다 —
+	 * 스탯과 장비는 PlayerState 에 있으므로 Pawn 을 지웠다 다시 만들 이유가 없고,
+	 * 그러면 사망 애니메이션을 보여줄 대상도 사라진다.
+	 *
+	 * 서버는 여기서 자동 부활 타이머를 건다.
+	 */
+	virtual void HandleDeath() override;
+
+	/** 조작을 되돌린다. 체력 회복과 위치 이동은 GameMode 가 맡는다. */
+	virtual void HandleRespawn() override;
+
 	// ══ 조작 ═══════════════════════════════════════════════════════════════
 	//
 	// 조작과 관련된 것은 전부 여기 모여 있다. 새 조작을 추가할 때 볼 곳은 세 군데다.
@@ -93,4 +107,14 @@ protected:
 private:
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */
 	void InitAbilityActorInfo();
+
+	/**
+	 * 죽은 뒤 조작을 막고 이동을 멈춘다. 되살아나면 반대로 되돌린다.
+	 *
+	 * 입력만 막고 이동을 안 멈추면 죽는 순간의 속도로 계속 미끄러진다.
+	 */
+	void SetDeadState(bool bDead);
+
+	/** 자동 부활 타이머. 서버에서만 돈다. */
+	FTimerHandle AutoRespawnTimerHandle;
 };

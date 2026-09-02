@@ -230,3 +230,12 @@ void ATDPlayerController::ServerDebugPartyExp_Implementation(int32 BaseAmount)
 		*TDPlayerState->GetCurrentZoneId().ToString());
 #endif
 }
+
+void ATDPlayerController::ServerRequestRespawn_Implementation()
+{
+	// 치트가 아니므로 Shipping 가드를 두지 않는다.
+	if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
+	{
+		GameMode->RespawnPlayer(this);
+	}
+}

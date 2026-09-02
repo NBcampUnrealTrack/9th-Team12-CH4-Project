@@ -607,6 +607,29 @@ namespace TDDebugCommands
 		}
 	}
 
+	/** 부활 버튼을 대신한다. UI 가 붙기 전까지 사망·부활을 검증하는 통로다. */
+	static void Respawn(const TArray<FString>& Args, UWorld* World)
+	{
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Respawn: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// 치트가 아니라 정식 경로를 그대로 쓴다. 버튼이 부를 함수와 같아야
+		// 여기서 통과한 것이 실제로도 동작한다.
+		Controller->ServerRequestRespawn();
+		UE_LOG(LogTDDebug, Log, TEXT("서버에 부활을 요청했다. (결과는 서버 로그에)"));
+	}
+
 	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -983,6 +1006,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDPartyLeave(
 	TEXT("TD.PartyLeave"),
 	TEXT("파티에서 나간다. 사용법: TD.PartyLeave"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyLeave));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
+	TEXT("TD.Respawn"),
+	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDZone(
 	TEXT("TD.Zone"),

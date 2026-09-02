@@ -2,6 +2,7 @@
 #include "Combat/TDCombatComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Net/UnrealNetwork.h"
 #include "PaperFlipbookComponent.h"
 #include "PaperZDAnimationComponent.h"
 #include "Stats/TDProgressionComponent.h"
@@ -62,16 +63,54 @@ void ATDCharacterBase::SetGenericTeamId(const FGenericTeamId& NewTeamId)
 	TeamId = NewTeamId;
 }
 
+void ATDCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 남의 사망도 보여야 한다 — 파티원 상태 표시, 시체 공격 방지, 사망 애니메이션.
+	DOREPLIFETIME(ATDCharacterBase, bIsDead);
+}
+
 void ATDCharacterBase::HandleDeath()
 {
-	// 체력이 0 아래로 여러 번 깎이거나 서버·클라 양쪽에서 불릴 수 있으므로 한 번만 통과시킨다.
+	// 체력이 0 아래로 여러 번 깎일 수 있으므로 한 번만 통과시킨다.
 	if (bIsDead)
 	{
 		return;
 	}
 
 	bIsDead = true;
+
+	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
 	OnDeath.Broadcast();
+	ForceNetUpdate();
+}
+
+void ATDCharacterBase::HandleRespawn()
+{
+	if (!bIsDead)
+	{
+		return;
+	}
+
+	bIsDead = false;
+
+	OnRespawn.Broadcast();
+	ForceNetUpdate();
+}
+
+void ATDCharacterBase::OnRep_IsDead()
+{
+	// 값에 따라 갈라 부른다. 사망과 부활을 하나의 델리게이트로 합치면
+	// 구독하는 쪽이 매번 IsDead() 를 다시 확인해야 한다.
+	if (bIsDead)
+	{
+		OnDeath.Broadcast();
+	}
+	else
+	{
+		OnRespawn.Broadcast();
+	}
 }
 
 void ATDCharacterBase::HandleStatsChanged()

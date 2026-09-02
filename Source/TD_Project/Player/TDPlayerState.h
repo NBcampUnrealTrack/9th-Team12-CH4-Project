@@ -11,6 +11,7 @@ class UAbilitySystemComponent;
 class UTDAttributeSet;
 class UTDInventoryComponent;
 class UTDItemUseComponent;
+class UTDPartyComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
 
@@ -77,6 +78,8 @@ public:
 	UTDInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
 	UTDItemUseComponent* GetItemUseComponent() const { return ItemUseComponent; }
+
+	UTDPartyComponent* GetPartyComponent() const { return PartyComponent; }
 
 	// ── 전투력 ────────────────────────────────────────────
 
@@ -262,8 +265,10 @@ private:
 	void OnRep_CurrentZoneId();
 
 	/**
-	 * 지금 있는 존. 소유자만 알면 되므로 COND_OwnerOnly 다 —
-	 * 남이 어느 존에 있는지는 파티 UI 가 생기기 전까지 필요 없다.
+	 * 지금 있는 존. 전원에게 복제한다 — 파티 UI 가 파티원의 위치를 표시해야 한다.
+	 *
+	 * 조건을 걸지 않는 이유는 비용이 없기 때문이다. FGameplayTag 는 사실상 인덱스
+	 * 하나이고, 같은 존에 있으면 어차피 그 사람의 캐릭터가 화면에 보인다.
 	 */
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentZoneId)
 	FGameplayTag CurrentZoneId;
@@ -297,4 +302,11 @@ private:
 	/** 장착과 아이템 사용. 장착 상태도 저장 대상이라 인벤토리와 같은 자리에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Inventory")
 	TObjectPtr<UTDItemUseComponent> ItemUseComponent;
+
+	/**
+	 * 소속 파티. 저장하지 않는다 — 파티는 접속 중에만 존재하는 관계이고,
+	 * 재접속하면 다시 맺어야 하는 것이 자연스럽다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Party")
+	TObjectPtr<UTDPartyComponent> PartyComponent;
 };

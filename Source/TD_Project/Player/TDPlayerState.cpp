@@ -10,6 +10,7 @@
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemUseComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Party/TDPartyComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
 
@@ -28,6 +29,7 @@ ATDPlayerState::ATDPlayerState()
 	ProgressionComponent = CreateDefaultSubobject<UTDProgressionComponent>(TEXT("ProgressionComponent"));
 	InventoryComponent = CreateDefaultSubobject<UTDInventoryComponent>(TEXT("InventoryComponent"));
 	ItemUseComponent = CreateDefaultSubobject<UTDItemUseComponent>(TEXT("ItemUseComponent"));
+	PartyComponent = CreateDefaultSubobject<UTDPartyComponent>(TEXT("PartyComponent"));
 
 	// PlayerState 의 기본 갱신 빈도는 1Hz 다. 그대로 두면 여기 실린 값이 초당 한 번씩만
 	// 클라이언트로 가서, 체력바가 1초에 한 칸씩 움직이는 것처럼 보인다.
@@ -77,8 +79,10 @@ void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	// 조건을 걸지 않는다. bool 하나라 비용이 없다.
 	DOREPLIFETIME(ATDPlayerState, bCharacterSelected);
 
-	// 자기가 어느 존에 있는지만 알면 된다. 남의 존은 파티 UI 가 생길 때 조건을 푼다.
-	DOREPLIFETIME_CONDITION(ATDPlayerState, CurrentZoneId, COND_OwnerOnly);
+	// 파티 UI 가 파티원이 어느 존에 있는지 표시해야 하므로 조건을 걸지 않는다.
+	// FGameplayTag 는 사실상 인덱스 하나라 30명 전원에게 보내도 비용이 없고,
+	// 같은 존에 있으면 어차피 그 사람의 캐릭터가 화면에 보인다.
+	DOREPLIFETIME(ATDPlayerState, CurrentZoneId);
 }
 
 // ── 존 ────────────────────────────────────────────────────

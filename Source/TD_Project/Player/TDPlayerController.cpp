@@ -8,6 +8,7 @@
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
+#include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
 
@@ -207,4 +208,25 @@ void ATDPlayerController::ClientZoneTravelFailed_Implementation(FGameplayTag Tar
 	// UI 가 붙기 전까지는 로그로만 확인한다.
 	UE_LOG(LogTemp, Log, TEXT("존 이동 거부됨: '%s' (사유 %d)"),
 		*TargetZoneId.ToString(), static_cast<int32>(Reason));
+}
+
+void ATDPlayerController::ServerDebugPartyExp_Implementation(int32 BaseAmount)
+{
+#if !UE_BUILD_SHIPPING
+	const ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+	UTDPartyComponent* Party = TDPlayerState ? TDPlayerState->GetPartyComponent() : nullptr;
+
+	if (Party == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[치트] PartyComponent 를 찾지 못했다."));
+		return;
+	}
+
+	const int32 Awarded = Party->AwardKillExp(BaseAmount);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[치트] 처치 경험치 %d 분배 → %d명이 받았다 (보너스 +%.0f%%, 존 '%s' 기준)"),
+		BaseAmount, Awarded, Party->GetExpBonusRate() * 100.f,
+		*TDPlayerState->GetCurrentZoneId().ToString());
+#endif
 }

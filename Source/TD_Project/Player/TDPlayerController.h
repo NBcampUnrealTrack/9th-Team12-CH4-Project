@@ -101,6 +101,15 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugTravelToZone(FGameplayTag TargetZoneId, FName EntryName);
 
+	/**
+	 * 처치 경험치를 파티에 분배한다. 전투 쪽에 호출부가 붙기 전까지 검증용이다.
+	 *
+	 * AwardKillExp 가 서버 권한을 요구하므로 클라이언트 콘솔에서는 조용히 무시된다.
+	 * 다른 치트와 같은 방식으로 통로를 연다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugPartyExp(int32 BaseAmount);
+
 public:
 	// ── 존 이동 피드백 ────────────────────────────────────
 

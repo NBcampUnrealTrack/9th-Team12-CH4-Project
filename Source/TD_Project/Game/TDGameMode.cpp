@@ -9,6 +9,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
+#include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
 #include "Settings/TDZoneSettings.h"
@@ -87,6 +88,16 @@ void ATDGameMode::Logout(AController* Exiting)
 {
 	UE_LOG(LogTemp, Log, TEXT("접속 종료: %s"), *GetNameSafe(Exiting));
 
+	// Super 보다 먼저 처리한다. Super 가 PlayerState 를 PlayerArray 에서 빼버리면
+	// 남은 파티원을 찾지 못해 리더 위임과 해체가 일어나지 않는다.
+	if (const ATDPlayerState* PlayerState = Exiting ? Exiting->GetPlayerState<ATDPlayerState>() : nullptr)
+	{
+		if (UTDPartyComponent* Party = PlayerState->GetPartyComponent())
+		{
+			Party->HandleOwnerLogout();
+		}
+	}
+
 	Super::Logout(Exiting);
 }
 
@@ -125,6 +136,32 @@ void ATDGameMode::HandleCharacterSelected(APlayerController* Player)
 	// 선택이 끝났으므로 이제 정상 경로로 스폰한다.
 	// ChoosePlayerStart 로 마지막 존의 시작 지점으로 이동한다.
 	RestartPlayer(Player);
+
+	// 존을 확정한다. 비워두면 ChoosePlayerStart 가 기본 존으로 폴백해 **스폰만 제대로 되고**,
+	// CurrentZoneId 는 None 인 채로 남는다. 그러면 OnZoneChanged 가 한 번도 불리지 않아
+	// BGM·라이팅이 초기 상태 그대로이고, 부활 지점 조회도 실패한다.
+	//
+	// 세이브가 붙으면 그쪽이 LastZoneId 를 먼저 채우므로 이 분기는 신규 캐릭터에만 걸린다.
+	if (ATDPlayerState* PlayerState = Player->GetPlayerState<ATDPlayerState>())
+	{
+		if (!PlayerState->GetCurrentZoneId().IsValid())
+		{
+			const FGameplayTag DefaultZone =
+				FGameplayTag::RequestGameplayTag(DefaultSpawnZoneTag, /*ErrorIfNotFound=*/ false);
+
+			if (DefaultZone.IsValid())
+			{
+				PlayerState->SetCurrentZoneId(DefaultZone);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("기본 시작 존 '%s' 가 등록된 게임플레이 태그가 아니다. "
+					     "CurrentZoneId 가 비어 있어 BGM·라이팅·부활 지점이 동작하지 않는다."),
+					*DefaultSpawnZoneTag.ToString());
+			}
+		}
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("%s — 캐릭터 선택 완료. Pawn 스폰."), *GetNameSafe(Player));
 }

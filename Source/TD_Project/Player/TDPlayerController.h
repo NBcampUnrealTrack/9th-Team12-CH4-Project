@@ -110,6 +110,16 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugPartyExp(int32 BaseAmount);
 
+	/**
+	 * 테스트 캐릭터 지급과 선택을 **한 RPC 로** 처리한다.
+	 *
+	 * 나눠 보내면 지급은 이쪽(PlayerController), 선택은 PlayerState 의 RPC 라
+	 * 서로 다른 액터가 되어 도착 순서가 보장되지 않는다(§11-G).
+	 * 뒤바뀌면 선택이 "목록이 비었다" 로 실패한다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugQuickStart(int32 SlotIndex);
+
 public:
 	// ── 존 이동 피드백 ────────────────────────────────────
 

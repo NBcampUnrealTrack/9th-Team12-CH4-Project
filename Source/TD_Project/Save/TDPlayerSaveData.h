@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Items/TDItemTypes.h"
+#include "Items/TDQuickSlotTypes.h"
 #include "TDPlayerSaveData.generated.h"
 
 /**
@@ -140,4 +141,13 @@ struct FTDPlayerSaveData
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	FGameplayTag LastZoneId;
+
+	/**
+	 * 퀵슬롯 배치. **캐릭터별**이다 — 전사의 1번과 법사의 1번이 같을 이유가 없다.
+	 *
+	 * 어느 키를 누르는지는 여기 없다. 그쪽은 Enhanced Input 이 그 PC 에 저장하며,
+	 * 캐릭터를 바꿔도 손가락 위치는 그대로여야 하기 때문이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FTDQuickSlot> QuickSlots;
 };

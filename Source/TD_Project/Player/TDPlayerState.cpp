@@ -10,6 +10,7 @@
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemUseComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
@@ -30,6 +31,7 @@ ATDPlayerState::ATDPlayerState()
 	InventoryComponent = CreateDefaultSubobject<UTDInventoryComponent>(TEXT("InventoryComponent"));
 	ItemUseComponent = CreateDefaultSubobject<UTDItemUseComponent>(TEXT("ItemUseComponent"));
 	PartyComponent = CreateDefaultSubobject<UTDPartyComponent>(TEXT("PartyComponent"));
+	QuickSlotComponent = CreateDefaultSubobject<UTDQuickSlotComponent>(TEXT("QuickSlotComponent"));
 
 	// PlayerState 의 기본 갱신 빈도는 1Hz 다. 그대로 두면 여기 실린 값이 초당 한 번씩만
 	// 클라이언트로 가서, 체력바가 1초에 한 칸씩 움직이는 것처럼 보인다.
@@ -199,6 +201,13 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 
 	SelectedSlotIndex = SlotIndex;
 	bCharacterSelected = true;
+
+	// 캐릭터 이름을 PlayerState 의 표시 이름으로 삼는다.
+	//
+	// CharacterSlots 는 COND_OwnerOnly 라 남의 캐릭터 이름을 알 방법이 없다.
+	// PlayerName 은 엔진이 이미 전원에게 복제하므로, 파티 UI·이름표·채팅이
+	// 별도 복제 없이 GetPlayerName() 하나로 해결된다.
+	SetPlayerName(Chosen.CharacterName);
 
 	// 직업을 정하면 성장 모디파이어가 그 직업 기준으로 다시 만들어진다.
 	SetCharacterClassId(Chosen.ClassId);

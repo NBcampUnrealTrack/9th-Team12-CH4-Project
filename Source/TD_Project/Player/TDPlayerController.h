@@ -101,6 +101,15 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugTravelToZone(FGameplayTag TargetZoneId, FName EntryName);
 
+	/**
+	 * 처치 경험치를 파티에 분배한다. 전투 쪽에 호출부가 붙기 전까지 검증용이다.
+	 *
+	 * AwardKillExp 가 서버 권한을 요구하므로 클라이언트 콘솔에서는 조용히 무시된다.
+	 * 다른 치트와 같은 방식으로 통로를 연다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugPartyExp(int32 BaseAmount);
+
 public:
 	// ── 존 이동 피드백 ────────────────────────────────────
 
@@ -119,4 +128,18 @@ public:
 	/** 서버 전용 호출. 해당 클라이언트에게만 간다. */
 	UFUNCTION(Client, Reliable)
 	void ClientZoneTravelFailed(FGameplayTag TargetZoneId, ETDZoneTravelResult Reason);
+
+	// ── 부활 ──────────────────────────────────────────────
+
+	/**
+	 * 부활 버튼이 부른다. **치트가 아니라 정식 경로**라 Shipping 에서도 살아 있다.
+	 *
+	 * 자동 부활 타이머와 같은 GameMode::RespawnPlayer 를 부른다. 둘이 갈라지면
+	 * 한쪽만 고쳤을 때 "버튼으로는 되는데 타이머로는 안 되는" 상태가 된다.
+	 *
+	 * 살아 있는데 눌러도 서버가 거부하므로 클라이언트가 상태를 검사할 필요는 없다.
+	 * 다만 UI 는 사망 중일 때만 버튼을 보여주는 편이 자연스럽다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Combat")
+	void ServerRequestRespawn();
 };

@@ -5,8 +5,10 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
+#include "Party/TDPartyComponent.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
@@ -428,6 +430,206 @@ namespace TDDebugCommands
 		});
 	}
 
+	/**
+	 * 파티 상태를 찍는다. 서버·클라이언트 어느 쪽에서 쳐도 자기가 아는 것을 보여준다 —
+	 * PartyId 는 전원에게 복제되므로 클라이언트도 정확한 값을 안다.
+	 */
+	static void DumpParty(const TArray<FString>& Args, UWorld* World)
+	{
+		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+		if (GameState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpParty: GameState 가 없다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 접속자 %d명 ──"), GameState->PlayerArray.Num());
+
+		for (APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			const ATDPlayerState* TDPlayerState = Cast<ATDPlayerState>(PlayerState);
+			const UTDPartyComponent* Party =
+				TDPlayerState ? TDPlayerState->GetPartyComponent() : nullptr;
+
+			if (Party == nullptr)
+			{
+				continue;
+			}
+
+			if (!Party->IsInParty())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %-20s  파티 없음"),
+					*TDPlayerState->GetPlayerName());
+				continue;
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("  %-20s  %s  %d명  경험치 +%.0f%%  파티 %s"),
+				*TDPlayerState->GetPlayerName(),
+				Party->IsPartyLeader() ? TEXT("[파티장]") : TEXT("        "),
+				Party->GetPartyMemberCount(),
+				Party->GetExpBonusRate() * 100.f,
+				*Party->GetPartyId().ToString(EGuidFormats::DigitsWithHyphens).Left(8));
+		}
+	}
+
+	/** 이름으로 상대를 찾아 초대한다. UI 가 없어도 파티를 검증할 수 있게 하는 통로다. */
+	static void PartyInvite(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.PartyInvite <상대이름일부>   (TD.DumpParty 로 이름 확인)"));
+			return;
+		}
+
+		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (GameState == nullptr || SelfState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyInvite: 자기 PlayerState 를 찾지 못했다."));
+			return;
+		}
+
+		ATDPlayerState* Target = nullptr;
+
+		for (APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			ATDPlayerState* TDPlayerState = Cast<ATDPlayerState>(PlayerState);
+			if (TDPlayerState == nullptr || TDPlayerState == SelfState)
+			{
+				continue;
+			}
+
+			if (TDPlayerState->GetPlayerName().Contains(Args[0]))
+			{
+				Target = TDPlayerState;
+				break;
+			}
+		}
+
+		if (Target == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("'%s' 인 접속자를 찾지 못했다."), *Args[0]);
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		if (UTDPartyComponent* Party = SelfState->GetPartyComponent())
+		{
+			Party->ServerInvitePlayer(Target);
+			UE_LOG(LogTDDebug, Log, TEXT("%s 로서 %s 에게 파티 초대를 보냈다."),
+				*SelfState->GetPlayerName(), *Target->GetPlayerName());
+		}
+	}
+
+	/** 받은 초대에 응답한다. UI 가 없으므로 명령으로 대신한다. */
+	static void PartyAccept(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr;
+		if (Party == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyAccept: PartyComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const bool bAccept = !Args.IsValidIndex(0) || Args[0].ToBool() || Args[0] == TEXT("1");
+
+		Party->ServerRespondToInvite(bAccept);
+
+		// 어느 플레이어로 응답했는지 함께 찍는다. 2인 PIE 에서는 어느 창에서 쳤는지가
+		// 결과를 가르는데, 이름이 없으면 그것을 알 수 없다.
+		UE_LOG(LogTDDebug, Log, TEXT("%s 로서 초대에 %s 응답을 보냈다. (결과는 서버 로그에)"),
+			*SelfState->GetPlayerName(), bAccept ? TEXT("수락") : TEXT("거절"));
+	}
+
+	/**
+	 * 처치 경험치 분배를 검증한다. 전투 쪽에 호출부가 붙기 전까지 이걸로 확인한다.
+	 *
+	 * AwardKillExp 는 서버 권한이 필요하므로 클라이언트 창에서는 동작하지 않는다.
+	 * 서버(리슨) 창에서 칠 것.
+	 */
+	static void PartyExp(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.PartyExp <기본경험치>"));
+			return;
+		}
+
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		const int32 BaseAmount = FCString::Atoi(*Args[0]);
+
+		// 다른 치트와 같은 방식으로 서버까지 태운다. AwardKillExp 가 서버 권한을
+		// 요구하므로 클라이언트에서 직접 부르면 조용히 무시된다.
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugPartyExp(BaseAmount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 처치 경험치 %d 분배를 요청했다. (결과는 서버 로그에)"), BaseAmount);
+			return;
+		}
+
+		UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr;
+		if (Party == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyExp: PartyComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 Awarded = Party->AwardKillExp(BaseAmount);
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("처치 경험치 %d 분배 → %d명이 받았다 (보너스 +%.0f%%, 존 '%s' 기준)"),
+			BaseAmount, Awarded, Party->GetExpBonusRate() * 100.f,
+			*SelfState->GetCurrentZoneId().ToString());
+	}
+
+	static void PartyLeave(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr)
+		{
+			Party->ServerLeaveParty();
+			UE_LOG(LogTDDebug, Log, TEXT("파티 탈퇴를 요청했다."));
+		}
+	}
+
+	/** 부활 버튼을 대신한다. UI 가 붙기 전까지 사망·부활을 검증하는 통로다. */
+	static void Respawn(const TArray<FString>& Args, UWorld* World)
+	{
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Respawn: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// 치트가 아니라 정식 경로를 그대로 쓴다. 버튼이 부를 함수와 같아야
+		// 여기서 통과한 것이 실제로도 동작한다.
+		Controller->ServerRequestRespawn();
+		UE_LOG(LogTDDebug, Log, TEXT("서버에 부활을 요청했다. (결과는 서버 로그에)"));
+	}
+
 	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -779,6 +981,36 @@ static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
 	TEXT("TD.AddExp"),
 	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpParty(
+	TEXT("TD.DumpParty"),
+	TEXT("접속자들의 파티 상태를 찍는다. 사용법: TD.DumpParty"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpParty));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyInvite(
+	TEXT("TD.PartyInvite"),
+	TEXT("이름으로 찾아 파티에 초대한다. 사용법: TD.PartyInvite <상대이름일부>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyInvite));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyAccept(
+	TEXT("TD.PartyAccept"),
+	TEXT("받은 초대에 응답한다. 사용법: TD.PartyAccept [0=거절]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyAccept));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyExp(
+	TEXT("TD.PartyExp"),
+	TEXT("처치 경험치를 파티에 분배한다(서버 전용). 사용법: TD.PartyExp <기본경험치>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyLeave(
+	TEXT("TD.PartyLeave"),
+	TEXT("파티에서 나간다. 사용법: TD.PartyLeave"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyLeave));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
+	TEXT("TD.Respawn"),
+	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDZone(
 	TEXT("TD.Zone"),

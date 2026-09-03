@@ -4,7 +4,9 @@
 #include "Combat/TDCombatComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "TimerManager.h"
 #include "InputActionValue.h"
 #include "Player/TDPlayerState.h"
 
@@ -171,4 +173,100 @@ void ATDPlayerCharacter::InitAbilityActorInfo()
 	// Owner 는 ASC 를 소유한 액터(PlayerState), Avatar 는 월드에서 그것을 대신하는 액터(캐릭터).
 	// 둘을 나누는 이유는 수명이 다르기 때문이다 — 캐릭터는 죽으면 사라지지만 PlayerState 는 남는다.
 	ASC->InitAbilityActorInfo(TDPlayerState, this);
+}
+
+// ── 사망·부활 ─────────────────────────────────────────────
+
+void ATDPlayerCharacter::HandleDeath()
+{
+	Super::HandleDeath();
+
+	SetDeadState(true);
+
+	// 자동 부활은 서버가 건다. 버튼(ServerRequestRespawn)이 먼저 눌리면
+	// GameMode 가 RespawnPlayer 안에서 이 타이머를 지운다.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
+	if (GameMode == nullptr)
+	{
+		return;
+	}
+
+	const float Delay = GameMode->GetAutoRespawnSeconds();
+	if (Delay <= 0.f)
+	{
+		// 0 이면 자동 부활을 쓰지 않는다는 뜻이다. 버튼으로만 되살아난다.
+		return;
+	}
+
+	APlayerController* OwningController = Cast<APlayerController>(GetController());
+	if (OwningController == nullptr)
+	{
+		return;
+	}
+
+	// 약한 참조로 잡는다. 타이머가 도는 동안 접속을 끊으면 대상이 사라진다.
+	TWeakObjectPtr<APlayerController> WeakController(OwningController);
+	TWeakObjectPtr<UWorld> WeakWorld(GetWorld());
+
+	GetWorldTimerManager().SetTimer(AutoRespawnTimerHandle,
+		[WeakController, WeakWorld]()
+		{
+			if (!WeakController.IsValid() || !WeakWorld.IsValid())
+			{
+				return;
+			}
+
+			if (ATDGameMode* TimerGameMode = WeakWorld->GetAuthGameMode<ATDGameMode>())
+			{
+				TimerGameMode->RespawnPlayer(WeakController.Get());
+			}
+		},
+		Delay, /*bLoop=*/ false);
+}
+
+void ATDPlayerCharacter::HandleRespawn()
+{
+	Super::HandleRespawn();
+
+	SetDeadState(false);
+
+	if (HasAuthority())
+	{
+		GetWorldTimerManager().ClearTimer(AutoRespawnTimerHandle);
+	}
+}
+
+void ATDPlayerCharacter::SetDeadState(bool bDead)
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		if (bDead)
+		{
+			// 입력만 막고 이동을 안 멈추면 죽는 순간의 속도로 계속 미끄러진다.
+			Movement->StopMovementImmediately();
+			Movement->DisableMovement();
+		}
+		else
+		{
+			Movement->SetMovementMode(MOVE_Walking);
+		}
+	}
+
+	// 입력 차단은 로컬 컨트롤러에서만 의미가 있다. 서버의 원격 컨트롤러에는 입력이 없다.
+	if (APlayerController* OwningController = Cast<APlayerController>(GetController()))
+	{
+		if (bDead)
+		{
+			DisableInput(OwningController);
+		}
+		else
+		{
+			EnableInput(OwningController);
+		}
+	}
 }

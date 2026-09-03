@@ -129,6 +129,30 @@ public:
 	/** 존 정의를 읽는다. 없으면 nullptr. UI·전투가 규칙을 물을 때도 쓴다. */
 	const FTDZoneEnvironmentRow* FindZoneRow(FGameplayTag ZoneId) const;
 
+	// ══════════════════════════════════════════════════════════
+	//  사망·부활
+	// ══════════════════════════════════════════════════════════
+
+	/**
+	 * 되살린다. **서버 전용.** 부활 버튼과 자동 부활 타이머가 같은 이 함수를 부른다.
+	 *
+	 * 두 경로가 갈라지면 한쪽만 고쳤을 때 "버튼으로는 되는데 타이머로는 안 되는"
+	 * 상태가 된다. 어느 쪽이 먼저 오든 여기서 한 번만 처리되고,
+	 * 남은 타이머는 캐릭터의 HandleRespawn 이 지운다.
+	 *
+	 * 하는 일:
+	 *   1. 사망 상태 해제 (조작 복구)
+	 *   2. 체력·마나를 절반으로 회복
+	 *   3. 그 존의 RespawnZoneId 로 이동
+	 *
+	 * @return 실제로 되살렸으면 true. 살아 있거나 Pawn 이 없으면 false.
+	 */
+	bool RespawnPlayer(APlayerController* Player);
+
+	/** 자동 부활까지의 시간(초). 0 이면 자동 부활 없이 버튼으로만 되살아난다. */
+	UFUNCTION(BlueprintPure, Category = "TD|Combat")
+	float GetAutoRespawnSeconds() const { return AutoRespawnSeconds; }
+
 protected:
 	/**
 	 * 캐릭터를 고르기 전에는 Pawn 을 만들지 않는다.
@@ -164,6 +188,21 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Character")
 	FName DefaultSpawnZoneTag = TEXT("Zone.Region1.Town");
+
+	/**
+	 * 죽고 나서 자동으로 되살아나기까지의 시간(초).
+	 *
+	 * 부활 버튼과 함께 둔다. 버튼만 있으면 자리를 비운 사이 시체로 남고,
+	 * 타이머만 있으면 기다리기 싫은 사람이 접속을 끊었다 다시 들어온다.
+	 *
+	 * 0 으로 두면 자동 부활을 쓰지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0.0"))
+	float AutoRespawnSeconds = 10.f;
+
+	/** 부활 시 회복되는 체력·마나 비율. 패널티 대신 절반으로 시작한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	float RespawnVitalRatio = 0.5f;
 
 private:
 	/**

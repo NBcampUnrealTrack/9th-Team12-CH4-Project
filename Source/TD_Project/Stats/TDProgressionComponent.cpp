@@ -94,6 +94,7 @@ bool UTDProgressionComponent::SetLevel(int32 NewLevel)
 	Exp = GetRequiredExpForLevel(ClampedLevel);
 
 	ApplyLevelChange(ClampedLevel);
+	OnProgressionChanged.Broadcast();
 
 	return true;
 }
@@ -129,6 +130,7 @@ void UTDProgressionComponent::AddExp(int32 Amount)
 
 	// 레벨은 저장하지 않는 파생값이다. 경험치가 늘 때마다 다시 구한다.
 	ApplyLevelChange(CalculateLevelFromExp(Exp));
+	OnProgressionChanged.Broadcast();
 }
 
 int32 UTDProgressionComponent::CalculateLevelFromExp(int32 TotalExp) const
@@ -371,4 +373,16 @@ void UTDProgressionComponent::ReadSaveData(const FTDPlayerSaveData& In)
 	}
 
 	RefreshStatModifiers();
+	OnProgressionChanged.Broadcast();
+}
+
+void UTDProgressionComponent::OnRep_Level(int32 PreviousLevel)
+{
+	OnLevelUp.Broadcast(Level, PreviousLevel);
+	OnProgressionChanged.Broadcast();
+}
+
+void UTDProgressionComponent::OnRep_Exp()
+{
+	OnProgressionChanged.Broadcast();
 }

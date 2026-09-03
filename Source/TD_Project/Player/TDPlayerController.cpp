@@ -239,3 +239,23 @@ void ATDPlayerController::ServerRequestRespawn_Implementation()
 		GameMode->RespawnPlayer(this);
 	}
 }
+
+void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
+{
+#if !UE_BUILD_SHIPPING
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+	if (TDPlayerState == nullptr)
+	{
+		return;
+	}
+
+	// 지급과 선택이 같은 함수 안에서 순서대로 일어난다. 서버에서 직접 부르므로
+	// 두 RPC 사이에 다른 것이 끼어들 여지가 없다.
+	ServerDebugGiveTestCharacters_Implementation();
+
+	const bool bSelected = TDPlayerState->SelectCharacter(SlotIndex);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 빠른 시작: %d번 캐릭터 선택 %s"),
+		SlotIndex, bSelected ? TEXT("성공") : TEXT("실패"));
+#endif
+}

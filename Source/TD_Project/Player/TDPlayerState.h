@@ -12,6 +12,7 @@ class UTDAttributeSet;
 class UTDInventoryComponent;
 class UTDItemUseComponent;
 class UTDPartyComponent;
+class UTDQuickSlotComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
 
@@ -80,6 +81,8 @@ public:
 	UTDItemUseComponent* GetItemUseComponent() const { return ItemUseComponent; }
 
 	UTDPartyComponent* GetPartyComponent() const { return PartyComponent; }
+
+	UTDQuickSlotComponent* GetQuickSlotComponent() const { return QuickSlotComponent; }
 
 	// ── 전투력 ────────────────────────────────────────────
 
@@ -309,4 +312,13 @@ private:
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Party")
 	TObjectPtr<UTDPartyComponent> PartyComponent;
+
+	/**
+	 * 퀵슬롯 배치. 캐릭터별 저장 대상이다 —
+	 * 전사의 1번과 법사의 1번이 같을 이유가 없다.
+	 *
+	 * 어느 키로 쓰는지는 여기가 아니라 Enhanced Input 이 로컬에 저장한다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|QuickSlot")
+	TObjectPtr<UTDQuickSlotComponent> QuickSlotComponent;
 };

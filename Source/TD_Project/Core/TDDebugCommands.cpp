@@ -8,7 +8,9 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
+#include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
+#include "Settings/TDInputSettingsLibrary.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
@@ -31,6 +33,9 @@
 #if !UE_BUILD_SHIPPING
 
 DEFINE_LOG_CATEGORY_STATIC(LogTDDebug, Log, All);
+
+/** TD.InputDebug 가 읽고 쓰는 값. 캐릭터의 Move 핸들러가 이걸 보고 로그를 찍는다. */
+static int32 GTDInputDebugValue = 0;
 
 namespace TDDebugCommands
 {
@@ -607,6 +612,173 @@ namespace TDDebugCommands
 		}
 	}
 
+	/**
+	 * 테스트 캐릭터를 넣고 곧바로 하나를 고른다. 테스트할 때마다 두 명령을 치는 수고를 없앤다.
+	 *
+	 * **RPC 를 두 번 보내지 않고 하나로 합친 이유**가 있다. 지급은 PlayerController 의,
+	 * 선택은 PlayerState 의 RPC 라 서로 다른 액터이고, 다른 액터의 Reliable RPC 는
+	 * 도착 순서가 보장되지 않는다(§11-G). 뒤바뀌면 "목록이 비었다" 로 실패한다.
+	 */
+	static void QuickStart(const TArray<FString>& Args, UWorld* World)
+	{
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Start: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// 기본은 1번(Mage, Lv.12). 스탯이 충분히 올라 있어 전투·회복 테스트에 편하다.
+		const int32 SlotIndex = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 1;
+
+		Controller->ServerDebugQuickStart(SlotIndex);
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("테스트 캐릭터 지급 + %d번 선택을 요청했다. (결과는 서버 로그에)"), SlotIndex);
+	}
+
+	/** 자기 퀵슬롯 컴포넌트. 서버·클라 어느 쪽에서 쳐도 자기 것을 집는다. */
+	static UTDQuickSlotComponent* GetLocalQuickSlots(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetQuickSlotComponent() : nullptr;
+	}
+
+	static void DumpQuickSlots(const TArray<FString>& Args, UWorld* World)
+	{
+		const UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpQuick: QuickSlotComponent 를 찾지 못했다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 퀵슬롯 %d칸 ──"), UTDQuickSlotComponent::SlotCount);
+
+		for (int32 i = 0; i < UTDQuickSlotComponent::SlotCount; ++i)
+		{
+			const FTDQuickSlot Slot = QuickSlots->GetSlot(i);
+
+			if (Slot.IsEmpty())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %d.  (비어 있음)"), i);
+				continue;
+			}
+
+			// 아이템이면 인벤토리에 몇 개 있는지 함께 찍는다. 0 이면 회색으로 표시될 자리다.
+			const int32 Count = QuickSlots->GetSlotItemCount(i);
+
+			UE_LOG(LogTDDebug, Log, TEXT("  %d.  %-8s %-16s %s"),
+				i,
+				Slot.Type == ETDQuickSlotType::Item ? TEXT("[아이템]") : TEXT("[스킬]"),
+				*Slot.Id.ToString(),
+				Slot.Type == ETDQuickSlotType::Item
+					? *FString::Printf(TEXT("보유 %d개%s"), Count, Count == 0 ? TEXT(" ← 사용 불가") : TEXT(""))
+					: TEXT(""));
+		}
+	}
+
+	static void QuickSet(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.QuickSet <슬롯0~%d> <아이템ID> [skill]   예) TD.QuickSet 0 Elixir"),
+				UTDQuickSlotComponent::SlotCount - 1);
+			return;
+		}
+
+		UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.QuickSet: QuickSlotComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 SlotIndex = FCString::Atoi(*Args[0]);
+		const FName Id(*Args[1]);
+
+		// 세 번째 인자에 아무거나 넣으면 스킬로 등록한다. 스킬 시스템이 없어도
+		// 슬롯이 타입을 구분해 저장하는지는 확인할 수 있다.
+		const ETDQuickSlotType Type = Args.IsValidIndex(2)
+			? ETDQuickSlotType::Skill
+			: ETDQuickSlotType::Item;
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		QuickSlots->ServerSetSlot(SlotIndex, Type, Id);
+
+		UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %d 에 '%s' 등록을 요청했다. (결과는 TD.DumpQuick)"),
+			SlotIndex, *Id.ToString());
+	}
+
+	static void QuickUse(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.QuickUse <슬롯>"));
+			return;
+		}
+
+		UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			return;
+		}
+
+		// 입력 바인딩과 **같은 경로**를 탄다. 여기서 통과하면 키를 눌렀을 때도 동작한다.
+		QuickSlots->ServerUseSlot(FCString::Atoi(*Args[0]));
+
+		UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %s 사용을 요청했다."), *Args[0]);
+	}
+
+	static void QuickClear(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.QuickClear <슬롯>"));
+			return;
+		}
+
+		if (UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World))
+		{
+			QuickSlots->ServerClearSlot(FCString::Atoi(*Args[0]));
+			UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %s 비우기를 요청했다."), *Args[0]);
+		}
+	}
+
+	/** 리매핑 목록을 찍는다. IA 설정이 제대로 됐는지 확인하는 용도다. */
+	static void DumpKeys(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		if (PC == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpKeys: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		const TArray<FTDKeyMappingRow> Rows = UTDInputSettingsLibrary::GetKeyMappings(PC);
+
+		// 비어 있으면 라이브러리가 이미 원인을 로그로 남긴다.
+		UE_LOG(LogTDDebug, Log, TEXT("── 리매핑 가능한 키 %d개 ──"), Rows.Num());
+
+		for (const FTDKeyMappingRow& Row : Rows)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("  %-14s %-12s %s"),
+				*Row.MappingName.ToString(),
+				*Row.CurrentKey.ToString(),
+				*Row.DisplayName.ToString());
+		}
+	}
+
 	/** 부활 버튼을 대신한다. UI 가 붙기 전까지 사망·부활을 검증하는 통로다. */
 	static void Respawn(const TArray<FString>& Args, UWorld* World)
 	{
@@ -1007,6 +1179,36 @@ static FAutoConsoleCommandWithWorldAndArgs GTDPartyLeave(
 	TEXT("파티에서 나간다. 사용법: TD.PartyLeave"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyLeave));
 
+static FAutoConsoleCommandWithWorldAndArgs GTDStart(
+	TEXT("TD.Start"),
+	TEXT("테스트 캐릭터를 넣고 곧바로 선택한다. 사용법: TD.Start [슬롯=1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickStart));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
+	TEXT("TD.DumpQuick"),
+	TEXT("퀵슬롯 6칸과 각 칸의 보유 개수를 찍는다. 사용법: TD.DumpQuick"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpQuickSlots));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickSet(
+	TEXT("TD.QuickSet"),
+	TEXT("퀵슬롯에 등록한다. 사용법: TD.QuickSet <슬롯> <아이템ID> [skill]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickSet));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickUse(
+	TEXT("TD.QuickUse"),
+	TEXT("퀵슬롯을 사용한다(키 입력과 같은 경로). 사용법: TD.QuickUse <슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickUse));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickClear(
+	TEXT("TD.QuickClear"),
+	TEXT("퀵슬롯을 비운다. 사용법: TD.QuickClear <슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickClear));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpKeys(
+	TEXT("TD.DumpKeys"),
+	TEXT("리매핑 가능한 키 목록을 찍는다. 사용법: TD.DumpKeys"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpKeys));
+
 static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
 	TEXT("TD.Respawn"),
 	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
@@ -1081,5 +1283,15 @@ static FAutoConsoleCommandWithWorldAndArgs GTDAttack(
 	TEXT("TD.Attack"),
 	TEXT("전방 히트박스로 공격한다(쿨타임·팀 판정 포함). 사용법: TD.Attack"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Attack));
+
+/**
+ * 이동 입력의 축 값을 로그로 찍는다. 방향이 이상할 때 IMC 모디파이어를 확인하는 용도다.
+ *
+ * ATDPlayerCharacter::Move 가 이 값을 읽는다. 매 프레임 찍히므로 필요할 때만 켤 것.
+ */
+static FAutoConsoleVariableRef GTDInputDebug(
+	TEXT("TD.InputDebug"),
+	GTDInputDebugValue,
+	TEXT("1 이면 이동 입력의 축 값을 로그로 찍는다. 사용법: TD.InputDebug 1"));
 
 #endif // !UE_BUILD_SHIPPING

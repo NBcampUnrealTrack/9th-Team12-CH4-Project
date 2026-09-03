@@ -4,10 +4,12 @@
 #include "Combat/TDCombatComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "InputActionValue.h"
+#include "Items/TDQuickSlotComponent.h"
 #include "Player/TDPlayerState.h"
 
 ATDPlayerCharacter::ATDPlayerCharacter()
@@ -79,6 +81,22 @@ void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 			if (DefaultMappingContext != nullptr)
 			{
 				Subsystem->AddMappingContext(DefaultMappingContext, 0);
+
+				// 사용자 설정에 **따로 등록해야** 리매핑 목록에 나온다.
+				// AddMappingContext 는 입력을 켜기만 할 뿐이고, 이 호출이
+				// IMC 안의 mappable 매핑을 훑어 키 프로필에 항목을 만든다.
+				//
+				// 빠뜨리면 IA 에 Name 을 제대로 넣어도 GetKeyMappings 가 빈 배열을 돌려준다 —
+				// 조작은 되는데 설정 화면만 비어 있는 상태가 된다.
+				//
+				// **주의**: 등록은 이름 단위다. 하나의 IA 에 여러 키가 붙어 있는데
+				// 전부 같은 이름을 물려받으면(Inherit) 매핑끼리 덮어써져 입력이 깨진다.
+				// IA_Move 의 상하좌우처럼 축을 나눠 받는 액션은 IMC 에서 매핑마다
+				// Override Settings 로 다른 이름을 줘야 한다(§11-H).
+				if (UEnhancedInputUserSettings* UserSettings = Subsystem->GetUserSettings())
+				{
+					UserSettings->RegisterInputMappingContext(DefaultMappingContext);
+				}
 			}
 			else
 			{
@@ -118,6 +136,26 @@ void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	{
 		EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Attack);
 	}
+
+	// 퀵슬롯·스킬은 번호를 payload 로 넘겨 핸들러 하나로 처리한다.
+	// 슬롯마다 함수를 만들면 똑같은 내용이 6개, 3개씩 늘어선다.
+	for (int32 SlotIndex = 0; SlotIndex < QuickSlotActions.Num(); ++SlotIndex)
+	{
+		if (QuickSlotActions[SlotIndex] != nullptr)
+		{
+			EnhancedInput->BindAction(QuickSlotActions[SlotIndex], ETriggerEvent::Started,
+				this, &ATDPlayerCharacter::UseQuickSlot, SlotIndex);
+		}
+	}
+
+	for (int32 SkillIndex = 0; SkillIndex < SkillActions.Num(); ++SkillIndex)
+	{
+		if (SkillActions[SkillIndex] != nullptr)
+		{
+			EnhancedInput->BindAction(SkillActions[SkillIndex], ETriggerEvent::Started,
+				this, &ATDPlayerCharacter::UseSkill, SkillIndex);
+		}
+	}
 }
 
 // ── 핸들러 ────────────────────────────────────────────────
@@ -129,6 +167,19 @@ void ATDPlayerCharacter::Move(const FInputActionValue& Value)
 	{
 		return;
 	}
+
+#if !UE_BUILD_SHIPPING
+	// TD.InputDebug 1 로 켠다. 어느 키를 눌러도 같은 값이 나오면 IMC 문제다 —
+	// Axis2D 매핑에는 키마다 Negate·Swizzle 모디파이어가 필요하고,
+	// 없으면 W·A·S·D 가 전부 X 축 양수로 들어온다.
+	static const IConsoleVariable* InputDebugCVar =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("TD.InputDebug"));
+
+	if (InputDebugCVar != nullptr && InputDebugCVar->GetInt() != 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("이동 입력: X=%.2f  Y=%.2f"), Axis.X, Axis.Y);
+	}
+#endif
 
 	// 월드 축 기준이다. 탑다운에서는 카메라가 어디를 보든 "위" 키가 같은 방향이어야 한다.
 	// 이동 자체는 CharacterMovementComponent 가 예측·복제까지 처리하므로 RPC 를 만들지 않는다(D42).
@@ -154,6 +205,36 @@ void ATDPlayerCharacter::Attack()
 		// 클라이언트는 요청만 보낸다. 쿨타임·히트박스·데미지는 전부 서버가 판정한다.
 		Combat->ServerRequestAttack();
 	}
+}
+
+void ATDPlayerCharacter::UseQuickSlot(int32 SlotIndex)
+{
+	const ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+	UTDQuickSlotComponent* QuickSlots =
+		TDPlayerState ? TDPlayerState->GetQuickSlotComponent() : nullptr;
+
+	if (QuickSlots == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("퀵슬롯 %d 입력 — QuickSlotComponent 가 없다. 캐릭터를 먼저 선택할 것."),
+			SlotIndex + 1);
+		return;
+	}
+
+	// 키가 실제로 도착했는지 남긴다. 슬롯이 비어 있으면 서버가 조용히 무시하므로
+	// 이 로그가 없으면 "키가 안 먹는 것" 과 "슬롯이 비어 있는 것" 을 구분할 수 없다.
+	UE_LOG(LogTemp, Log, TEXT("퀵슬롯 %d 입력."), SlotIndex + 1);
+
+	// 클라이언트는 "몇 번을 눌렀다"만 보낸다. 그 자리에 무엇이 있는지, 쓸 수 있는지는
+	// 서버가 자기 배열을 보고 판단한다 — 슬롯 내용을 함께 보내면 위조할 수 있다(D56 과 같은 원칙).
+	QuickSlots->ServerUseSlot(SlotIndex);
+}
+
+void ATDPlayerCharacter::UseSkill(int32 SkillIndex)
+{
+	// S10 에서 어빌리티 발동으로 바꾼다. 그때도 클라이언트는 "몇 번을 눌렀다"만 보내고
+	// 쿨타임·마나·사거리는 서버가 판정한다 — 평타(Attack)와 같은 구조다.
+	UE_LOG(LogTemp, Log, TEXT("스킬 %d 입력 — 스킬 시스템이 아직 없다."), SkillIndex + 1);
 }
 
 void ATDPlayerCharacter::InitAbilityActorInfo()

@@ -1,5 +1,7 @@
 #include "Items/TDQuickSlotComponent.h"
 
+#include "Core/TDGameplayTags.h"
+#include "Data/TDItemRow.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemTypes.h"
 #include "Items/TDItemUseComponent.h"
@@ -79,6 +81,24 @@ void UTDQuickSlotComponent::ServerSetSlot_Implementation(int32 Index, ETDQuickSl
 		return;
 	}
 
+	if (Type == ETDQuickSlotType::Item)
+	{
+		const ATDPlayerState* PlayerState = GetOwnerPlayerState();
+		const UTDInventoryComponent* Inventory = PlayerState ? PlayerState->GetInventoryComponent() : nullptr;
+		const FTDItemRow* Definition = Inventory ? Inventory->FindItemDefinition(Id) : nullptr;
+		if (!Definition || Definition->ItemType != TDTags::Item_Type_Consumable.GetTag()
+			|| Inventory->GetItemCount(Id) <= 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("퀵슬롯: 실제 보유한 소비 아이템만 등록할 수 있습니다. 아이템 '%s'를 확인하세요."), *Id.ToString());
+			return;
+		}
+	}
+	else if (Type != ETDQuickSlotType::Skill)
+	{
+		return;
+	}
+
+	// 검증에 실패한 요청은 기존 등록과 다른 슬롯을 변경하지 않는다.
 	// 하나가 두 칸을 차지하면 어느 쪽을 눌러도 같아 혼란스럽다.
 	ClearDuplicates(Index, Type, Id);
 

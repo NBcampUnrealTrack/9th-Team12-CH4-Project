@@ -204,6 +204,7 @@ void UTDInventoryContentWidget::BuildInventoryFromTable(UDataTable* SourceTable)
 
 		if (ItemIds.IsValidIndex(SlotIndex))
 		{
+			SlotListItem->bIsPreviewItem = true;
 			const FName ItemId = ItemIds[SlotIndex];
 			const FTDItemRow* Definition = SourceTable->FindRow<FTDItemRow>(
 				ItemId, TEXT("UTDInventoryContentWidget::BuildInventoryFromTable"), false);

@@ -10,7 +10,6 @@ void UTDPlayerStatsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
  PlayerStatsViewModel = NewObject<UTDPlayerStatsViewModel>(this);
  PlayerStatsViewModel->SetSource(nullptr);
  RefreshSource();
- // 수치 폴링이 아니라 접속 객체의 준비/교체 확인이다. 동일 객체면 즉시 종료한다.
  SourceCheckHandle = FTSTicker::GetCoreTicker().AddTicker(
   FTickerDelegate::CreateUObject(this, &ThisClass::CheckPlayerState), 0.25f);
 }

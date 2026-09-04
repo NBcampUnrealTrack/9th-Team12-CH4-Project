@@ -32,6 +32,9 @@ void UTDHUDLayer::NativeConstruct()
 				NavMenu->SetMenuSelected(
 					ETDNavMenuType::Inventory,
 					UIManager->IsMenuOpen(ETDNavMenuType::Inventory));
+				NavMenu->SetMenuSelected(
+					ETDNavMenuType::Character,
+					UIManager->IsMenuOpen(ETDNavMenuType::Character));
 			}
 		}
 	}

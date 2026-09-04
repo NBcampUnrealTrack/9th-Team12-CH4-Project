@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Chat/TDChatTypes.h"
 #include "Game/TDGameMode.h"
+#include "Market/TDMarketTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "Data/TDDialogueRow.h"
@@ -70,6 +71,31 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FTDOnChatSendFailed,
 	ETDChatSendResult, Reason);
+
+/**
+ * 거래소 요청(등록·구매·취소)의 결과. **성공했을 때도 온다.**
+ *
+ * 채팅과 달리 성공을 알려야 한다 — 등록이 됐는지 안 됐는지는 목록을 다시
+ * 받아보기 전까지 화면에서 알 수 없기 때문이다.
+ *
+ * ListingId 는 등록에 성공했을 때 발급된 번호다. 다른 경우에는 요청한 번호가
+ * 그대로 돌아온다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnMarketResult,
+	ETDMarketResult, Result,
+	int32, ListingId);
+
+/**
+ * 거래소 검색 결과. **그 시점의 스냅샷이다.**
+ *
+ * 목록은 복제되지 않는다 — 매물이 수천 개가 될 수 있어 전체 복제가 성립하지
+ * 않는다. 보는 사이 남이 사 가면 구매가 ListingNotFound 로 거부되므로,
+ * UI 는 그때 다시 검색하면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnMarketSearchResult,
+	const TArray<FTDMarketListing>&, Listings);
 
 class ATDNPCBase;
 class UDataTable;
@@ -313,6 +339,54 @@ public:
 
 	UFUNCTION(Client, Reliable)
 	void ClientChatSendFailed(ETDChatSendResult Reason);
+
+	// ══════════════════════════════════════════════════════
+	//  거래소
+	// ══════════════════════════════════════════════════════
+	// 서버 서브시스템(UTDMarketSubsystem)이 실제 처리를 한다. 여기는 통로다.
+
+	/**
+	 * 인벤토리의 아이템을 매물로 올린다. **아이템이 인벤토리에서 빠진다.**
+	 *
+	 * @param Price  묶음 전체의 값. 낱개 가격이 아니다 — 부분 구매가 없다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerListItem(int32 InventorySlot, int32 Price);
+
+	/** 매물을 산다. 묶음 통째로만 산다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerBuyListing(int32 ListingId);
+
+	/** 자기 매물을 내린다. 아이템이 인벤토리로 돌아온다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerCancelListing(int32 ListingId);
+
+	/**
+	 * 매물을 찾는다. 결과는 OnMarketSearchResult 로 돌아온다.
+	 *
+	 * @param ItemIdFilter  비우면 전부. 넣으면 그 아이템만.
+	 * @param Page          0 부터. 한 쪽 크기는 프로젝트 세팅에서 정한다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerSearchListings(FName ItemIdFilter, int32 Page);
+
+	/** 자기가 올려 둔 매물을 받는다. "내 판매 목록" 탭에 쓴다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerRequestMyListings();
+
+	UFUNCTION(Client, Reliable)
+	void ClientMarketResult(ETDMarketResult Result, int32 ListingId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientMarketSearchResult(const TArray<FTDMarketListing>& Listings);
+
+	/** 등록·구매·취소의 결과. **UI 가 구독할 지점이다.** */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Market")
+	FTDOnMarketResult OnMarketResult;
+
+	/** 검색 결과. 내 판매 목록도 같은 델리게이트로 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Market")
+	FTDOnMarketSearchResult OnMarketSearchResult;
 
 private:
 	/**

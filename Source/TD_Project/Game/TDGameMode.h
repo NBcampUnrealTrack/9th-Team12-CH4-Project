@@ -179,10 +179,16 @@ public:
 	 *
 	 * 전투·인벤토리 쪽에서 "경험치 120 획득" 같은 것을 띄울 때 부르면 된다.
 	 * 검열과 쿨다운을 거치지 않는다 — 서버가 만든 문장이기 때문이다.
+	 *
+	 * 블루프린트에도 연다. 이벤트나 연출을 BP 로 만드는 쪽에서 "보스가 등장했습니다"
+	 * 같은 것을 띄우려면 필요하다. 채널은 System 이나 Loot 만 의미가 있다 —
+	 * 대화 채널을 넣으면 보낸 사람 이름 없이 나가서 UI 가 어색하게 그린다.
 	 */
+	UFUNCTION(BlueprintCallable, Category = "TD|Chat", meta = (BlueprintAuthorityOnly = "true"))
 	void SendSystemMessage(APlayerController* Target, ETDChatChannel Channel, const FString& Message);
 
 	/** 접속자 전원에게 공지를 보낸다. 점검 안내 같은 것. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Chat", meta = (BlueprintAuthorityOnly = "true"))
 	void BroadcastSystemMessage(const FString& Message);
 
 protected:

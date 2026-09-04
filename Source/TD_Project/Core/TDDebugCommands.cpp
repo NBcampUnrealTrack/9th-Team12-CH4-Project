@@ -9,7 +9,9 @@
 #include "GameFramework/PlayerState.h"
 #include "Chat/TDChatFilter.h"
 #include "Data/TDBannedWordRow.h"
+#include "Engine/GameInstance.h"
 #include "Items/TDEnhanceStatics.h"
+#include "Market/TDMarketSubsystem.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
@@ -1001,6 +1003,115 @@ namespace TDDebugCommands
 			*Output, bMasked ? TEXT("← 걸림") : TEXT("(통과)"));
 	}
 
+	// ── 거래소 ────────────────────────────────────────────
+	// 전부 Server RPC 를 타므로 클라이언트 창에서도 그대로 통한다.
+
+	static ATDPlayerController* GetLocalTDController(UWorld* World)
+	{
+		return World ? Cast<ATDPlayerController>(World->GetFirstPlayerController()) : nullptr;
+	}
+
+	static void MarketList(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.MarketList <인벤슬롯> <가격>   가격은 묶음 전체 값이다"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerListItem(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]));
+		}
+	}
+
+	static void MarketBuy(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.MarketBuy <매물번호>   (TD.MarketSearch 로 번호 확인)"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerBuyListing(FCString::Atoi(*Args[0]));
+		}
+	}
+
+	static void MarketCancel(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.MarketCancel <매물번호>"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerCancelListing(FCString::Atoi(*Args[0]));
+		}
+	}
+
+	/**
+	 * 매물을 찾는다. 결과는 서버가 Client RPC 로 돌려주므로 로그에 한 박자 늦게 찍힌다.
+	 *
+	 * 인자를 주지 않으면 전체, 주면 그 아이템만 본다.
+	 */
+	static void MarketSearch(const TArray<FString>& Args, UWorld* World)
+	{
+		const FName Filter = Args.IsValidIndex(0) ? FName(*Args[0]) : NAME_None;
+		const int32 Page = Args.IsValidIndex(1) ? FCString::Atoi(*Args[1]) : 0;
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerSearchListings(Filter, Page);
+		}
+	}
+
+	static void MarketMine(const TArray<FString>& Args, UWorld* World)
+	{
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerRequestMyListings();
+		}
+	}
+
+	/**
+	 * 거래소 상태를 서버 쪽에서 직접 찍는다. 검색과 달리 RPC 를 타지 않아
+	 * 매물이 실제로 어떻게 들어 있는지 그대로 보인다.
+	 */
+	static void DumpMarket(const TArray<FString>& Args, UWorld* World)
+	{
+		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		const UTDMarketSubsystem* Market = GameInstance
+			? GameInstance->GetSubsystem<UTDMarketSubsystem>()
+			: nullptr;
+
+		if (Market == nullptr || World == nullptr || World->GetNetMode() == NM_Client)
+		{
+			// 매물은 서버 메모리에만 있다. 클라이언트에는 애초에 읽을 것이 없다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.DumpMarket 은 서버(또는 단일 PIE)에서만 쓴다 — 매물은 서버에만 있다. "
+					 "클라이언트 창에서는 TD.MarketSearch 를 쓸 것(결과가 한 박자 늦게 찍힌다)."));
+			return;
+		}
+
+		// 페이지를 넉넉히 잡아 한 번에 본다. 검증용이라 페이징이 의미가 없다.
+		const TArray<FTDMarketListing> All = Market->Search(NAME_None, 0);
+
+		UE_LOG(LogTDDebug, Log, TEXT("거래소 매물 %d건 (첫 페이지)"), All.Num());
+
+		for (const FTDMarketListing& Entry : All)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-20s x%-3d  %8d 골드   판매자 %s  강화 +%d"),
+				Entry.ListingId, *Entry.Item.ItemId.ToString(), Entry.Item.Count,
+				Entry.Price, *Entry.SellerName, Entry.Item.EnhanceLevel);
+		}
+	}
+
 	static void QuickSet(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(1))
@@ -1562,6 +1673,36 @@ static FAutoConsoleCommandWithWorldAndArgs GTDChatFilter(
 	TEXT("TD.ChatFilter"),
 	TEXT("금지어 필터만 돌려 본다(채팅을 보내지 않는다). 사용법: TD.ChatFilter <문장>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ChatFilterTest));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketList(
+	TEXT("TD.MarketList"),
+	TEXT("아이템을 거래소에 올린다. 사용법: TD.MarketList <인벤슬롯> <가격>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketList));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketBuy(
+	TEXT("TD.MarketBuy"),
+	TEXT("매물을 산다. 사용법: TD.MarketBuy <매물번호>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketBuy));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketCancel(
+	TEXT("TD.MarketCancel"),
+	TEXT("자기 매물을 내린다. 사용법: TD.MarketCancel <매물번호>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketCancel));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketSearch(
+	TEXT("TD.MarketSearch"),
+	TEXT("매물을 찾는다(결과는 한 박자 늦게 찍힌다). 사용법: TD.MarketSearch [ItemId] [페이지]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketSearch));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketMine(
+	TEXT("TD.MarketMine"),
+	TEXT("내가 올린 매물을 본다. 사용법: TD.MarketMine"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketMine));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpMarket(
+	TEXT("TD.DumpMarket"),
+	TEXT("거래소 매물을 서버에서 직접 찍는다(서버 전용). 사용법: TD.DumpMarket"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpMarket));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
 	TEXT("TD.DumpQuick"),

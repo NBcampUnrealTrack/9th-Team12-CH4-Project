@@ -4,8 +4,10 @@
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDCharacterBase.h"
 #include "Core/TDGameplayTags.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Game/TDGameMode.h"
+#include "Market/TDMarketSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemUseComponent.h"
@@ -234,6 +236,16 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 	UE_LOG(LogTemp, Log,
 		TEXT("캐릭터 선택: %s (%s, Lv.%d) — 슬롯 %d"),
 		*Chosen.CharacterName, *Chosen.ClassId.ToString(), Chosen.Level, SlotIndex);
+
+	// 이름이 정해진 지금이 거래소 대금을 받을 수 있는 첫 시점이다. 접속 직후에는
+	// 아직 어느 캐릭터인지 몰라 누구에게 줄 돈인지 판단할 수 없다.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UTDMarketSubsystem* Market = GameInstance->GetSubsystem<UTDMarketSubsystem>())
+		{
+			Market->ClaimPendingGold(this);
+		}
+	}
 
 	OnCharacterSelected.Broadcast();
 	ForceNetUpdate();

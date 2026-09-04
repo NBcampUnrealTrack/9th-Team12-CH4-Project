@@ -7,7 +7,9 @@
 #include "Core/TDGameInstance.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/GameInstance.h"
 #include "Items/TDInventoryComponent.h"
+#include "Market/TDMarketSubsystem.h"
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
@@ -720,4 +722,100 @@ void ATDPlayerController::ClientChatSendFailed_Implementation(ETDChatSendResult 
 
 	UE_LOG(LogTemp, Log, TEXT("채팅 거부됨: %s"),
 		*UEnum::GetDisplayValueAsText(Reason).ToString());
+}
+
+// ── 거래소 ────────────────────────────────────────────────
+// 실제 처리는 UTDMarketSubsystem 이 한다. 여기는 요청을 넘기고 결과를 돌려주는 통로다.
+
+namespace
+{
+	/** 서버에서만 유효하다. 클라이언트에도 서브시스템은 있지만 매물 목록이 비어 있다. */
+	UTDMarketSubsystem* GetMarket(const APlayerController* Controller)
+	{
+		const UGameInstance* GameInstance = Controller ? Controller->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UTDMarketSubsystem>() : nullptr;
+	}
+}
+
+void ATDPlayerController::ServerListItem_Implementation(int32 InventorySlot, int32 Price)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, 0);
+		return;
+	}
+
+	int32 NewListingId = 0;
+	const ETDMarketResult Result = Market->ListItem(TDPlayerState, InventorySlot, Price, NewListingId);
+
+	ClientMarketResult(Result, NewListingId);
+}
+
+void ATDPlayerController::ServerBuyListing_Implementation(int32 ListingId)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, ListingId);
+		return;
+	}
+
+	// 요청한 번호를 그대로 돌려준다. UI 가 어느 줄에 대한 결과인지 알아야 한다.
+	ClientMarketResult(Market->BuyListing(TDPlayerState, ListingId), ListingId);
+}
+
+void ATDPlayerController::ServerCancelListing_Implementation(int32 ListingId)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, ListingId);
+		return;
+	}
+
+	ClientMarketResult(Market->CancelListing(TDPlayerState, ListingId), ListingId);
+}
+
+void ATDPlayerController::ServerSearchListings_Implementation(FName ItemIdFilter, int32 Page)
+{
+	if (const UTDMarketSubsystem* Market = GetMarket(this))
+	{
+		ClientMarketSearchResult(Market->Search(ItemIdFilter, Page));
+	}
+}
+
+void ATDPlayerController::ServerRequestMyListings_Implementation()
+{
+	const UTDMarketSubsystem* Market = GetMarket(this);
+	const ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		return;
+	}
+
+	ClientMarketSearchResult(Market->GetListingsBySeller(TDPlayerState->GetPlayerName()));
+}
+
+void ATDPlayerController::ClientMarketResult_Implementation(ETDMarketResult Result, int32 ListingId)
+{
+	OnMarketResult.Broadcast(Result, ListingId);
+
+	UE_LOG(LogTemp, Log, TEXT("거래소 결과: %s (매물 %d)"),
+		*UEnum::GetDisplayValueAsText(Result).ToString(), ListingId);
+}
+
+void ATDPlayerController::ClientMarketSearchResult_Implementation(
+	const TArray<FTDMarketListing>& Listings)
+{
+	OnMarketSearchResult.Broadcast(Listings);
+
+	UE_LOG(LogTemp, Log, TEXT("거래소 검색 결과 %d건"), Listings.Num());
 }

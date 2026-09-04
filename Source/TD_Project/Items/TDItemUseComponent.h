@@ -80,6 +80,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
 	int32 GetSetPieceCount(FName SetId) const;
 
+	/**
+	 * 강화가 이 아이템의 스탯을 몇 배로 만드는지. **1강당 상승폭은 아이템마다 다르다** —
+	 * DT_ItemDefinition 의 RequiredLevel 이 높을수록 커진다(2%/강 ~ 7%/강).
+	 *
+	 * 장착 여부와 무관하게 답한다. 인벤토리에 있는 아이템의 툴팁에도 쓸 수 있고,
+	 * EnhanceLevel + 1 을 넣으면 "다음 강화에 성공하면 얼마가 되는지" 미리보기가 된다.
+	 *
+	 * 강화 단수가 0 이면 1.0 이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
+	float GetEnhanceMultiplier(FName ItemId, int32 EnhanceLevel) const;
+
 	UPROPERTY(BlueprintAssignable, Category = "TD|Equipment")
 	FTDOnEquipmentChanged OnEquipmentChanged;
 

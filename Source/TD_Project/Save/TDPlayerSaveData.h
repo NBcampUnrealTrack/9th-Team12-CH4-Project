@@ -150,4 +150,8 @@ struct FTDPlayerSaveData
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDQuickSlot> QuickSlots;
+
+	/** 소지 골드. 인벤토리와 함께 저장된다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	int32 Gold = 0;
 };

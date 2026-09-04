@@ -683,6 +683,7 @@ namespace TDDebugCommands
 			return;
 		}
 
+
 		// 기본은 1번(Mage, Lv.12). 스탯이 충분히 올라 있어 전투·회복 테스트에 편하다.
 		const int32 SlotIndex = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 1;
 

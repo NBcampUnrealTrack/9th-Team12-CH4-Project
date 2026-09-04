@@ -99,6 +99,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 
 class ATDNPCBase;
 class UDataTable;
+class UTDZoneEnvironmentComponent;
 
 /**
  * 플레이어 한 명의 의도를 나타내는 Controller.
@@ -118,6 +119,20 @@ class TD_PROJECT_API ATDPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	ATDPlayerController();
+
+	/**
+	 * Pawn 을 새로 잡았을 때(접속·부활) 존 환경을 다시 적용한다.
+	 *
+	 * 카메라는 Pawn 에 딸려 있어 죽고 살아나면 BP 기본값으로 돌아온다. 존이 바뀌지
+	 * 않았으니 OnZoneChanged 도 오지 않아, 여기서 부르지 않으면 그대로 남는다.
+	 *
+	 * 서버(리슨 호스트 포함)는 OnPossess, 클라이언트는 AcknowledgePossession 이 불린다.
+	 * 실제로 카메라를 만지는 것은 로컬 컨트롤러뿐이라 양쪽 다 걸어 둔다.
+	 */
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* InPawn) override;
+
 	/**
 	 * 개발용 접속 명령. 콘솔에 직접 입력한다.
 	 *
@@ -389,6 +404,15 @@ public:
 	FTDOnMarketSearchResult OnMarketSearchResult;
 
 private:
+	/**
+	 * 존이 바뀔 때 카메라·라이팅을 맞춘다. 로컬 컨트롤러에서만 실제로 동작한다.
+	 *
+	 * 컨트롤러에 둔 이유는 카메라와 존을 둘 다 아는 자리가 여기뿐이어서다 —
+	 * 카메라는 Pawn 에 있고 존은 PlayerState 에 있다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|World")
+	TObjectPtr<UTDZoneEnvironmentComponent> ZoneEnvironmentComponent;
+
 	/**
 	 * 마지막으로 채팅을 보낸 시각. 도배 방지에 쓴다. **서버에서만 의미가 있다.**
 	 *

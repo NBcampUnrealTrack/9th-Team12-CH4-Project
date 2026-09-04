@@ -43,4 +43,16 @@ public:
 
 	/** 마나 회복. RestoreHealth 와 같은 규칙을 따른다. */
 	static bool RestoreMana(AActor* Target, float Amount);
+
+	/**
+	 * 이 캐릭터가 안전지대에 있는가. `DT_ZoneEnvironment.bIsSafeZone` 을 읽는다.
+	 *
+	 * 몬스터는 늘 false 다 — 존은 플레이어에게만 있는 값이라(PlayerState) 몬스터의
+	 * 위치로는 판단할 수 없다. 안전지대에 몬스터를 두지 않는 것이 전제다.
+	 *
+	 * UI 가 "안전지대" 표시를 하려면 이 함수를 쓰면 된다. 다만 **서버 전용**이다 —
+	 * GameMode 에서 테이블을 읽으므로 클라이언트에서는 항상 false 가 나온다.
+	 * 클라이언트에서 판단해야 하면 CurrentZoneId 로 테이블을 직접 조회할 것.
+	 */
+	static bool IsInSafeZone(const AActor* Actor);
 };

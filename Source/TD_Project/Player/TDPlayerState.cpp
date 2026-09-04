@@ -190,17 +190,21 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 
 	// 한 번 고르고 나면 바꿀 수 없다. 캐릭터를 갈아타려면 접속을 다시 해야 한다.
 	// 인게임 중에 허용하면 인벤토리·스탯을 통째로 교체하는 경로가 필요해진다.
+	// 실패 로그에 이름을 넣는 이유는 여러 창으로 테스트할 때다. 이름이 없으면
+	// "누가 실패했는지" 를 알 수 없어, 창을 헷갈린 것인지 실제 문제인지 구분되지 않는다.
 	if (bCharacterSelected)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("SelectCharacter: 이미 %d번 캐릭터를 선택했다."), SelectedSlotIndex);
+			TEXT("SelectCharacter: '%s' 는 이미 %d번 캐릭터를 선택했다."),
+			*GetPlayerName(), SelectedSlotIndex);
 		return false;
 	}
 
 	if (!CharacterSlots.IsValidIndex(SlotIndex))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("SelectCharacter: 슬롯 %d 이 없다. (보유 %d개)"), SlotIndex, CharacterSlots.Num());
+			TEXT("SelectCharacter: '%s' 에게 슬롯 %d 이 없다. (보유 %d개)"),
+			*GetPlayerName(), SlotIndex, CharacterSlots.Num());
 		return false;
 	}
 

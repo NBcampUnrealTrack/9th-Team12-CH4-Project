@@ -5,7 +5,11 @@
 #include "Character/TDCharacterBase.h"
 #include "Character/TDEnemyBase.h" 
 #include "Core/TDGameplayTags.h"
+#include "Data/TDZoneEnvironmentRow.h"
+#include "Game/TDGameMode.h"
 #include "GameplayEffect.h"
+#include "GameFramework/Pawn.h"
+#include "Player/TDPlayerState.h"
 #include "Stats/TDStatComponent.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
@@ -29,6 +33,18 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 
 	// 시체는 때릴 수 없고, 시체가 때릴 수도 없다.
 	if (AttackerChar->IsDead() || TargetChar->IsDead())
+	{
+		return NoDamage;
+	}
+
+	// 안전지대에서는 전투가 일어나지 않는다(DT_ZoneEnvironment.bIsSafeZone).
+	//
+	// **맞는 쪽 기준**이다. 때리는 쪽을 보면 안전지대 밖에서 마을 안으로 원거리
+	// 공격을 넣는 것을 막지 못한다.
+	//
+	// ApplyRawDamage 가 아니라 여기에 두는 이유는 그쪽이 치트(TD.Damage)와 환경 피해도
+	// 함께 쓰는 저수준 통로이기 때문이다. 마을에서 회복을 테스트하려면 치트는 통해야 한다.
+	if (IsInSafeZone(TargetChar))
 	{
 		return NoDamage;
 	}
@@ -155,4 +171,28 @@ bool UTDCombatStatics::RestoreMana(AActor* Target, float Amount)
 {
 	return RestoreAttribute(Target, Amount,
 		UTDAttributeSet::GetManaAttribute(), UTDAttributeSet::GetMaxManaAttribute());
+}
+
+bool UTDCombatStatics::IsInSafeZone(const AActor* Actor)
+{
+	const APawn* Pawn = Cast<APawn>(Actor);
+	const ATDPlayerState* PlayerState = Pawn ? Pawn->GetPlayerState<ATDPlayerState>() : nullptr;
+
+	if (PlayerState == nullptr)
+	{
+		// 몬스터에는 PlayerState 가 없다. 존을 알 방법이 없으므로 안전지대가 아닌 것으로 본다.
+		return false;
+	}
+
+	const UWorld* World = Actor->GetWorld();
+	const ATDGameMode* GameMode = World ? World->GetAuthGameMode<ATDGameMode>() : nullptr;
+
+	if (GameMode == nullptr)
+	{
+		// 클라이언트다. 테이블 조회는 GameMode 를 거치므로 여기서는 판단할 수 없다.
+		return false;
+	}
+
+	const FTDZoneEnvironmentRow* Row = GameMode->FindZoneRow(PlayerState->GetCurrentZoneId());
+	return Row != nullptr && Row->bIsSafeZone;
 }

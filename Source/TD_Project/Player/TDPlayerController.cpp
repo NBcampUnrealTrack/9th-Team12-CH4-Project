@@ -16,11 +16,43 @@
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
+#include "World/TDZoneEnvironmentComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDDialogueRow.h"
 #include "Engine/DataTable.h"
 #include "Quest/TDQuestComponent.h"
 #include "World/TDNPCBase.h"
+
+ATDPlayerController::ATDPlayerController()
+{
+	// 로컬 컨트롤러에서만 실제로 동작한다. 서버에 있는 남의 컨트롤러에서는
+	// 컴포넌트가 스스로 Tick 을 끈다.
+	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
+		TEXT("ZoneEnvironmentComponent"));
+}
+
+void ATDPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	// 새 Pawn 은 BP 기본 카메라 값을 갖고 있다. 존이 바뀐 것이 아니라
+	// 알림도 오지 않으므로 여기서 직접 맞춘다.
+	if (ZoneEnvironmentComponent != nullptr)
+	{
+		ZoneEnvironmentComponent->ReapplyCurrentZone();
+	}
+}
+
+void ATDPlayerController::AcknowledgePossession(APawn* InPawn)
+{
+	Super::AcknowledgePossession(InPawn);
+
+	// 클라이언트 경로. 카메라를 실제로 만지는 쪽은 대부분 여기다.
+	if (ZoneEnvironmentComponent != nullptr)
+	{
+		ZoneEnvironmentComponent->ReapplyCurrentZone();
+	}
+}
 
 void ATDPlayerController::TDConnect(const FString& Address)
 {

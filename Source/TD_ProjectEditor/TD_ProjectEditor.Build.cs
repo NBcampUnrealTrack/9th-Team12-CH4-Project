@@ -29,7 +29,8 @@ public class TD_ProjectEditor : ModuleRules
 		{
 			"CoreUObject",
 			"Engine",
-			"UnrealEd"
+			"UnrealEd",
+			"UMG", "UMGEditor", "Slate", "SlateCore", "Kismet", "BlueprintGraph", "RenderCore"
 		});
 	}
 }

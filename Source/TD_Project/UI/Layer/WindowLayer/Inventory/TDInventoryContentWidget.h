@@ -8,6 +8,10 @@ class UTDInventoryComponent;
 class UTDInventorySlotListItem;
 class UDataTable;
 class UTileView;
+class UTextBlock;
+class UButton;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnInventoryExpansionRequested);
 
 /** WBP_InventoryContent가 상속할 인벤토리 내용 영역의 C++ 부모. */
 UCLASS(Abstract, Blueprintable)
@@ -32,6 +36,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Inventory")
 	UTDInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
+	/** 보유 재화 시스템에서 전달받은 골드를 표시한다. 재화를 지급하거나 차감하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Inventory|Footer")
+	void SetDisplayedGold(int64 InGold);
+
+	/** + 버튼의 확장 안내/구매 화면을 연결한다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Inventory|Footer")
+	FTDOnInventoryExpansionRequested OnExpansionRequested;
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
@@ -40,6 +52,15 @@ protected:
 	/** WBP 안의 Tile View 이름을 InventoryTileView로 맞춘다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTileView> InventoryTileView;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> GoldText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CapacityText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> ExpandInventoryButton;
 
 	/** WBP에서 로딩/빈 상태 등 추가 연출을 갱신할 때 사용한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "TD|Inventory", meta = (DisplayName = "On Inventory Refreshed"))
@@ -66,6 +87,15 @@ private:
 	void BindInventoryComponent();
 	void BuildPreviewInventory();
 	void BuildInventoryFromTable(UDataTable* SourceTable);
+	void RefreshFooter();
+	void CheckInventorySource();
+
+	UFUNCTION()
+	void HandleExpandClicked();
+
+	int64 DisplayedGold = 0;
+	FTimerHandle SourceCheckTimer;
+	FTimerHandle RefreshTimer;
 
 	UFUNCTION()
 	void HandleInventoryChanged();

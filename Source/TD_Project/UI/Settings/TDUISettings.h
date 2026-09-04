@@ -26,4 +26,8 @@ public:
 	/** WindowLayer에 생성할 위젯 클래스. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
 	TSoftClassPtr<UTDWindowBaseWidget> InventoryWindowClass;
+
+	/** Nav의 캐릭터 버튼으로 열 캐릭터 정보 창. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> CharacterWindowClass;
 };

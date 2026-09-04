@@ -7,6 +7,7 @@
 
 class UTDInventorySlotListItem;
 class UTDItemSlotVisualWidget;
+class UTDInventoryComponent;
 
 /** WBP_InventorySlotEntry가 상속할 Tile View Entry 부모. */
 UCLASS(Abstract, Blueprintable)
@@ -19,6 +20,10 @@ public:
 	UTDInventorySlotListItem* GetSlotListItem() const { return SlotListItem; }
 
 protected:
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation) override;
+	UTDInventoryComponent* GetDraggableInventory() const;
+
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
 

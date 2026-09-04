@@ -6,6 +6,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UTDInteractionComponent;
 struct FInputActionValue;
 
 /**
@@ -88,6 +89,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
 	TObjectPtr<UInputAction> AttackAction;
 
+	
 	/**
 	 * 퀵슬롯 1~6. 배열 인덱스가 곧 슬롯 번호다.
 	 *
@@ -109,6 +111,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
 	TArray<TObjectPtr<UInputAction>> SkillActions;
 
+	//상호작용 F
+	UPROPERTY(EditDefaultsOnly, Category="TD|Input|Actions")
+	TObjectPtr<UInputAction> InteractAction;
+	
 	// ── 핸들러 ────────────────────────────────────────────
 
 	/**
@@ -132,6 +138,8 @@ protected:
 	/** 스킬 사용. S10 에서 어빌리티 발동으로 채운다. */
 	void UseSkill(int32 SkillIndex);
 
+	// 상호작용
+	void Interact();
 	// ══════════════════════════════════════════════════════════════════════
 
 private:
@@ -147,4 +155,16 @@ private:
 
 	/** 자동 부활 타이머. 서버에서만 돈다. */
 	FTimerHandle AutoRespawnTimerHandle;
+	
+	
+	/**  상호작용
+	 * NPC, 상자, 아이템 등 F키 상호작용을 처리한다.
+	 *
+	 * 검색과 Server RPC는 이 컴포넌트에 모으고,
+	 * 캐릭터는 입력만 전달한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+		Category = "TD|Interaction",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTDInteractionComponent> InteractionComponent;
 };

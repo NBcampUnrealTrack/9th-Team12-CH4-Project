@@ -95,7 +95,7 @@ void UTDItemSlotVisualWidget::RefreshVisual()
 
 	if (CountText)
 	{
-		if (SlotVisualData.bHasItem && SlotVisualData.Count > 1)
+		if (SlotVisualData.bHasItem && (SlotVisualData.Count > 1 || SlotVisualData.bAlwaysShowCount))
 		{
 			CountText->SetText(FText::AsNumber(SlotVisualData.Count));
 			CountText->SetVisibility(ESlateVisibility::HitTestInvisible);

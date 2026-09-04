@@ -289,6 +289,39 @@ namespace TDDebugCommands
 		});
 	}
 
+	/**
+	 * 테스트에 자주 쓰는 소비 아이템을 한 번에 넣는다.
+	 *
+	 * TD.GiveItem 을 네 번 치는 수고를 줄이는 것이 전부라, 지급 자체는 그쪽에 맡긴다 —
+	 * 클라이언트에서 치면 Server RPC 를 타고 서버에서 치면 직접 넣는 분기가 이미 거기 있다.
+	 *
+	 * 목록을 늘리려면 아래 배열에 RowName 을 추가하면 된다. DT_ItemDefinition 에 없는
+	 * 이름을 넣으면 그 줄만 실패로 찍히고 나머지는 정상으로 들어간다.
+	 */
+	static void GiveItemTest(const TArray<FString>& Args, UWorld* World)
+	{
+		static const TCHAR* TestItemIds[] =
+		{
+			TEXT("HPotion_Low"),
+			TEXT("InvExpand"),
+			TEXT("ExpPotion_Low"),
+			TEXT("LevelTicket_Low"),
+		};
+
+		const int32 Count = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 20;
+		if (Count <= 0)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.GiveItemTest [개수=20]"));
+			return;
+		}
+
+		const FString CountArg = FString::FromInt(Count);
+		for (const TCHAR* ItemId : TestItemIds)
+		{
+			GiveItem({ ItemId, CountArg }, World);
+		}
+	}
+
 	static void DumpInventory(const TArray<FString>& Args, UWorld* World)
 	{
 		const FString NameFilter = Args.IsValidIndex(0) ? Args[0] : FString();
@@ -1428,6 +1461,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDGiveItem(
 	TEXT("TD.GiveItem"),
 	TEXT("아이템을 지급한다. 사용법: TD.GiveItem <ItemId> [개수] [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItem));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDGiveItemTest(
+	TEXT("TD.GiveItemTest"),
+	TEXT("테스트용 소비 아이템 4종을 한 번에 지급한다. 사용법: TD.GiveItemTest [개수=20]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItemTest));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpInventory(
 	TEXT("TD.DumpInventory"),

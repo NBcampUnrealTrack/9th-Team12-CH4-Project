@@ -153,4 +153,36 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_ReportQuestEvent);
 	
 	
+	
+	// ── 퀘스트 진행 단계 ──────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_Treasure01_Accepted);
+
+	// ── 퀘스트 이벤트 ─────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_HanSuhyun);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_JangGoeun);
+	
 }

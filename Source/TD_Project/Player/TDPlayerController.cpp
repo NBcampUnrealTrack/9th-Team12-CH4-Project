@@ -11,6 +11,13 @@
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
+#include "EngineUtils.h"
+#include "World/TDTreasureChest.h"
+#include "Core/TDGameplayTags.h"
+#include "Data/TDDialogueRow.h"
+#include "Engine/DataTable.h"
+#include "Quest/TDQuestComponent.h"
+#include "World/TDNPCBase.h"
 
 void ATDPlayerController::TDConnect(const FString& Address)
 {
@@ -275,4 +282,379 @@ void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
 	UE_LOG(LogTemp, Log, TEXT("[치트] 빠른 시작: %d번 캐릭터 선택 %s"),
 		SlotIndex, bSelected ? TEXT("성공") : TEXT("실패"));
 #endif
+}
+
+void ATDPlayerController::ClientChestClaimed_Implementation(
+	FName ChestId,
+	float DisappearDelay)
+{
+	if (!IsLocalController() || ChestId.IsNone())
+	{
+		return;
+	}
+
+	// 서버와 클라이언트의 상자 Actor는 서로 다른 객체다.
+	// Actor 포인터 대신 영구 ID를 받아 이 클라이언트 월드의 상자를 찾는다.
+	for (TActorIterator<ATDTreasureChest> It(GetWorld()); It; ++It)
+	{
+		ATDTreasureChest* Chest = *It;
+
+		if (IsValid(Chest)
+			&& Chest->GetChestId() == ChestId)
+		{
+			Chest->PlayClaimedPresentation(DisappearDelay);
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("ClientChestClaimed: 클라이언트 월드에서 상자 '%s'를 찾지 못했다."),
+		*ChestId.ToString());
+}
+
+void ATDPlayerController::ClientInteractionFailed_Implementation(
+	FName ObjectId,
+	ETDInteractionFailureReason Reason)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	OnInteractionFailed.Broadcast(ObjectId, Reason);
+
+	// UI가 만들어지기 전에는 로그로 확인한다.
+	UE_LOG(LogTemp, Log,
+		TEXT("상호작용 실패: Object='%s', Reason=%d"),
+		*ObjectId.ToString(),
+		static_cast<int32>(Reason));
+}
+
+void ATDPlayerController::BeginDialogueFromNPC(
+	ATDNPCBase* NPC,
+	UDataTable* DialogueTable,
+	FName StartRow)
+{
+	if (!HasAuthority()
+		|| !IsValid(NPC)
+		|| DialogueTable == nullptr
+		|| StartRow.IsNone())
+	{
+		return;
+	}
+
+	const FTDDialogueRow* FirstRow =
+		DialogueTable->FindRow<FTDDialogueRow>(
+			StartRow,
+			TEXT("BeginDialogueFromNPC"),
+			false);
+
+	if (FirstRow == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("대화 시작 실패: DT_Dialogue에 '%s' 행이 없다."),
+			*StartRow.ToString());
+		return;
+	}
+
+	if (ActiveDialogueSessionId != 0)
+	{
+		EndDialogueSession();
+	}
+
+	++DialogueSessionCounter;
+
+	if (DialogueSessionCounter <= 0)
+	{
+		DialogueSessionCounter = 1;
+	}
+
+	ActiveDialogueSessionId =
+		DialogueSessionCounter;
+
+	ActiveDialogueNPC = NPC;
+	ActiveDialogueTable = DialogueTable;
+	ActiveDialogueRow = StartRow;
+
+	SendCurrentDialogueLine();
+}
+
+void ATDPlayerController::SendCurrentDialogueLine()
+{
+	if (!HasAuthority()
+		|| ActiveDialogueSessionId == 0
+		|| !IsValid(ActiveDialogueNPC)
+		|| ActiveDialogueTable == nullptr
+		|| ActiveDialogueRow.IsNone())
+	{
+		EndDialogueSession();
+		return;
+	}
+
+	const FTDDialogueRow* Row =
+		ActiveDialogueTable->FindRow<FTDDialogueRow>(
+			ActiveDialogueRow,
+			TEXT("SendCurrentDialogueLine"),
+			false);
+
+	if (Row == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("대화 행 '%s'를 찾지 못했다."),
+			*ActiveDialogueRow.ToString());
+
+		EndDialogueSession();
+		return;
+	}
+
+	FTDDialogueLineView View;
+	View.bPlayerSpeaker = Row->bPlayerSpeaker;
+	View.DialogueText = Row->DialogueText;
+
+	if (!Row->SpeakerNameOverride.IsEmpty())
+	{
+		View.SpeakerName =
+			Row->SpeakerNameOverride;
+	}
+	else if (Row->bPlayerSpeaker)
+	{
+		const ATDPlayerState* TDPlayerState =
+			GetPlayerState<ATDPlayerState>();
+
+		const FString PlayerDisplayName =
+			TDPlayerState
+				? TDPlayerState->GetPlayerName()
+				: FString();
+
+		View.SpeakerName =
+			PlayerDisplayName.IsEmpty()
+				? NSLOCTEXT(
+					"TDDialogue",
+					"DefaultPlayerName",
+					"플레이어")
+				: FText::FromString(PlayerDisplayName);
+	}
+	else
+	{
+		View.SpeakerName =
+			ActiveDialogueNPC->GetNPCDisplayName();
+	}
+
+	if (!Row->PortraitOverride.IsNull())
+	{
+		View.Portrait =
+			Row->PortraitOverride;
+	}
+	else if (!Row->bPlayerSpeaker)
+	{
+		View.Portrait =
+			ActiveDialogueNPC->GetNPCPortrait();
+	}
+
+	View.ContinueButtonText =
+		Row->ContinueButtonText.IsEmpty()
+			? NSLOCTEXT(
+				"TDDialogue",
+				"Continue",
+				"다음")
+			: Row->ContinueButtonText;
+
+	ClientShowDialogueLine(
+		ActiveDialogueSessionId,
+		ActiveDialogueRow,
+		View);
+}
+
+bool ATDPlayerController::ApplyDialogueAction(
+	const FTDDialogueAction& Action)
+{
+	if (!Action.ActionType.IsValid())
+	{
+		return true;
+	}
+
+	ATDPlayerState* TDPlayerState =
+		GetPlayerState<ATDPlayerState>();
+
+	UTDQuestComponent* QuestComponent =
+		TDPlayerState
+			? TDPlayerState->GetQuestComponent()
+			: nullptr;
+
+	if (QuestComponent == nullptr)
+	{
+		ClientQuestActionResult(
+			Action.QuestId,
+			ETDQuestActionResult::InvalidDefinition);
+
+		return false;
+	}
+
+	if (Action.ActionType ==
+		TDTags::Dialogue_Action_AcceptQuest.GetTag())
+	{
+		const ETDQuestActionResult Result =
+			QuestComponent->AcceptQuest(
+				Action.QuestId);
+
+		ClientQuestActionResult(
+			Action.QuestId,
+			Result);
+
+		return Result ==
+			ETDQuestActionResult::Success;
+	}
+
+	if (Action.ActionType ==
+		TDTags::Dialogue_Action_TurnInQuest.GetTag())
+	{
+		const ETDQuestActionResult Result =
+			QuestComponent->TurnInQuest(
+				Action.QuestId);
+
+		ClientQuestActionResult(
+			Action.QuestId,
+			Result);
+
+		return Result ==
+			ETDQuestActionResult::Success;
+	}
+
+	if (Action.ActionType ==
+		TDTags::Dialogue_Action_ReportQuestEvent.GetTag())
+	{
+		QuestComponent->ReportQuestEvent(
+			Action.EventTag,
+			FMath::Max(1, Action.EventAmount));
+
+		return true;
+	}
+
+	ClientQuestActionResult(
+		Action.QuestId,
+		ETDQuestActionResult::InvalidDefinition);
+
+	return false;
+}
+
+void ATDPlayerController::ServerAdvanceDialogue_Implementation(
+	int32 SessionId,
+	FName ExpectedCurrentRow)
+{
+	if (SessionId != ActiveDialogueSessionId
+		|| ExpectedCurrentRow != ActiveDialogueRow
+		|| !IsValid(ActiveDialogueNPC)
+		|| ActiveDialogueTable == nullptr)
+	{
+		return;
+	}
+
+	// 대화 시작 후 너무 멀리 도망갔으면 서버가 종료한다.
+	if (!ActiveDialogueNPC
+		->IsPlayerWithinDialogueDistance(GetPawn()))
+	{
+		EndDialogueSession();
+		return;
+	}
+
+	const FTDDialogueRow* Row =
+		ActiveDialogueTable->FindRow<FTDDialogueRow>(
+			ActiveDialogueRow,
+			TEXT("ServerAdvanceDialogue"),
+			false);
+
+	if (Row == nullptr)
+	{
+		EndDialogueSession();
+		return;
+	}
+
+	// 보상 지급이나 퀘스트 수락이 실패하면 현재 줄에 그대로 남는다.
+	if (!ApplyDialogueAction(
+		Row->OnAdvanceAction))
+	{
+		return;
+	}
+
+	if (Row->NextRow.IsNone())
+	{
+		EndDialogueSession();
+		return;
+	}
+
+	ActiveDialogueRow = Row->NextRow;
+	SendCurrentDialogueLine();
+}
+
+void ATDPlayerController::ServerCancelDialogue_Implementation(
+	int32 SessionId)
+{
+	if (SessionId != ActiveDialogueSessionId)
+	{
+		return;
+	}
+
+	EndDialogueSession();
+}
+
+void ATDPlayerController::EndDialogueSession()
+{
+	const int32 EndedSessionId =
+		ActiveDialogueSessionId;
+
+	ActiveDialogueSessionId = 0;
+	ActiveDialogueNPC = nullptr;
+	ActiveDialogueTable = nullptr;
+	ActiveDialogueRow = NAME_None;
+
+	if (EndedSessionId != 0)
+	{
+		ClientCloseDialogue(EndedSessionId);
+	}
+}
+
+void ATDPlayerController::ClientShowDialogueLine_Implementation(
+	int32 SessionId,
+	FName DialogueRow,
+	FTDDialogueLineView Line)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	OnDialogueLineReceived.Broadcast(
+		SessionId,
+		DialogueRow,
+		Line);
+}
+
+void ATDPlayerController::ClientCloseDialogue_Implementation(
+	int32 SessionId)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	OnDialogueClosed.Broadcast(SessionId);
+}
+
+void ATDPlayerController::ClientQuestActionResult_Implementation(
+	FName QuestId,
+	ETDQuestActionResult Result)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	OnQuestActionResult.Broadcast(
+		QuestId,
+		Result);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("퀘스트 처리 결과: Quest='%s', Result=%d"),
+		*QuestId.ToString(),
+		static_cast<int32>(Result));
 }

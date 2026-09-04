@@ -11,9 +11,14 @@
 #include "InputActionValue.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Player/TDPlayerState.h"
+#include "Interaction/TDInteractionComponent.h"
 
 ATDPlayerCharacter::ATDPlayerCharacter()
 {
+	//상호작용
+	InteractionComponent =
+	CreateDefaultSubobject<UTDInteractionComponent>(TEXT("InteractionComponent"));
+	
 	// 이동 방향으로 캐릭터가 돌아야 PaperZD 가 4방향 스프라이트 중 맞는 것을 고른다.
 	// 컨트롤러 회전을 따라가면 카메라를 돌릴 때 캐릭터가 같이 돌아 방향이 어긋난다.
 	bUseControllerRotationYaw = false;
@@ -136,6 +141,16 @@ void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	{
 		EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Attack);
 	}
+	
+	if (AttackAction != nullptr)
+	{
+		EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Attack);
+	}
+
+	if (InteractAction != nullptr)
+	{
+		EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Interact);
+	}
 
 	// 퀵슬롯·스킬은 번호를 payload 로 넘겨 핸들러 하나로 처리한다.
 	// 슬롯마다 함수를 만들면 똑같은 내용이 6개, 3개씩 늘어선다.
@@ -205,6 +220,16 @@ void ATDPlayerCharacter::Attack()
 		// 클라이언트는 요청만 보낸다. 쿨타임·히트박스·데미지는 전부 서버가 판정한다.
 		Combat->ServerRequestAttack();
 	}
+}
+
+void ATDPlayerCharacter::Interact()
+{
+	if (IsDead() || InteractionComponent == nullptr)
+	{
+		return;
+	}
+
+	InteractionComponent->RequestInteract();
 }
 
 void ATDPlayerCharacter::UseQuickSlot(int32 SlotIndex)
@@ -351,3 +376,4 @@ void ATDPlayerCharacter::SetDeadState(bool bDead)
 		}
 	}
 }
+

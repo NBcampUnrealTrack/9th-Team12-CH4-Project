@@ -4,6 +4,8 @@
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "Data/TDDialogueRow.h"
+#include "Data/TDQuestTypes.h"
 #include "TDPlayerController.generated.h"
 
 /**
@@ -14,6 +16,45 @@
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnZoneTravelFailed,
 	FGameplayTag, TargetZoneId, ETDZoneTravelResult, Reason);
+
+/**
+ * 서버가 상호작용을 거부한 이유.
+ */
+UENUM(BlueprintType)
+enum class ETDInteractionFailureReason : uint8
+{
+	None UMETA(DisplayName = "없음"),
+	InventoryFull UMETA(DisplayName = "인벤토리 부족"),
+	AlreadyClaimed UMETA(DisplayName = "이미 획득함"),
+	QuestConditionNotMet UMETA(DisplayName = "퀘스트 조건 불일치"),
+	InvalidDefinition UMETA(DisplayName = "데이터 설정 오류")
+};
+
+/**
+ * 상호작용이 실패했을 때 해당 클라이언트에서 발생한다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnInteractionFailed,
+	FName, ObjectId,
+	ETDInteractionFailureReason, Reason);
+//
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FTDOnDialogueLineReceived,
+	int32, SessionId,
+	FName, DialogueRow,
+	FTDDialogueLineView, Line);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnDialogueClosed,
+	int32, SessionId);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnQuestActionResult,
+	FName, QuestId,
+	ETDQuestActionResult, Result);
+
+class ATDNPCBase;
+class UDataTable;
 
 /**
  * 플레이어 한 명의 의도를 나타내는 Controller.
@@ -64,6 +105,10 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(FName ItemId, int32 Count);
+
+	/** 골드를 지급한다. 강화·거래소 테스트에 필요해 열어둔다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveGold(int32 Amount);
 
 	UFUNCTION(Server, Reliable)
 	void ServerDebugSetLevel(int32 NewLevel);
@@ -152,4 +197,83 @@ public:
 	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Combat")
 	void ServerRequestRespawn();
+	
+	
+	// ── 개인 상호작용 결과 ────────────────────────────────
+
+	UFUNCTION(Client, Reliable)
+	void ClientChestClaimed(
+		FName ChestId,
+		float DisappearDelay);
+
+	UFUNCTION(Client, Reliable)
+	void ClientInteractionFailed(
+		FName ObjectId,
+		ETDInteractionFailureReason Reason);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Interaction")
+	FTDOnInteractionFailed OnInteractionFailed;
+
+	
+public:
+	// ── NPC 대화 ──────────────────────────────────────────
+
+	/**
+	 * NPC의 Interact 함수가 서버에서 호출한다.
+	 * 클라이언트가 직접 시작 NPC나 행을 지정할 수 없게 한다.
+	 */
+	void BeginDialogueFromNPC(
+		ATDNPCBase* NPC,
+		UDataTable* DialogueTable,
+		FName StartRow);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable,
+		Category = "TD|Dialogue")
+	void ServerAdvanceDialogue(
+		int32 SessionId,
+		FName ExpectedCurrentRow);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable,
+		Category = "TD|Dialogue")
+	void ServerCancelDialogue(int32 SessionId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientShowDialogueLine(
+		int32 SessionId,
+		FName DialogueRow,
+		FTDDialogueLineView Line);
+
+	UFUNCTION(Client, Reliable)
+	void ClientCloseDialogue(int32 SessionId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientQuestActionResult(
+		FName QuestId,
+		ETDQuestActionResult Result);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Dialogue")
+	FTDOnDialogueLineReceived OnDialogueLineReceived;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Dialogue")
+	FTDOnDialogueClosed OnDialogueClosed;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Quest")
+	FTDOnQuestActionResult OnQuestActionResult;
+
+private:
+	void SendCurrentDialogueLine();
+	void EndDialogueSession();
+	bool ApplyDialogueAction(
+		const FTDDialogueAction& Action);
+
+	UPROPERTY(Transient)
+	TObjectPtr<ATDNPCBase> ActiveDialogueNPC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> ActiveDialogueTable;
+
+	FName ActiveDialogueRow;
+	int32 ActiveDialogueSessionId = 0;
+	int32 DialogueSessionCounter = 0;
 };
+

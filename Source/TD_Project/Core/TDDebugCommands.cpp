@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Items/TDEnhanceStatics.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
@@ -288,6 +289,39 @@ namespace TDDebugCommands
 		});
 	}
 
+	/**
+	 * 테스트에 자주 쓰는 소비 아이템을 한 번에 넣는다.
+	 *
+	 * TD.GiveItem 을 네 번 치는 수고를 줄이는 것이 전부라, 지급 자체는 그쪽에 맡긴다 —
+	 * 클라이언트에서 치면 Server RPC 를 타고 서버에서 치면 직접 넣는 분기가 이미 거기 있다.
+	 *
+	 * 목록을 늘리려면 아래 배열에 RowName 을 추가하면 된다. DT_ItemDefinition 에 없는
+	 * 이름을 넣으면 그 줄만 실패로 찍히고 나머지는 정상으로 들어간다.
+	 */
+	static void GiveItemTest(const TArray<FString>& Args, UWorld* World)
+	{
+		static const TCHAR* TestItemIds[] =
+		{
+			TEXT("HPotion_Low"),
+			TEXT("InvExpand"),
+			TEXT("ExpPotion_Low"),
+			TEXT("LevelTicket_Low"),
+		};
+
+		const int32 Count = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 20;
+		if (Count <= 0)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.GiveItemTest [개수=20]"));
+			return;
+		}
+
+		const FString CountArg = FString::FromInt(Count);
+		for (const TCHAR* ItemId : TestItemIds)
+		{
+			GiveItem({ ItemId, CountArg }, World);
+		}
+	}
+
 	static void DumpInventory(const TArray<FString>& Args, UWorld* World)
 	{
 		const FString NameFilter = Args.IsValidIndex(0) ? Args[0] : FString();
@@ -300,8 +334,9 @@ namespace TDDebugCommands
 				return;
 			}
 
-			UE_LOG(LogTDDebug, Log, TEXT("%s  (%d / %d 칸 사용)"),
-				*Character.GetName(), Inventory->GetUsedSlotCount(), Inventory->GetSlotCapacity());
+			UE_LOG(LogTDDebug, Log, TEXT("%s  (%d / %d 칸 사용, %d 골드)"),
+				*Character.GetName(), Inventory->GetUsedSlotCount(), Inventory->GetSlotCapacity(),
+				Inventory->GetGold());
 
 			// FastArray 는 배열 순서를 보장하지 않는다. 실제 화면은 SlotIndex 로 그리므로
 			// 읽는 사람이 헷갈리지 않도록 출력도 슬롯 순으로 맞춘다.
@@ -428,8 +463,16 @@ namespace TDDebugCommands
 
 			for (const FTDItemInstance& Item : SortedEquipped)
 			{
-				UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-24s  강화 +%d  옵션 %d개  등급 %s"),
+				// 강화 배율을 함께 찍는다. 스탯창 숫자가 왜 그 값인지 여기서 바로 대조할 수 있다.
+				// 1강당 상승폭은 배율에서 역산한다 — 아이템마다 다르므로(RequiredLevel) 눈으로 봐야 한다.
+				const float Multiplier = ItemUse->GetEnhanceMultiplier(Item.ItemId, Item.EnhanceLevel);
+				const float PercentPerLevel = Item.EnhanceLevel > 0
+					? (Multiplier - 1.f) / Item.EnhanceLevel * 100.f
+					: 0.f;
+
+				UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-24s  강화 +%-2d  배율 x%.3f (%.1f%%/강)  옵션 %d개  등급 %s"),
 					Item.SlotIndex, *Item.ItemId.ToString(), Item.EnhanceLevel,
+					Multiplier, PercentPerLevel,
 					Item.Options.Num(), *Item.OptionRarity.ToString());
 			}
 		});
@@ -684,6 +727,146 @@ namespace TDDebugCommands
 				Slot.Type == ETDQuickSlotType::Item
 					? *FString::Printf(TEXT("보유 %d개%s"), Count, Count == 0 ? TEXT(" ← 사용 불가") : TEXT(""))
 					: TEXT(""));
+		}
+	}
+
+	/** 로컬 플레이어의 인벤토리. 서버·클라 어느 쪽에서 쳐도 자기 것을 집는다. */
+	static UTDInventoryComponent* GetLocalInventory(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetInventoryComponent() : nullptr;
+	}
+
+	/** 인벤토리 슬롯 하나를 강화한다. UI 가 붙기 전까지 확률표를 검증하는 통로다. */
+	static void EnhanceItem(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Enhance <인벤슬롯>"));
+			return;
+		}
+
+		UTDInventoryComponent* Inventory = GetLocalInventory(World);
+		if (Inventory == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Enhance: InventoryComponent 를 찾지 못했다."));
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다. 결과는 ClientItemEnhanced 로 돌아온다.
+		Inventory->ServerEnhanceItem(FCString::Atoi(*Args[0]));
+
+		UE_LOG(LogTDDebug, Log, TEXT("슬롯 %s 강화를 요청했다. (결과는 서버 로그 + 응답으로)"), *Args[0]);
+	}
+
+	/** 여러 번 굴려 성공/하락/실패 비율을 확인한다. 확률표가 의도대로 읽히는지 감으로 볼 때 쓴다. */
+	/**
+	 * 확률표대로 굴러가는지 본다. **아이템도 골드도 쓰지 않는다.**
+	 *
+	 * 실제 슬롯을 반복 강화하면 10강 근처에서 골드가 먼저 떨어져 표본이 모이지 않는다.
+	 * 판정 자체는 TDEnhance::Roll 이라는 순수 함수라, 주사위만 따로 굴리면 같은 분포가 나온다.
+	 * 서버 권한도 필요 없다 — DT_Enhance 는 클라이언트도 갖고 있다.
+	 */
+	static void EnhanceStress(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.EnhanceStress <목표강화단수> [횟수=1000]   예) TD.EnhanceStress 10 5000"));
+			return;
+		}
+
+		const UTDInventoryComponent* Inventory = GetLocalInventory(World);
+		if (Inventory == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.EnhanceStress: InventoryComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 Level = FCString::Atoi(*Args[0]);
+
+		FTDEnhanceRow Row;
+		if (!Inventory->GetEnhanceInfo(Level, Row))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.EnhanceStress: %d강 행이 없다. DT_Enhance 미지정이거나 최고 단수를 넘었다."), Level);
+			return;
+		}
+
+		const int32 Iterations = Args.IsValidIndex(1) ? FMath::Max(1, FCString::Atoi(*Args[1])) : 1000;
+
+		int32 SuccessCount = 0;
+		int32 DowngradeCount = 0;
+		int32 NoChangeCount = 0;
+		int32 TotalTiersLost = 0;
+
+		for (int32 i = 0; i < Iterations; ++i)
+		{
+			const FTDEnhanceRollResult Result =
+				TDEnhance::Roll(Row, FMath::FRand(), FMath::FRand(), FMath::FRand());
+
+			switch (Result.Outcome)
+			{
+			case ETDEnhanceOutcome::Success:
+				++SuccessCount;
+				break;
+
+			case ETDEnhanceOutcome::Downgraded:
+				++DowngradeCount;
+				TotalTiersLost += Result.DowngradeTiers;
+				break;
+
+			default:
+				++NoChangeCount;
+				break;
+			}
+		}
+
+		const float ToPercent = 100.f / Iterations;
+
+		UE_LOG(LogTDDebug, Log, TEXT("%d강 시도 %d회 — 표 기준: 성공 %.0f%%, 실패 시 하락 %.0f%% (%d~%d단계), 비용 %d"),
+			Level, Iterations, Row.SuccessRate * 100.f, Row.DowngradeChanceOnFail * 100.f,
+			Row.MinDowngradeTiers, Row.MaxDowngradeTiers, Row.Cost);
+
+		UE_LOG(LogTDDebug, Log, TEXT("    성공     %6d  (%.1f%%)"), SuccessCount, SuccessCount * ToPercent);
+		UE_LOG(LogTDDebug, Log, TEXT("    하락     %6d  (%.1f%%)  평균 %.2f단계"),
+			DowngradeCount, DowngradeCount * ToPercent,
+			DowngradeCount > 0 ? static_cast<float>(TotalTiersLost) / DowngradeCount : 0.f);
+		UE_LOG(LogTDDebug, Log, TEXT("    변화없음 %6d  (%.1f%%)"), NoChangeCount, NoChangeCount * ToPercent);
+	}
+
+	/**
+	 * 착용 레벨제한에 따라 강화 배율이 어떻게 달라지는지 표로 찍는다.
+	 *
+	 * 실제 아이템이 없어도 확인할 수 있다. RequiredLevel 이 다른 장비 두 개를
+	 * 같은 단수까지 올려 비교하는 것은 골드가 너무 많이 든다.
+	 */
+	static void EnhanceCurve(const TArray<FString>& Args, UWorld* World)
+	{
+		// 인자를 주면 그 착용레벨 하나만, 안 주면 양 끝과 중간을 함께 보여준다.
+		TArray<int32> RequiredLevels;
+		if (Args.IsValidIndex(0))
+		{
+			RequiredLevels.Add(FCString::Atoi(*Args[0]));
+		}
+		else
+		{
+			RequiredLevels = { 0, 10, 25, 40, 50 };
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("강화 배율 — 착용레벨이 높은 장비일수록 1강당 많이 오른다"));
+
+		for (const int32 RequiredLevel : RequiredLevels)
+		{
+			const float PercentPerLevel = TDEnhance::GetStatPercentPerLevel(RequiredLevel);
+
+			UE_LOG(LogTDDebug, Log, TEXT("  착용Lv %-3d  %.1f%%/강    5강 x%.3f   10강 x%.3f   18강 x%.3f"),
+				RequiredLevel, PercentPerLevel * 100.f,
+				TDEnhance::GetStatMultiplier(5, RequiredLevel),
+				TDEnhance::GetStatMultiplier(10, RequiredLevel),
+				TDEnhance::GetStatMultiplier(18, RequiredLevel));
 		}
 	}
 
@@ -944,6 +1127,36 @@ namespace TDDebugCommands
 		}
 	}
 
+	static void GiveGold(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.GiveGold <금액>"));
+			return;
+		}
+
+		const int32 Amount = FCString::Atoi(*Args[0]);
+
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugGiveGold(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 골드 %d 지급을 요청했다. (결과는 서버 로그에)"), Amount);
+			return;
+		}
+
+		ForEachPlayerState(World, [Amount](ATDPlayerState& PlayerState)
+		{
+			if (UTDInventoryComponent* Inventory = PlayerState.GetInventoryComponent())
+			{
+				const bool bAdded = Inventory->AddGold(Amount);
+				UE_LOG(LogTDDebug, Log, TEXT("%s — 골드 %d 지급 %s (보유 %d)"),
+					*PlayerState.GetPlayerName(), Amount,
+					bAdded ? TEXT("성공") : TEXT("실패"), Inventory->GetGold());
+			}
+		});
+	}
+
 	static void DumpCharacters(const TArray<FString>& Args, UWorld* World)
 	{
 		int32 Found = 0;
@@ -1184,6 +1397,21 @@ static FAutoConsoleCommandWithWorldAndArgs GTDStart(
 	TEXT("테스트 캐릭터를 넣고 곧바로 선택한다. 사용법: TD.Start [슬롯=1]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickStart));
 
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhance(
+	TEXT("TD.Enhance"),
+	TEXT("인벤토리 아이템을 한 단계 강화한다. 사용법: TD.Enhance <인벤슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceItem));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceStress(
+	TEXT("TD.EnhanceStress"),
+	TEXT("확률 판정만 여러 번 굴려 분포를 본다(아이템·골드 안 씀). 사용법: TD.EnhanceStress <목표강화단수> [횟수=1000]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceStress));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
+	TEXT("TD.EnhanceCurve"),
+	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
 	TEXT("TD.DumpQuick"),
 	TEXT("퀵슬롯 6칸과 각 칸의 보유 개수를 찍는다. 사용법: TD.DumpQuick"),
@@ -1224,10 +1452,20 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSetClass(
 	TEXT("직업을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetClass <ClassId> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetClass));
 
+static FAutoConsoleCommandWithWorldAndArgs GTDGiveGold(
+	TEXT("TD.GiveGold"),
+	TEXT("골드를 지급한다. 사용법: TD.GiveGold <금액>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveGold));
+
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveItem(
 	TEXT("TD.GiveItem"),
 	TEXT("아이템을 지급한다. 사용법: TD.GiveItem <ItemId> [개수] [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItem));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDGiveItemTest(
+	TEXT("TD.GiveItemTest"),
+	TEXT("테스트용 소비 아이템 4종을 한 번에 지급한다. 사용법: TD.GiveItemTest [개수=20]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItemTest));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpInventory(
 	TEXT("TD.DumpInventory"),

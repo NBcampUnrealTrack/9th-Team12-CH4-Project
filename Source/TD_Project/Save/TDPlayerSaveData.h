@@ -4,7 +4,9 @@
 #include "GameplayTagContainer.h"
 #include "Items/TDItemTypes.h"
 #include "Items/TDQuickSlotTypes.h"
+#include "Data/TDQuestTypes.h"
 #include "TDPlayerSaveData.generated.h"
+
 
 /**
  * 스킬 하나에 찍어놓은 레벨.
@@ -79,8 +81,12 @@ struct FTDPlayerSaveData
 	 * 나중에 넣으려면 버전 없는 데이터가 이미 쌓여 있어 구분할 방법이 없으므로 처음부터 둔다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
-	int32 SaveVersion = 1;
+	//~~~~~기존
+	//int32 SaveVersion = 1;
 
+	//~~~~희진변경 테스트
+	int32 SaveVersion = 3;
+	
 	/**
 	 * 직업. DT_ClassGrowth 의 ClassId 와 짝이다.
 	 * 아직 직업 선택이 없어 비어 있을 수 있으며, 그때는 Default 성장만 적용된다.
@@ -142,6 +148,26 @@ struct FTDPlayerSaveData
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	FGameplayTag LastZoneId;
 
+	
+	// ── 퀘스트·개인 월드 상태 ─────────────────────────────
+
+	/**
+	 * 현재 퀘스트 진행 상태.
+	 *
+	 * 대화 분기, NPC 표시, 상자 조건을 복원하는 데 사용한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	FGameplayTagContainer QuestProgressTags;
+
+	/**
+	 * 이미 획득한 개인 보물상자의 고정 ID.
+	 *
+	 * 상자 Actor 이름이 아니라 DT_TreasureChest의 RowName을 저장한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FName> ClaimedChestIds;
+	
+	
 	/**
 	 * 퀵슬롯 배치. **캐릭터별**이다 — 전사의 1번과 법사의 1번이 같을 이유가 없다.
 	 *
@@ -150,4 +176,16 @@ struct FTDPlayerSaveData
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDQuickSlot> QuickSlots;
+
+	/** 소지 골드. 인벤토리와 함께 저장된다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	int32 Gold = 0;
+	
+	/**
+	 * 실제 퀘스트 목록, 상태, 목표별 진행도.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FTDQuestRuntimeData> QuestStates;
+	
+	
 };

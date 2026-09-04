@@ -14,6 +14,8 @@
 #include "Party/TDPartyComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+#include "Quest/TDPersonalWorldStateComponent.h"
+#include "Quest/TDQuestComponent.h"
 
 ATDPlayerState::ATDPlayerState()
 {
@@ -32,7 +34,10 @@ ATDPlayerState::ATDPlayerState()
 	ItemUseComponent = CreateDefaultSubobject<UTDItemUseComponent>(TEXT("ItemUseComponent"));
 	PartyComponent = CreateDefaultSubobject<UTDPartyComponent>(TEXT("PartyComponent"));
 	QuickSlotComponent = CreateDefaultSubobject<UTDQuickSlotComponent>(TEXT("QuickSlotComponent"));
-
+	//추가- 상호작용
+	PersonalWorldStateComponent = CreateDefaultSubobject<UTDPersonalWorldStateComponent>(TEXT("PersonalWorldStateComponent"));
+	QuestComponent = CreateDefaultSubobject<UTDQuestComponent>(TEXT("QuestComponent"));
+	
 	// PlayerState 의 기본 갱신 빈도는 1Hz 다. 그대로 두면 여기 실린 값이 초당 한 번씩만
 	// 클라이언트로 가서, 체력바가 1초에 한 칸씩 움직이는 것처럼 보인다.
 	SetNetUpdateFrequency(100.f);

@@ -23,6 +23,15 @@ struct FTDItemRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	FText DisplayName;
 
+	/**
+	 * 툴팁에 보이는 설명. 비어 있으면 UI 가 설명 줄을 그리지 않는다.
+	 *
+	 * 스탯 수치는 여기 적지 않는다 — 그쪽은 DT_ItemStat 에서 읽어 UI 가 만든다.
+	 * 여기 적으면 밸런스를 고칠 때마다 문장도 함께 고쳐야 하고, 둘이 어긋난다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+	FText Description;
+
 	/** Item.Type.{Accessory|Consumable|Misc|Quest} */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	FGameplayTag ItemType;

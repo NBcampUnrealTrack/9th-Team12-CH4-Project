@@ -1,8 +1,60 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
+#include "Data/TDDialogueRow.h"
+#include "Data/TDQuestTypes.h"
 #include "TDPlayerController.generated.h"
+
+/**
+ * 존 이동이 거부됐을 때. 이 클라이언트에서만 불린다.
+ *
+ * UI 가 구독해 "24레벨부터 입장할 수 있습니다" 같은 안내를 띄운다.
+ * 숫자는 DT_ZoneEnvironment 에서 읽으면 된다 — 클라이언트도 그 테이블을 갖고 있다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnZoneTravelFailed,
+	FGameplayTag, TargetZoneId, ETDZoneTravelResult, Reason);
+
+/**
+ * 서버가 상호작용을 거부한 이유.
+ */
+UENUM(BlueprintType)
+enum class ETDInteractionFailureReason : uint8
+{
+	None UMETA(DisplayName = "없음"),
+	InventoryFull UMETA(DisplayName = "인벤토리 부족"),
+	AlreadyClaimed UMETA(DisplayName = "이미 획득함"),
+	QuestConditionNotMet UMETA(DisplayName = "퀘스트 조건 불일치"),
+	InvalidDefinition UMETA(DisplayName = "데이터 설정 오류")
+};
+
+/**
+ * 상호작용이 실패했을 때 해당 클라이언트에서 발생한다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnInteractionFailed,
+	FName, ObjectId,
+	ETDInteractionFailureReason, Reason);
+//
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FTDOnDialogueLineReceived,
+	int32, SessionId,
+	FName, DialogueRow,
+	FTDDialogueLineView, Line);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnDialogueClosed,
+	int32, SessionId);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnQuestActionResult,
+	FName, QuestId,
+	ETDQuestActionResult, Result);
+
+class ATDNPCBase;
+class UDataTable;
 
 /**
  * 플레이어 한 명의 의도를 나타내는 Controller.
@@ -54,6 +106,10 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(FName ItemId, int32 Count);
 
+	/** 골드를 지급한다. 강화·거래소 테스트에 필요해 열어둔다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveGold(int32 Amount);
+
 	UFUNCTION(Server, Reliable)
 	void ServerDebugSetLevel(int32 NewLevel);
 
@@ -68,4 +124,156 @@ public:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveTestCharacters();
+
+	/**
+	 * 자기 캐릭터에게 고정 피해를 적용한다.
+	 *
+	 * ApplyRawDamage 는 서버 권한을 요구하므로 클라이언트 콘솔에서는 조용히 무시된다.
+	 * 2인 PIE 의 클라이언트 창에서도 회복·사망을 테스트할 수 있도록 통로를 연다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugDamage(float Amount);
+
+	/** 경험치를 지급한다. 레벨업 판정까지 서버에서 일어난다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugAddExp(int32 Amount);
+
+	/**
+	 * 지정한 존으로 이동한다. 포탈이 없어도 존 이동을 검증할 수 있게 여는 통로다.
+	 *
+	 * 치트지만 **레벨 제한을 우회하지 않는다** — 서버 판정 자체를 테스트해야 하기 때문이다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugTravelToZone(FGameplayTag TargetZoneId, FName EntryName);
+
+	/**
+	 * 처치 경험치를 파티에 분배한다. 전투 쪽에 호출부가 붙기 전까지 검증용이다.
+	 *
+	 * AwardKillExp 가 서버 권한을 요구하므로 클라이언트 콘솔에서는 조용히 무시된다.
+	 * 다른 치트와 같은 방식으로 통로를 연다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugPartyExp(int32 BaseAmount);
+
+	/**
+	 * 테스트 캐릭터 지급과 선택을 **한 RPC 로** 처리한다.
+	 *
+	 * 나눠 보내면 지급은 이쪽(PlayerController), 선택은 PlayerState 의 RPC 라
+	 * 서로 다른 액터가 되어 도착 순서가 보장되지 않는다(§11-G).
+	 * 뒤바뀌면 선택이 "목록이 비었다" 로 실패한다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugQuickStart(int32 SlotIndex);
+
+public:
+	// ── 존 이동 피드백 ────────────────────────────────────
+
+	/**
+	 * 존 이동이 거부됐을 때 서버가 알려준다. **UI 담당이 구독할 지점이다.**
+	 *
+	 * 사유가 enum 인 이유는 문구를 UI 가 정해야 하기 때문이다. 서버가 완성된 문장을
+	 * 보내면 현지화도 못 하고 화면 디자인이 서버 코드에 묶인다.
+	 *
+	 * 필요한 숫자(입장 레벨 등)는 UI 가 DT_ZoneEnvironment 에서 읽으면 된다 —
+	 * 클라이언트도 그 테이블을 갖고 있다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "TD|World")
+	FTDOnZoneTravelFailed OnZoneTravelFailed;
+
+	/** 서버 전용 호출. 해당 클라이언트에게만 간다. */
+	UFUNCTION(Client, Reliable)
+	void ClientZoneTravelFailed(FGameplayTag TargetZoneId, ETDZoneTravelResult Reason);
+
+	// ── 부활 ──────────────────────────────────────────────
+
+	/**
+	 * 부활 버튼이 부른다. **치트가 아니라 정식 경로**라 Shipping 에서도 살아 있다.
+	 *
+	 * 자동 부활 타이머와 같은 GameMode::RespawnPlayer 를 부른다. 둘이 갈라지면
+	 * 한쪽만 고쳤을 때 "버튼으로는 되는데 타이머로는 안 되는" 상태가 된다.
+	 *
+	 * 살아 있는데 눌러도 서버가 거부하므로 클라이언트가 상태를 검사할 필요는 없다.
+	 * 다만 UI 는 사망 중일 때만 버튼을 보여주는 편이 자연스럽다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Combat")
+	void ServerRequestRespawn();
+	
+	
+	// ── 개인 상호작용 결과 ────────────────────────────────
+
+	UFUNCTION(Client, Reliable)
+	void ClientChestClaimed(
+		FName ChestId,
+		float DisappearDelay);
+
+	UFUNCTION(Client, Reliable)
+	void ClientInteractionFailed(
+		FName ObjectId,
+		ETDInteractionFailureReason Reason);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Interaction")
+	FTDOnInteractionFailed OnInteractionFailed;
+
+	
+public:
+	// ── NPC 대화 ──────────────────────────────────────────
+
+	/**
+	 * NPC의 Interact 함수가 서버에서 호출한다.
+	 * 클라이언트가 직접 시작 NPC나 행을 지정할 수 없게 한다.
+	 */
+	void BeginDialogueFromNPC(
+		ATDNPCBase* NPC,
+		UDataTable* DialogueTable,
+		FName StartRow);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable,
+		Category = "TD|Dialogue")
+	void ServerAdvanceDialogue(
+		int32 SessionId,
+		FName ExpectedCurrentRow);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable,
+		Category = "TD|Dialogue")
+	void ServerCancelDialogue(int32 SessionId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientShowDialogueLine(
+		int32 SessionId,
+		FName DialogueRow,
+		FTDDialogueLineView Line);
+
+	UFUNCTION(Client, Reliable)
+	void ClientCloseDialogue(int32 SessionId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientQuestActionResult(
+		FName QuestId,
+		ETDQuestActionResult Result);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Dialogue")
+	FTDOnDialogueLineReceived OnDialogueLineReceived;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Dialogue")
+	FTDOnDialogueClosed OnDialogueClosed;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Quest")
+	FTDOnQuestActionResult OnQuestActionResult;
+
+private:
+	void SendCurrentDialogueLine();
+	void EndDialogueSession();
+	bool ApplyDialogueAction(
+		const FTDDialogueAction& Action);
+
+	UPROPERTY(Transient)
+	TObjectPtr<ATDNPCBase> ActiveDialogueNPC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> ActiveDialogueTable;
+
+	FName ActiveDialogueRow;
+	int32 ActiveDialogueSessionId = 0;
+	int32 DialogueSessionCounter = 0;
 };
+

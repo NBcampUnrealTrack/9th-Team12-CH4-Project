@@ -186,6 +186,16 @@ float UTDStatComponent::GetBaseValue(FGameplayTag Stat) const
 	return Found ? *Found : 0.f;
 }
 
+TArray<FGameplayTag> UTDStatComponent::GetDefinedStats() const
+{
+	// StatRanges 는 LoadStatDefinitions 에서만 채워지므로 테이블에 있는 행과 정확히 일치한다.
+	// BaseValues 는 SetBaseValue 로도 늘어날 수 있어 "테이블에 정의된 것"과 어긋날 수 있다.
+	TArray<FGameplayTag> Result;
+	StatRanges.GetKeys(Result);
+
+	return Result;
+}
+
 float UTDStatComponent::GetStat(FGameplayTag Stat) const
 {
 	if (!bCacheValid)

@@ -69,6 +69,10 @@ namespace TDTags
 		"체력을 Value 만큼 회복한다.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_RestoreMana, "Item.Effect.RestoreMana",
 		"마나를 Value 만큼 회복한다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_GainExp, "Item.Effect.GainExp",
+		"경험치를 Value 만큼 얻는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_LevelUp, "Item.Effect.LevelUp",
+		"Value 레벨 미만이면 즉시 1레벨업, 그 이상이면 Value 레벨 한 구간만큼의 경험치만 얻는다.");
 
 
 	// ── 존(맵) ────────────────────────────────────────────
@@ -104,4 +108,51 @@ namespace TDTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Equipment, "Source.Equipment",
 		"장착 중인 장신구와 세트 효과에서 온 모디파이어.");
+	
+	
+	
+	// ── 퀘스트 ────────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Main,
+		"Quest.Type.Main",
+		"메인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Sub,
+		"Quest.Type.Sub",
+		"서브 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Active,
+		"Quest.State.Active",
+		"진행 중인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_ReadyToTurnIn,
+		"Quest.State.ReadyToTurnIn",
+		"목표를 달성하여 완료 보고할 수 있는 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Completed,
+		"Quest.State.Completed",
+		"보상까지 받은 완료 퀘스트");
+
+	// ── 대화 작업 ─────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_AcceptQuest,
+		"Dialogue.Action.AcceptQuest",
+		"대화 진행 시 퀘스트 수락");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_TurnInQuest,
+		"Dialogue.Action.TurnInQuest",
+		"대화 진행 시 퀘스트 완료 및 보상 지급");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_ReportQuestEvent,
+		"Dialogue.Action.ReportQuestEvent",
+		"대화 진행 시 퀘스트 목표 진행");
+	
 }

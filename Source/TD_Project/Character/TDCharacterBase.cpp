@@ -1,9 +1,34 @@
 #include "Character/TDCharacterBase.h"
-
+#include "Combat/TDCombatComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "PaperFlipbookComponent.h"
+#include "PaperZDAnimationComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+
+ATDCharacterBase::ATDCharacterBase()
+{
+	CombatComponent = CreateDefaultSubobject<UTDCombatComponent>(TEXT("CombatComponent"));
+
+	// ── 2D 표현 ───────────────────────────────────────────
+	// 스프라이트는 캡슐에 붙는다. 충돌은 캡슐이 전담하므로 여기서는 끈다 —
+	// 켜두면 스프라이트 크기가 바뀔 때마다 판정이 따라 움직여 히트박스가 흔들린다.
+	SpriteComponent = CreateDefaultSubobject<UPaperFlipbookComponent>(TEXT("Sprite"));
+	SpriteComponent->SetupAttachment(RootComponent);
+	SpriteComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SpriteComponent->SetGenerateOverlapEvents(false);
+
+	// 스프라이트가 캐릭터 회전을 따라 돌면 옆·뒤를 볼 때 종이처럼 얇아진다.
+	// 회전을 월드 기준으로 고정해 항상 같은 각도로 서 있게 한다.
+	// 정확한 각도는 카메라 세팅에 달렸으므로 블루프린트에서 맞춘다.
+	SpriteComponent->SetUsingAbsoluteRotation(true);
+
+	// 애니메이션 상태 머신. 어떤 플립북을 재생할지 정해 SpriteComponent 에 밀어 넣는다.
+	// AnimInstanceClass 와 RenderComponentRef 지정은 블루프린트 몫이다(플러그인에서 private).
+	AnimationComponent = CreateDefaultSubobject<UPaperZDAnimationComponent>(TEXT("AnimationComponent"));
+}
 
 void ATDCharacterBase::BeginPlay()
 {
@@ -38,16 +63,54 @@ void ATDCharacterBase::SetGenericTeamId(const FGenericTeamId& NewTeamId)
 	TeamId = NewTeamId;
 }
 
+void ATDCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 남의 사망도 보여야 한다 — 파티원 상태 표시, 시체 공격 방지, 사망 애니메이션.
+	DOREPLIFETIME(ATDCharacterBase, bIsDead);
+}
+
 void ATDCharacterBase::HandleDeath()
 {
-	// 체력이 0 아래로 여러 번 깎이거나 서버·클라 양쪽에서 불릴 수 있으므로 한 번만 통과시킨다.
+	// 체력이 0 아래로 여러 번 깎일 수 있으므로 한 번만 통과시킨다.
 	if (bIsDead)
 	{
 		return;
 	}
 
 	bIsDead = true;
+
+	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
 	OnDeath.Broadcast();
+	ForceNetUpdate();
+}
+
+void ATDCharacterBase::HandleRespawn()
+{
+	if (!bIsDead)
+	{
+		return;
+	}
+
+	bIsDead = false;
+
+	OnRespawn.Broadcast();
+	ForceNetUpdate();
+}
+
+void ATDCharacterBase::OnRep_IsDead()
+{
+	// 값에 따라 갈라 부른다. 사망과 부활을 하나의 델리게이트로 합치면
+	// 구독하는 쪽이 매번 IsDead() 를 다시 확인해야 한다.
+	if (bIsDead)
+	{
+		OnDeath.Broadcast();
+	}
+	else
+	{
+		OnRespawn.Broadcast();
+	}
 }
 
 void ATDCharacterBase::HandleStatsChanged()

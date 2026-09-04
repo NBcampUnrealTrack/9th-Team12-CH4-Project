@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "Character/TDCharacterBase.h"
 #include "Core/TDGameplayTags.h"
 #include "Engine/World.h"
 #include "Game/TDGameMode.h"
@@ -9,8 +10,12 @@
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemUseComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Items/TDQuickSlotComponent.h"
+#include "Party/TDPartyComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+#include "Quest/TDPersonalWorldStateComponent.h"
+#include "Quest/TDQuestComponent.h"
 
 ATDPlayerState::ATDPlayerState()
 {
@@ -27,7 +32,12 @@ ATDPlayerState::ATDPlayerState()
 	ProgressionComponent = CreateDefaultSubobject<UTDProgressionComponent>(TEXT("ProgressionComponent"));
 	InventoryComponent = CreateDefaultSubobject<UTDInventoryComponent>(TEXT("InventoryComponent"));
 	ItemUseComponent = CreateDefaultSubobject<UTDItemUseComponent>(TEXT("ItemUseComponent"));
-
+	PartyComponent = CreateDefaultSubobject<UTDPartyComponent>(TEXT("PartyComponent"));
+	QuickSlotComponent = CreateDefaultSubobject<UTDQuickSlotComponent>(TEXT("QuickSlotComponent"));
+	//추가- 상호작용
+	PersonalWorldStateComponent = CreateDefaultSubobject<UTDPersonalWorldStateComponent>(TEXT("PersonalWorldStateComponent"));
+	QuestComponent = CreateDefaultSubobject<UTDQuestComponent>(TEXT("QuestComponent"));
+	
 	// PlayerState 의 기본 갱신 빈도는 1Hz 다. 그대로 두면 여기 실린 값이 초당 한 번씩만
 	// 클라이언트로 가서, 체력바가 1초에 한 칸씩 움직이는 것처럼 보인다.
 	SetNetUpdateFrequency(100.f);
@@ -41,6 +51,13 @@ void ATDPlayerState::BeginPlay()
 	if (HasAuthority() && StatComponent != nullptr)
 	{
 		StatComponent->OnStatsChanged.AddDynamic(this, &ATDPlayerState::HandleStatsChanged);
+
+		// 레벨업하면 체력·마나를 가득 채운다. 최대치가 오르는 것과 별개인 게임 규칙이라
+		// UpdateVitalAttributes 가 아니라 여기서 따로 처리한다.
+		if (ProgressionComponent != nullptr)
+		{
+			ProgressionComponent->OnLevelUp.AddDynamic(this, &ATDPlayerState::HandleLevelUp);
+		}
 
 		// 구독은 늦었다. 컴포넌트들의 BeginPlay 는 위의 Super::BeginPlay() 안에서 이미 끝났고,
 		// 그때 나간 OnStatsChanged 는 아직 구독 전이라 받지 못했다.
@@ -62,9 +79,46 @@ void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	// 캐릭터 목록은 본인만 본다. 남이 어떤 캐릭터를 가졌는지 알 이유가 없다.
 	DOREPLIFETIME_CONDITION(ATDPlayerState, CharacterSlots, COND_OwnerOnly);
 
+	// 스탯창은 자기 것만 본다. 남에게 보여야 하는 것은 전투력뿐이고 그쪽은 위에서 전원에게 간다.
+	DOREPLIFETIME_CONDITION(ATDPlayerState, ReplicatedStats, COND_OwnerOnly);
+
 	// 선택 여부는 소유자만 알면 되지만, 나중에 "선택 중" 상태를 남에게 보여줄 수 있으므로
 	// 조건을 걸지 않는다. bool 하나라 비용이 없다.
 	DOREPLIFETIME(ATDPlayerState, bCharacterSelected);
+
+	// 파티 UI 가 파티원이 어느 존에 있는지 표시해야 하므로 조건을 걸지 않는다.
+	// FGameplayTag 는 사실상 인덱스 하나라 30명 전원에게 보내도 비용이 없고,
+	// 같은 존에 있으면 어차피 그 사람의 캐릭터가 화면에 보인다.
+	DOREPLIFETIME(ATDPlayerState, CurrentZoneId);
+}
+
+// ── 존 ────────────────────────────────────────────────────
+
+bool ATDPlayerState::SetCurrentZoneId(FGameplayTag NewZoneId)
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SetCurrentZoneId 는 서버에서만 호출해야 한다."));
+		return false;
+	}
+
+	if (CurrentZoneId == NewZoneId)
+	{
+		return false;
+	}
+
+	CurrentZoneId = NewZoneId;
+
+	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
+	OnZoneChanged.Broadcast(CurrentZoneId);
+	ForceNetUpdate();
+
+	return true;
+}
+
+void ATDPlayerState::OnRep_CurrentZoneId()
+{
+	OnZoneChanged.Broadcast(CurrentZoneId);
 }
 
 void ATDPlayerState::SetCharacterClassId(FName NewClassId)
@@ -153,6 +207,13 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 	SelectedSlotIndex = SlotIndex;
 	bCharacterSelected = true;
 
+	// 캐릭터 이름을 PlayerState 의 표시 이름으로 삼는다.
+	//
+	// CharacterSlots 는 COND_OwnerOnly 라 남의 캐릭터 이름을 알 방법이 없다.
+	// PlayerName 은 엔진이 이미 전원에게 복제하므로, 파티 UI·이름표·채팅이
+	// 별도 복제 없이 GetPlayerName() 하나로 해결된다.
+	SetPlayerName(Chosen.CharacterName);
+
 	// 직업을 정하면 성장 모디파이어가 그 직업 기준으로 다시 만들어진다.
 	SetCharacterClassId(Chosen.ClassId);
 
@@ -198,10 +259,82 @@ void ATDPlayerState::SetSavedVitalRatios(float InHealthRatio, float InManaRatio)
 	SavedManaRatio = FMath::Clamp(InManaRatio, 0.f, 1.f);
 }
 
+void ATDPlayerState::HandleLevelUp(int32 NewLevel, int32 PreviousLevel)
+{
+	if (!HasAuthority() || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 시체는 채우지 않는다. 그러지 않으면 죽은 채로 경험치만 받아도 되살아나,
+	// 레벨업이 부활 수단이 되어버린다. 부활은 부활 로직이 담당해야 한다.
+	//
+	// 최대치가 오른 것은 HandleStatsChanged 가 이미 반영했으므로 여기서 빠져나가도 문제없다.
+	const ATDCharacterBase* Character = Cast<ATDCharacterBase>(GetPawn());
+	if (Character != nullptr && Character->IsDead())
+	{
+		return;
+	}
+
+	// 레벨업 시 체력·마나를 가득 채운다. 최대치 갱신은 이미 HandleStatsChanged 가
+	// 처리했으므로, 여기서는 현재값만 최대치로 끌어올리면 된다.
+	AbilitySystemComponent->SetNumericAttributeBase(
+		UTDAttributeSet::GetHealthAttribute(),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()));
+
+	AbilitySystemComponent->SetNumericAttributeBase(
+		UTDAttributeSet::GetManaAttribute(),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxManaAttribute()));
+}
+
 void ATDPlayerState::HandleStatsChanged()
 {
 	UpdateCombatPower();
+	UpdateReplicatedStats();
 	UpdateVitalAttributes();
+}
+
+float ATDPlayerState::GetReplicatedStat(FGameplayTag Stat) const
+{
+	const FTDStatSnapshot* Found = ReplicatedStats.FindByPredicate(
+		[Stat](const FTDStatSnapshot& Snapshot) { return Snapshot.Stat == Stat; });
+
+	return Found ? Found->Value : 0.f;
+}
+
+void ATDPlayerState::UpdateReplicatedStats()
+{
+	if (!HasAuthority() || StatComponent == nullptr)
+	{
+		return;
+	}
+
+	// 보낼 목록은 DT_StatDefinition 이 정한다. 테이블에 행을 추가하면 여기도 자동으로 늘어난다.
+	const TArray<FGameplayTag> DefinedStats = StatComponent->GetDefinedStats();
+
+	TArray<FTDStatSnapshot> NewSnapshot;
+	NewSnapshot.Reserve(DefinedStats.Num());
+
+	for (const FGameplayTag& Stat : DefinedStats)
+	{
+		NewSnapshot.Emplace(Stat, StatComponent->GetStat(Stat));
+	}
+
+	// 값이 그대로면 복제하지 않는다. 이동 속도만 바뀌어도 15개를 다시 보내는 것을 막는다.
+	if (ReplicatedStats == NewSnapshot)
+	{
+		return;
+	}
+
+	ReplicatedStats = MoveTemp(NewSnapshot);
+
+	// 서버에서는 OnRep 이 불리지 않으므로 여기서 직접 알린다.
+	OnStatsReplicated.Broadcast();
+}
+
+void ATDPlayerState::OnRep_ReplicatedStats()
+{
+	OnStatsReplicated.Broadcast();
 }
 
 void ATDPlayerState::UpdateVitalAttributes()

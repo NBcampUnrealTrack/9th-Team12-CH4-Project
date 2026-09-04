@@ -82,6 +82,8 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_ExpandInventory);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_RestoreHealth);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_RestoreMana);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_GainExp);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Effect_LevelUp);
 
 
 	// ── 존(맵) ────────────────────────────────────────────
@@ -131,4 +133,24 @@ namespace TDTags
 	 * 세트 단계가 바뀌어 다른 아이템의 효과까지 달라지므로, 어차피 전체를 다시 계산해야 한다.
 	 */
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Equipment);
+	
+	
+	
+	
+	// ── 퀘스트 ────────────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Type_Main);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Type_Sub);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_Active);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_ReadyToTurnIn);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_Completed);
+
+	// ── 대화 작업 ─────────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_AcceptQuest);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_TurnInQuest);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_ReportQuestEvent);
+	
+	
 }

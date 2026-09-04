@@ -1,8 +1,10 @@
 #include "Items/TDInventoryComponent.h"
 
+#include "Data/TDEnhanceRow.h"
 #include "Data/TDItemRow.h"
 #include "Engine/DataTable.h"
 #include "GameFramework/Actor.h"
+#include "Items/TDEnhanceStatics.h"
 #include "Net/UnrealNetwork.h"
 
 namespace
@@ -43,6 +45,77 @@ void UTDInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	// 남의 인벤토리를 알 필요는 없다. 소유 커넥션에만 보낸다.
 	DOREPLIFETIME_CONDITION(UTDInventoryComponent, ItemContainer, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(UTDInventoryComponent, SlotCapacity, COND_OwnerOnly);
+
+	// 남의 지갑도 볼 이유가 없다. 같은 조건으로 보낸다.
+	DOREPLIFETIME_CONDITION(UTDInventoryComponent, Gold, COND_OwnerOnly);
+}
+
+// ── 골드 ──────────────────────────────────────────────────
+
+bool UTDInventoryComponent::AddGold(int32 Amount)
+{
+	if (!HasAuthorityToModify())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AddGold 는 서버에서만 호출해야 한다."));
+		return false;
+	}
+
+	if (Amount <= 0)
+	{
+		// 차감은 SpendGold 를 쓴다. 여기로 음수가 오면 호출부의 실수다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("AddGold: 0 이하(%d)는 받지 않는다. 차감은 SpendGold 를 쓸 것."), Amount);
+		return false;
+	}
+
+	// 상한에 걸리면 남는 만큼만 들어간다. 넘치는 분은 버린다 —
+	// 여기서 실패시키면 보상을 아예 못 받게 되어 더 나쁘다.
+	const int32 NewGold = (Gold > MaxGold - Amount) ? MaxGold : Gold + Amount;
+	if (NewGold == Gold)
+	{
+		return false;
+	}
+
+	Gold = NewGold;
+
+	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
+	OnGoldChanged.Broadcast(Gold);
+
+	return true;
+}
+
+bool UTDInventoryComponent::SpendGold(int32 Amount)
+{
+	if (!HasAuthorityToModify())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SpendGold 는 서버에서만 호출해야 한다."));
+		return false;
+	}
+
+	if (Amount <= 0 || !CanAfford(Amount))
+	{
+		// 부분 차감은 하지 않는다. 살 수 없으면 아무것도 하지 않는다(D28 과 같은 원칙).
+		UE_LOG(LogTemp, Log,
+			TEXT("SpendGold 실패: %d 골드가 필요한데 %d 뿐이다."), Amount, Gold);
+		return false;
+	}
+
+	Gold -= Amount;
+	OnGoldChanged.Broadcast(Gold);
+
+	return true;
+}
+
+void UTDInventoryComponent::OnRep_Gold()
+{
+	OnGoldChanged.Broadcast(Gold);
+}
+
+void UTDInventoryComponent::OnRep_SlotCapacity()
+{
+	// 칸 수가 늘면 화면의 빈 칸도 늘어야 한다. 아이템 변경과 같은 알림을 쓴다 —
+	// UI 입장에서는 "인벤토리를 다시 그려라" 로 똑같기 때문이다.
+	BroadcastInventoryChanged();
 }
 
 bool UTDInventoryComponent::HasAuthorityToModify() const
@@ -59,6 +132,125 @@ const FTDItemRow* UTDInventoryComponent::FindItemRow(FName ItemId) const
 	}
 
 	return ItemTable->FindRow<FTDItemRow>(ItemId, ItemTableContext, /*bWarnIfRowMissing=*/false);
+}
+
+const FTDEnhanceRow* UTDInventoryComponent::FindEnhanceRow(int32 Level) const
+{
+	if (EnhanceTable == nullptr)
+	{
+		return nullptr;
+	}
+
+	// Level 열로 찾는다. RowName 은 "Lv07" 같은 편집용 별칭일 뿐이다.
+	const FTDEnhanceRow* Found = nullptr;
+
+	EnhanceTable->ForeachRow<FTDEnhanceRow>(TEXT("FindEnhanceRow"),
+		[&Found, Level](const FName&, const FTDEnhanceRow& Row)
+		{
+			if (Found == nullptr && Row.Level == Level)
+			{
+				Found = &Row;
+			}
+		});
+
+	return Found;
+}
+
+bool UTDInventoryComponent::GetEnhanceInfo(int32 Level, FTDEnhanceRow& OutRow) const
+{
+	const FTDEnhanceRow* Row = FindEnhanceRow(Level);
+	if (Row == nullptr)
+	{
+		return false;
+	}
+
+	// 포인터를 그대로 넘기지 않는다. 테이블이 다시 임포트되면 행 주소가 바뀌므로,
+	// 값을 복사해 주는 편이 호출한 쪽에서 오래 들고 있어도 안전하다.
+	OutRow = *Row;
+	return true;
+}
+
+void UTDInventoryComponent::ServerEnhanceItem_Implementation(int32 SlotIndex)
+{
+	if (!HasAuthorityToModify())
+	{
+		return;
+	}
+
+	FTDItemInstance* Item = FindMutableBySlot(SlotIndex);
+	if (Item == nullptr)
+	{
+		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::ItemNotFound, 0);
+		return;
+	}
+
+	const int32 TargetLevel = Item->EnhanceLevel + 1;
+	const FTDEnhanceRow* Row = FindEnhanceRow(TargetLevel);
+
+	if (Row == nullptr)
+	{
+		// 데이터 누락(EnhanceTable 미지정 등)과 "이미 최고 레벨"을 구분하지 않는다.
+		// 둘 다 결과는 같다 — 이 이상은 못 올린다. 원인은 서버 로그로 남긴다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("강화 실패: 레벨 %d 로 가는 행이 DT_Enhance 에 없다. "
+			     "EnhanceTable 미지정이거나 최고 레벨이다."), TargetLevel);
+		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::MaxLevelReached, Item->EnhanceLevel);
+		return;
+	}
+
+	if (!SpendGold(Row->Cost))
+	{
+		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::NotEnoughGold, Item->EnhanceLevel);
+		return;
+	}
+
+	// 실패해도 이미 골드는 나갔다 — 시도 자체의 대가다(FTDEnhanceRow::Cost 주석 참조).
+	const FTDEnhanceRollResult RollResult = TDEnhance::Roll(*Row,
+		FMath::FRand(), FMath::FRand(), FMath::FRand());
+
+	ETDEnhanceResult FinalResult = ETDEnhanceResult::FailedNoChange;
+
+	switch (RollResult.Outcome)
+	{
+	case ETDEnhanceOutcome::Success:
+		Item->EnhanceLevel = TargetLevel;
+		FinalResult = ETDEnhanceResult::Success;
+		break;
+
+	case ETDEnhanceOutcome::Downgraded:
+		Item->EnhanceLevel = FMath::Max(0, Item->EnhanceLevel - RollResult.DowngradeTiers);
+		FinalResult = ETDEnhanceResult::Downgraded;
+		break;
+
+	case ETDEnhanceOutcome::FailedNoChange:
+	default:
+		FinalResult = ETDEnhanceResult::FailedNoChange;
+		break;
+	}
+
+	// 강화 레벨이 바뀌지 않았어도(FailedNoChange) 골드는 줄었으므로 알림은 항상 낸다.
+	MarkItemDirty(*Item);
+
+	UE_LOG(LogTemp, Log, TEXT("강화: 슬롯 %d '%s' — %s (%d강 → %d강, 비용 %d)"),
+		SlotIndex, *Item->ItemId.ToString(),
+		*UEnum::GetDisplayValueAsText(FinalResult).ToString(),
+		TargetLevel - 1, Item->EnhanceLevel, Row->Cost);
+
+	// 알림은 ClientItemEnhanced 안에서 한 번만 낸다(ETDZoneTravelResult 와 같은 패턴).
+	// 여기서 한 번 더 브로드캐스트하면 리슨 서버의 호스트 화면에서 두 번 뜬다 —
+	// Client RPC 는 소유자 자신에게는 네트워크를 타지 않고 그 자리에서 바로 실행되기 때문이다.
+	ClientItemEnhanced(SlotIndex, FinalResult, Item->EnhanceLevel);
+}
+
+void UTDInventoryComponent::ClientItemEnhanced_Implementation(int32 SlotIndex,
+	ETDEnhanceResult Result, int32 NewEnhanceLevel)
+{
+	// 문구는 만들지 않는다. UI 가 이 델리게이트를 받아 자기 형식으로 표시한다.
+	OnItemEnhanced.Broadcast(SlotIndex, Result, NewEnhanceLevel);
+
+	// UI 가 붙기 전까지는 로그로만 확인한다.
+	UE_LOG(LogTemp, Log, TEXT("강화 결과: 슬롯 %d — %s (%d강)"),
+		SlotIndex, *UEnum::GetDisplayValueAsText(Result).ToString(), NewEnhanceLevel);
 }
 
 const FTDItemInstance* UTDInventoryComponent::FindBySlot(int32 SlotIndex) const
@@ -463,6 +655,7 @@ void UTDInventoryComponent::WriteSaveData(FTDPlayerSaveData& Out) const
 {
 	Out.InventorySlotCapacity = SlotCapacity;
 	Out.InventoryItems = ItemContainer.Items;
+	Out.Gold = Gold;
 }
 
 void UTDInventoryComponent::ReadSaveData(const FTDPlayerSaveData& In)
@@ -471,4 +664,7 @@ void UTDInventoryComponent::ReadSaveData(const FTDPlayerSaveData& In)
 
 	ItemContainer.Items = In.InventoryItems;
 	MarkContainerDirty();
+
+	Gold = FMath::Clamp(In.Gold, 0, MaxGold);
+	OnGoldChanged.Broadcast(Gold);
 }

@@ -80,6 +80,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
 	int32 GetSetPieceCount(FName SetId) const;
 
+	/**
+	 * 강화가 이 아이템의 스탯을 몇 배로 만드는지. **1강당 상승폭은 아이템마다 다르다** —
+	 * DT_ItemDefinition 의 RequiredLevel 이 높을수록 커진다(2%/강 ~ 7%/강).
+	 *
+	 * 장착 여부와 무관하게 답한다. 인벤토리에 있는 아이템의 툴팁에도 쓸 수 있고,
+	 * EnhanceLevel + 1 을 넣으면 "다음 강화에 성공하면 얼마가 되는지" 미리보기가 된다.
+	 *
+	 * 강화 단수가 0 이면 1.0 이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
+	float GetEnhanceMultiplier(FName ItemId, int32 EnhanceLevel) const;
+
 	UPROPERTY(BlueprintAssignable, Category = "TD|Equipment")
 	FTDOnEquipmentChanged OnEquipmentChanged;
 
@@ -118,14 +130,28 @@ private:
 	 */
 	void RefreshEquipmentModifiers();
 
-	/** 소비 효과 하나를 실제로 적용한다. 태그를 보고 무엇을 할지 정한다. */
-	void ApplyUseEffect(FGameplayTag EffectTag, float Value);
+	/**
+	 * 소비 효과 하나를 실제로 적용한다. 태그를 보고 무엇을 할지 정한다.
+	 *
+	 * @return 효과가 실제로 일어났으면 true. 풀피에서 회복 포션을 쓰는 경우처럼
+	 *         아무 일도 없었으면 false 이고, 그때는 아이템을 소모하지 않는다.
+	 */
+	bool ApplyUseEffect(FGameplayTag EffectTag, float Value);
 
 	const FTDItemRow* FindItemRow(FName ItemId) const;
 
 	UTDInventoryComponent* GetInventory() const;
 	UTDStatComponent* GetStatComponent() const;
 	UTDProgressionComponent* GetProgression() const;
+
+	/**
+	 * 이 컴포넌트의 주인이 조종하는 캐릭터.
+	 *
+	 * 회복은 PlayerState 가 아니라 월드의 캐릭터에게 적용해야 한다 —
+	 * ASC 는 PlayerState 에 있지만 죽고 사는 것은 아바타다.
+	 * 캐릭터를 고르기 전에는 Pawn 이 없으므로 nullptr 이 정상이다.
+	 */
+	AActor* GetOwnerCharacter() const;
 
 	bool HasAuthorityToModify() const;
 

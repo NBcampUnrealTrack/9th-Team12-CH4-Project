@@ -4,14 +4,19 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerState.h"
 #include "Save/TDPlayerSaveData.h"
+#include "Stats/TDStatTypes.h"
 #include "TDPlayerState.generated.h"
 
 class UAbilitySystemComponent;
 class UTDAttributeSet;
 class UTDInventoryComponent;
 class UTDItemUseComponent;
+class UTDPartyComponent;
+class UTDQuickSlotComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
+class UTDPersonalWorldStateComponent;
+class UTDQuestComponent;
 
 /** 전투력이 바뀌었을 때. 본인과 다른 플레이어 양쪽에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnCombatPowerChanged, int32, NewCombatPower);
@@ -24,6 +29,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterSlotsChanged);
 
 /** 캐릭터 선택이 확정됐을 때. 선택 화면을 닫는 신호다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterSelected);
+
+/** 서버가 계산한 스탯이 도착했을 때. 스탯창이 이걸 받아 갱신한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnStatsReplicated);
+
+/**
+ * 이 플레이어가 있는 존이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다.
+ *
+ * 구독자는 각자 DT_ZoneEnvironment 에서 자기가 필요한 것만 읽어간다 —
+ * 사운드는 BGM 만, 아트는 라이팅만 본다. PlayerState 가 읽어서 나눠주지 않는다.
+ * 그러면 항목이 늘 때마다 여기를 고쳐야 한다(D69).
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnPlayerZoneChanged, FGameplayTag, NewZoneId);
 
 /**
  * 플레이어의 스탯 컴포넌트가 실제로 붙는 곳.
@@ -65,6 +82,27 @@ public:
 
 	UTDItemUseComponent* GetItemUseComponent() const { return ItemUseComponent; }
 
+	UTDPartyComponent* GetPartyComponent() const { return PartyComponent; }
+
+	UTDQuickSlotComponent* GetQuickSlotComponent() const { return QuickSlotComponent; }
+
+	//여기 맞나?
+	UFUNCTION(BlueprintPure, Category = "TD|Quest")
+	UTDPersonalWorldStateComponent*
+	GetPersonalWorldStateComponent() const
+	{
+		return PersonalWorldStateComponent;
+	}
+	
+	UFUNCTION(BlueprintPure, Category = "TD|Quest")
+	UTDQuestComponent* GetQuestComponent() const
+	{
+		return QuestComponent;
+	}
+	
+	
+	
+	
 	// ── 전투력 ────────────────────────────────────────────
 
 	/**
@@ -78,6 +116,29 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Stats")
 	FTDOnCombatPowerChanged OnCombatPowerChanged;
+
+	// ── 스탯 스냅샷 ───────────────────────────────────────
+
+	/**
+	 * 서버가 계산한 스탯 최종값. **스탯창은 이걸 읽어야 한다.**
+	 *
+	 * UTDStatComponent 는 복제되지 않으므로 클라이언트에서 GetStat() 을 부르면
+	 * DT_StatDefinition 의 기본값이 나온다 — 실제 값이 아니다.
+	 *
+	 * 남의 스탯창을 볼 일이 없으므로 COND_OwnerOnly 로 보낸다. 남에게 보여야 하는 것은
+	 * 전투력뿐이고 그쪽은 따로 전원에게 복제된다.
+	 *
+	 * @return 목록에 없는 스탯이면 0. DT_StatDefinition 에 행이 있는 스탯만 담긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Stats")
+	float GetReplicatedStat(FGameplayTag Stat) const;
+
+	UFUNCTION(BlueprintPure, Category = "TD|Stats")
+	const TArray<FTDStatSnapshot>& GetReplicatedStats() const { return ReplicatedStats; }
+
+	/** 스탯 스냅샷이 갱신됐을 때. 스탯창은 Tick 이 아니라 이걸 구독한다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Stats")
+	FTDOnStatsReplicated OnStatsReplicated;
 
 	// ── 직업 ──────────────────────────────────────────────
 
@@ -95,7 +156,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Character")
 	FTDOnCharacterClassChanged OnCharacterClassChanged;
 
-	// ── 캐릭터 선택 (D51~D58) ─────────────────────────────
+	// ── 캐릭터 선택─────────────────────────────
 
 	/**
 	 * 이 계정이 보유한 캐릭터 목록. 선택 화면이 읽는다.
@@ -137,8 +198,24 @@ public:
 	/** 서버 전용. 디버그 명령과 세이브 로드가 함께 쓴다. @return 실제로 선택됐으면 true. */
 	bool SelectCharacter(int32 SlotIndex);
 
-	/** 마지막으로 있던 존. 스폰 위치를 정하는 데 쓴다(D51). 비어 있으면 기본 시작 존. */
-	FGameplayTag GetLastZoneId() const { return LastZoneId; }
+	// ── 존 ────────────────────────────────────────────────
+
+	/**
+	 * 지금 있는 존. 접속 직후에는 세이브에서 읽은 "마지막으로 있던 존"이며,
+	 * 그 값이 그대로 스폰 위치를 정하는 데 쓰인다.
+	 *
+	 * GameState 가 아니라 여기 있는 이유는 **플레이어마다 다른 존에 있기 때문**이다.
+	 * 좌표 텔레포트를 고른 이유가 그것이므로, 월드에 하나뿐인 값으로는 표현할 수 없다.
+	 * GameState.ZoneId 는 낮과 밤처럼 월드 전체에 하나인 것만 담는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|World")
+	FGameplayTag GetCurrentZoneId() const { return CurrentZoneId; }
+
+	/** 서버 전용. 텔레포트가 끝난 뒤에 부른다. @return 실제로 바뀌었으면 true. */
+	bool SetCurrentZoneId(FGameplayTag NewZoneId);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|World")
+	FTDOnPlayerZoneChanged OnZoneChanged;
 
 protected:
 	virtual void BeginPlay() override;
@@ -149,8 +226,25 @@ protected:
 	UFUNCTION()
 	void HandleStatsChanged();
 
+	/** 레벨업 시 체력·마나를 가득 채운다. 최대치 갱신과는 별개인 게임 규칙이다. */
+	UFUNCTION()
+	void HandleLevelUp(int32 NewLevel, int32 PreviousLevel);
+
 private:
 	void UpdateCombatPower();
+
+	/** 정의된 스탯을 전부 계산해 스냅샷으로 옮긴다. 값이 그대로면 복제하지 않는다. */
+	void UpdateReplicatedStats();
+
+	UFUNCTION()
+	void OnRep_ReplicatedStats();
+
+	/**
+	 * 스탯 15종이면 대략 120바이트다. 소유자에게만, 그리고 값이 실제로 바뀔 때만 나간다.
+	 * 장착·레벨업 순간에만 갱신되므로 상시 부하는 없다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedStats)
+	TArray<FTDStatSnapshot> ReplicatedStats;
 
 	/**
 	 * 스탯 계산 결과를 AttributeSet 의 최대치에 기록한다.
@@ -189,8 +283,17 @@ private:
 	/** 고른 슬롯 번호. 세이브를 다시 쓸 때 어느 캐릭터인지 알아야 하므로 서버가 들고 있는다. */
 	int32 SelectedSlotIndex = INDEX_NONE;
 
-	/** 세이브에서 읽어온 마지막 존. 스폰 지점 결정에만 쓰이므로 복제하지 않는다. */
-	FGameplayTag LastZoneId;
+	UFUNCTION()
+	void OnRep_CurrentZoneId();
+
+	/**
+	 * 지금 있는 존. 전원에게 복제한다 — 파티 UI 가 파티원의 위치를 표시해야 한다.
+	 *
+	 * 조건을 걸지 않는 이유는 비용이 없기 때문이다. FGameplayTag 는 사실상 인덱스
+	 * 하나이고, 같은 존에 있으면 어차피 그 사람의 캐릭터가 화면에 보인다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentZoneId)
+	FGameplayTag CurrentZoneId;
 
 	/** GAS 의 중심. 어빌리티·이펙트·어트리뷰트가 전부 여기를 거친다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Abilities")
@@ -221,4 +324,35 @@ private:
 	/** 장착과 아이템 사용. 장착 상태도 저장 대상이라 인벤토리와 같은 자리에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Inventory")
 	TObjectPtr<UTDItemUseComponent> ItemUseComponent;
+
+	/**
+	 * 소속 파티. 저장하지 않는다 — 파티는 접속 중에만 존재하는 관계이고,
+	 * 재접속하면 다시 맺어야 하는 것이 자연스럽다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Party")
+	TObjectPtr<UTDPartyComponent> PartyComponent;
+
+	/**
+	 * 퀵슬롯 배치. 캐릭터별 저장 대상이다 —
+	 * 전사의 1번과 법사의 1번이 같을 이유가 없다.
+	 *
+	 * 어느 키로 쓰는지는 여기가 아니라 Enhanced Input 이 로컬에 저장한다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|QuickSlot")
+	TObjectPtr<UTDQuickSlotComponent> QuickSlotComponent;
+	
+	
+	/**
+	 * 플레이어별 퀘스트 진행도와 획득한 상자 목록.
+	 *
+	 * 캐릭터가 죽어도 유지되어야 하므로 PlayerState가 소유한다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Quest")
+	TObjectPtr<UTDPersonalWorldStateComponent>
+		PersonalWorldStateComponent;
+	
+	
+	UPROPERTY(VisibleAnywhere, Category = "TD|Quest")
+	TObjectPtr<UTDQuestComponent> QuestComponent;
+	
 };

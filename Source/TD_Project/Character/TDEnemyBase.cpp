@@ -2,9 +2,12 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "Components/CapsuleComponent.h"                    
 #include "Core/TDGameplayTags.h"
 #include "Data/TDMonsterRow.h"
 #include "Engine/DataTable.h"
+#include "GameFramework/CharacterMovementComponent.h"      
+#include "Stats/TDProgressionComponent.h"                   
 #include "Stats/TDStatComponent.h"
 
 ATDEnemyBase::ATDEnemyBase()
@@ -126,6 +129,48 @@ void ATDEnemyBase::ApplyDefinition()
 
 	StatComponent->SetBaseValue(DamageTag, Row->BaseDamage.GetValueAtLevel(LevelAsFloat));
 
+	// 보상도 같은 행에서 레벨 스케일로 읽어둔다. 죽는 시점엔 테이블을 다시 열지 않는다.
+	ExpReward = FMath::RoundToInt(Row->ExpReward.GetValueAtLevel(LevelAsFloat));
+	
 	//  어트리뷰트에 스탯을 옮겨서 클라이언트가 볼 수 있도록 한다.
 	UpdateVitalAttributes();
+}
+
+void ATDEnemyBase::HandleDeath()
+{
+	// 부모가 bIsDead 를 세우고 OnDeath 를 브로드캐스트한다. AI 정지는 그 구독자 몫이다.
+	Super::HandleDeath();
+
+	// 시체는 길을 막지도, 맞지도 않는다. 히트 판정(ECC_Pawn 질의)에서도 이걸로 빠진다.
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	// 파괴는 서버 권한. 복제로 클라이언트에서도 함께 사라진다.
+	// TODO(드랍): GoldMin/Max 와 DropTableId 는 드랍 액터(W3)와 함께 붙인다.
+	if (HasAuthority())
+	{
+		SetLifeSpan(CorpseLifetime);
+	}
+}
+
+void ATDEnemyBase::GrantRewards(ATDCharacterBase* Killer)
+{
+	if (!HasAuthority() || bRewardsGranted || Killer == nullptr)
+	{
+		return;
+	}
+	bRewardsGranted = true;
+
+	if (UTDProgressionComponent* Progression = Killer->GetProgressionComponent())
+	{
+		Progression->AddExp(ExpReward);   // 레벨업 판정은 AddExp 안에서 이뤄진다
+	}
 }

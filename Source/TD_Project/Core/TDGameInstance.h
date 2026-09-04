@@ -28,6 +28,8 @@ public:
 	 */
 	virtual void Init() override;
 
+	virtual void Shutdown() override;
+
 	/**
 	 * 지정한 주소의 서버로 접속한다.
 	 *
@@ -39,4 +41,22 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "TD|Network")
 	bool ConnectToServer(const FString& Address);
+
+private:
+	/**
+	 * 맵이 로드될 때마다 저장된 옵션을 실제로 반영한다.
+	 *
+	 * Init 에서 한 번만 하면 안 된다. 그 시점에는 월드가 아직 없어 오디오 적용이
+	 * 조용히 빠져나가고, 볼륨이 기본값으로 들린 채 게임이 시작된다.
+	 *
+	 * 맵마다 다시 부르는 것은 낭비가 아니다 — 오디오 디바이스가 월드에 붙어 있어
+	 * 맵이 바뀌면 새 월드에 값을 다시 밀어넣어야 하기 때문이다. 값 덮어쓰기라
+	 * 여러 번 불러도 누적되지 않는다.
+	 *
+	 * 존 이동에는 불리지 않는다. 좌표 텔레포트라 맵 로드가 없기 때문이며(D47),
+	 * 그쪽은 볼륨이 유지되는 것이 옳다.
+	 */
+	void HandlePostLoadMap(UWorld* LoadedWorld);
+
+	FDelegateHandle PostLoadMapHandle;
 };

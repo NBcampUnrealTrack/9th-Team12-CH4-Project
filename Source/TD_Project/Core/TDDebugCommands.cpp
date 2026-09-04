@@ -5,13 +5,20 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Items/TDEnhanceStatics.h"
 #include "Items/TDInventoryComponent.h"
+#include "Items/TDQuickSlotComponent.h"
+#include "Party/TDPartyComponent.h"
+#include "Settings/TDInputSettingsLibrary.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+#include "Combat/TDCombatStatics.h"
+#include "Combat/TDCombatComponent.h"
 
 /**
  * 개발용 콘솔 명령.
@@ -27,6 +34,9 @@
 #if !UE_BUILD_SHIPPING
 
 DEFINE_LOG_CATEGORY_STATIC(LogTDDebug, Log, All);
+
+/** TD.InputDebug 가 읽고 쓰는 값. 캐릭터의 Move 핸들러가 이걸 보고 로그를 찍는다. */
+static int32 GTDInputDebugValue = 0;
 
 namespace TDDebugCommands
 {
@@ -101,7 +111,12 @@ namespace TDDebugCommands
 
 		if (VisitedCount == 0)
 		{
-			UE_LOG(LogTDDebug, Warning, TEXT("대상 캐릭터를 찾지 못했다. (필터: '%s')"), *NameFilter);
+			// 캐릭터 선택 전에는 Pawn 이 아예 없다(D54). 버그로 오해하기 쉬우므로 다음 단계를 알려준다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("대상 캐릭터를 찾지 못했다. (필터: '%s')\n"
+					 "    캐릭터를 고르기 전에는 Pawn 이 스폰되지 않는다.\n"
+					 "    TD.GiveTestCharacters → TD.SelectCharacter <번호> 순서로 진행할 것."),
+				*NameFilter);
 		}
 
 		return VisitedCount;
@@ -136,10 +151,23 @@ namespace TDDebugCommands
 				UE_LOG(LogTDDebug, Log, TEXT("%s  (성장 컴포넌트 없음)"), *Character.GetName());
 			}
 
+			// 로컬 계산과 복제된 값을 나란히 찍는다. 서버에서는 같지만 클라이언트에서는
+			// 로컬이 테이블 기본값이라 크게 차이 난다 — 스탯창이 어느 쪽을 써야 하는지 보여준다.
+			const ATDPlayerState* StatOwner = Cast<ATDPlayerState>(Character.GetPlayerState());
+
 			for (const FGameplayTag& Stat : DisplayStats)
 			{
-				UE_LOG(LogTDDebug, Log, TEXT("    %-40s %.3f"),
-					*Stat.ToString(), StatComponent->GetStat(Stat));
+				if (StatOwner != nullptr)
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("    %-40s %8.3f  (복제 %.3f)"),
+						*Stat.ToString(), StatComponent->GetStat(Stat), StatOwner->GetReplicatedStat(Stat));
+				}
+				else
+				{
+					// 몬스터는 PlayerState 가 없다. 스탯 복제도 필요 없다.
+					UE_LOG(LogTDDebug, Log, TEXT("    %-40s %8.3f"),
+						*Stat.ToString(), StatComponent->GetStat(Stat));
+				}
 			}
 
 			// 둘을 나란히 찍는다. 서버에서는 같은 값이지만, 클라이언트에서는
@@ -273,8 +301,9 @@ namespace TDDebugCommands
 				return;
 			}
 
-			UE_LOG(LogTDDebug, Log, TEXT("%s  (%d / %d 칸 사용)"),
-				*Character.GetName(), Inventory->GetUsedSlotCount(), Inventory->GetSlotCapacity());
+			UE_LOG(LogTDDebug, Log, TEXT("%s  (%d / %d 칸 사용, %d 골드)"),
+				*Character.GetName(), Inventory->GetUsedSlotCount(), Inventory->GetSlotCapacity(),
+				Inventory->GetGold());
 
 			// FastArray 는 배열 순서를 보장하지 않는다. 실제 화면은 SlotIndex 로 그리므로
 			// 읽는 사람이 헷갈리지 않도록 출력도 슬롯 순으로 맞춘다.
@@ -401,10 +430,608 @@ namespace TDDebugCommands
 
 			for (const FTDItemInstance& Item : SortedEquipped)
 			{
-				UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-24s  강화 +%d  옵션 %d개  등급 %s"),
+				// 강화 배율을 함께 찍는다. 스탯창 숫자가 왜 그 값인지 여기서 바로 대조할 수 있다.
+				// 1강당 상승폭은 배율에서 역산한다 — 아이템마다 다르므로(RequiredLevel) 눈으로 봐야 한다.
+				const float Multiplier = ItemUse->GetEnhanceMultiplier(Item.ItemId, Item.EnhanceLevel);
+				const float PercentPerLevel = Item.EnhanceLevel > 0
+					? (Multiplier - 1.f) / Item.EnhanceLevel * 100.f
+					: 0.f;
+
+				UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-24s  강화 +%-2d  배율 x%.3f (%.1f%%/강)  옵션 %d개  등급 %s"),
 					Item.SlotIndex, *Item.ItemId.ToString(), Item.EnhanceLevel,
+					Multiplier, PercentPerLevel,
 					Item.Options.Num(), *Item.OptionRarity.ToString());
 			}
+		});
+	}
+
+	/**
+	 * 파티 상태를 찍는다. 서버·클라이언트 어느 쪽에서 쳐도 자기가 아는 것을 보여준다 —
+	 * PartyId 는 전원에게 복제되므로 클라이언트도 정확한 값을 안다.
+	 */
+	static void DumpParty(const TArray<FString>& Args, UWorld* World)
+	{
+		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+		if (GameState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpParty: GameState 가 없다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 접속자 %d명 ──"), GameState->PlayerArray.Num());
+
+		for (APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			const ATDPlayerState* TDPlayerState = Cast<ATDPlayerState>(PlayerState);
+			const UTDPartyComponent* Party =
+				TDPlayerState ? TDPlayerState->GetPartyComponent() : nullptr;
+
+			if (Party == nullptr)
+			{
+				continue;
+			}
+
+			if (!Party->IsInParty())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %-20s  파티 없음"),
+					*TDPlayerState->GetPlayerName());
+				continue;
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("  %-20s  %s  %d명  경험치 +%.0f%%  파티 %s"),
+				*TDPlayerState->GetPlayerName(),
+				Party->IsPartyLeader() ? TEXT("[파티장]") : TEXT("        "),
+				Party->GetPartyMemberCount(),
+				Party->GetExpBonusRate() * 100.f,
+				*Party->GetPartyId().ToString(EGuidFormats::DigitsWithHyphens).Left(8));
+		}
+	}
+
+	/** 이름으로 상대를 찾아 초대한다. UI 가 없어도 파티를 검증할 수 있게 하는 통로다. */
+	static void PartyInvite(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.PartyInvite <상대이름일부>   (TD.DumpParty 로 이름 확인)"));
+			return;
+		}
+
+		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (GameState == nullptr || SelfState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyInvite: 자기 PlayerState 를 찾지 못했다."));
+			return;
+		}
+
+		ATDPlayerState* Target = nullptr;
+
+		for (APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			ATDPlayerState* TDPlayerState = Cast<ATDPlayerState>(PlayerState);
+			if (TDPlayerState == nullptr || TDPlayerState == SelfState)
+			{
+				continue;
+			}
+
+			if (TDPlayerState->GetPlayerName().Contains(Args[0]))
+			{
+				Target = TDPlayerState;
+				break;
+			}
+		}
+
+		if (Target == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("'%s' 인 접속자를 찾지 못했다."), *Args[0]);
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		if (UTDPartyComponent* Party = SelfState->GetPartyComponent())
+		{
+			Party->ServerInvitePlayer(Target);
+			UE_LOG(LogTDDebug, Log, TEXT("%s 로서 %s 에게 파티 초대를 보냈다."),
+				*SelfState->GetPlayerName(), *Target->GetPlayerName());
+		}
+	}
+
+	/** 받은 초대에 응답한다. UI 가 없으므로 명령으로 대신한다. */
+	static void PartyAccept(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr;
+		if (Party == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyAccept: PartyComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const bool bAccept = !Args.IsValidIndex(0) || Args[0].ToBool() || Args[0] == TEXT("1");
+
+		Party->ServerRespondToInvite(bAccept);
+
+		// 어느 플레이어로 응답했는지 함께 찍는다. 2인 PIE 에서는 어느 창에서 쳤는지가
+		// 결과를 가르는데, 이름이 없으면 그것을 알 수 없다.
+		UE_LOG(LogTDDebug, Log, TEXT("%s 로서 초대에 %s 응답을 보냈다. (결과는 서버 로그에)"),
+			*SelfState->GetPlayerName(), bAccept ? TEXT("수락") : TEXT("거절"));
+	}
+
+	/**
+	 * 처치 경험치 분배를 검증한다. 전투 쪽에 호출부가 붙기 전까지 이걸로 확인한다.
+	 *
+	 * AwardKillExp 는 서버 권한이 필요하므로 클라이언트 창에서는 동작하지 않는다.
+	 * 서버(리슨) 창에서 칠 것.
+	 */
+	static void PartyExp(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.PartyExp <기본경험치>"));
+			return;
+		}
+
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		const int32 BaseAmount = FCString::Atoi(*Args[0]);
+
+		// 다른 치트와 같은 방식으로 서버까지 태운다. AwardKillExp 가 서버 권한을
+		// 요구하므로 클라이언트에서 직접 부르면 조용히 무시된다.
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugPartyExp(BaseAmount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 처치 경험치 %d 분배를 요청했다. (결과는 서버 로그에)"), BaseAmount);
+			return;
+		}
+
+		UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr;
+		if (Party == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.PartyExp: PartyComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 Awarded = Party->AwardKillExp(BaseAmount);
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("처치 경험치 %d 분배 → %d명이 받았다 (보너스 +%.0f%%, 존 '%s' 기준)"),
+			BaseAmount, Awarded, Party->GetExpBonusRate() * 100.f,
+			*SelfState->GetCurrentZoneId().ToString());
+	}
+
+	static void PartyLeave(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* SelfState =
+			LocalController ? LocalController->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (UTDPartyComponent* Party = SelfState ? SelfState->GetPartyComponent() : nullptr)
+		{
+			Party->ServerLeaveParty();
+			UE_LOG(LogTDDebug, Log, TEXT("파티 탈퇴를 요청했다."));
+		}
+	}
+
+	/**
+	 * 테스트 캐릭터를 넣고 곧바로 하나를 고른다. 테스트할 때마다 두 명령을 치는 수고를 없앤다.
+	 *
+	 * **RPC 를 두 번 보내지 않고 하나로 합친 이유**가 있다. 지급은 PlayerController 의,
+	 * 선택은 PlayerState 의 RPC 라 서로 다른 액터이고, 다른 액터의 Reliable RPC 는
+	 * 도착 순서가 보장되지 않는다(§11-G). 뒤바뀌면 "목록이 비었다" 로 실패한다.
+	 */
+	static void QuickStart(const TArray<FString>& Args, UWorld* World)
+	{
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Start: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// 기본은 1번(Mage, Lv.12). 스탯이 충분히 올라 있어 전투·회복 테스트에 편하다.
+		const int32 SlotIndex = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 1;
+
+		Controller->ServerDebugQuickStart(SlotIndex);
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("테스트 캐릭터 지급 + %d번 선택을 요청했다. (결과는 서버 로그에)"), SlotIndex);
+	}
+
+	/** 자기 퀵슬롯 컴포넌트. 서버·클라 어느 쪽에서 쳐도 자기 것을 집는다. */
+	static UTDQuickSlotComponent* GetLocalQuickSlots(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetQuickSlotComponent() : nullptr;
+	}
+
+	static void DumpQuickSlots(const TArray<FString>& Args, UWorld* World)
+	{
+		const UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpQuick: QuickSlotComponent 를 찾지 못했다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 퀵슬롯 %d칸 ──"), UTDQuickSlotComponent::SlotCount);
+
+		for (int32 i = 0; i < UTDQuickSlotComponent::SlotCount; ++i)
+		{
+			const FTDQuickSlot Slot = QuickSlots->GetSlot(i);
+
+			if (Slot.IsEmpty())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %d.  (비어 있음)"), i);
+				continue;
+			}
+
+			// 아이템이면 인벤토리에 몇 개 있는지 함께 찍는다. 0 이면 회색으로 표시될 자리다.
+			const int32 Count = QuickSlots->GetSlotItemCount(i);
+
+			UE_LOG(LogTDDebug, Log, TEXT("  %d.  %-8s %-16s %s"),
+				i,
+				Slot.Type == ETDQuickSlotType::Item ? TEXT("[아이템]") : TEXT("[스킬]"),
+				*Slot.Id.ToString(),
+				Slot.Type == ETDQuickSlotType::Item
+					? *FString::Printf(TEXT("보유 %d개%s"), Count, Count == 0 ? TEXT(" ← 사용 불가") : TEXT(""))
+					: TEXT(""));
+		}
+	}
+
+	/** 로컬 플레이어의 인벤토리. 서버·클라 어느 쪽에서 쳐도 자기 것을 집는다. */
+	static UTDInventoryComponent* GetLocalInventory(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetInventoryComponent() : nullptr;
+	}
+
+	/** 인벤토리 슬롯 하나를 강화한다. UI 가 붙기 전까지 확률표를 검증하는 통로다. */
+	static void EnhanceItem(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Enhance <인벤슬롯>"));
+			return;
+		}
+
+		UTDInventoryComponent* Inventory = GetLocalInventory(World);
+		if (Inventory == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Enhance: InventoryComponent 를 찾지 못했다."));
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다. 결과는 ClientItemEnhanced 로 돌아온다.
+		Inventory->ServerEnhanceItem(FCString::Atoi(*Args[0]));
+
+		UE_LOG(LogTDDebug, Log, TEXT("슬롯 %s 강화를 요청했다. (결과는 서버 로그 + 응답으로)"), *Args[0]);
+	}
+
+	/** 여러 번 굴려 성공/하락/실패 비율을 확인한다. 확률표가 의도대로 읽히는지 감으로 볼 때 쓴다. */
+	/**
+	 * 확률표대로 굴러가는지 본다. **아이템도 골드도 쓰지 않는다.**
+	 *
+	 * 실제 슬롯을 반복 강화하면 10강 근처에서 골드가 먼저 떨어져 표본이 모이지 않는다.
+	 * 판정 자체는 TDEnhance::Roll 이라는 순수 함수라, 주사위만 따로 굴리면 같은 분포가 나온다.
+	 * 서버 권한도 필요 없다 — DT_Enhance 는 클라이언트도 갖고 있다.
+	 */
+	static void EnhanceStress(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.EnhanceStress <목표강화단수> [횟수=1000]   예) TD.EnhanceStress 10 5000"));
+			return;
+		}
+
+		const UTDInventoryComponent* Inventory = GetLocalInventory(World);
+		if (Inventory == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.EnhanceStress: InventoryComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 Level = FCString::Atoi(*Args[0]);
+
+		FTDEnhanceRow Row;
+		if (!Inventory->GetEnhanceInfo(Level, Row))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.EnhanceStress: %d강 행이 없다. DT_Enhance 미지정이거나 최고 단수를 넘었다."), Level);
+			return;
+		}
+
+		const int32 Iterations = Args.IsValidIndex(1) ? FMath::Max(1, FCString::Atoi(*Args[1])) : 1000;
+
+		int32 SuccessCount = 0;
+		int32 DowngradeCount = 0;
+		int32 NoChangeCount = 0;
+		int32 TotalTiersLost = 0;
+
+		for (int32 i = 0; i < Iterations; ++i)
+		{
+			const FTDEnhanceRollResult Result =
+				TDEnhance::Roll(Row, FMath::FRand(), FMath::FRand(), FMath::FRand());
+
+			switch (Result.Outcome)
+			{
+			case ETDEnhanceOutcome::Success:
+				++SuccessCount;
+				break;
+
+			case ETDEnhanceOutcome::Downgraded:
+				++DowngradeCount;
+				TotalTiersLost += Result.DowngradeTiers;
+				break;
+
+			default:
+				++NoChangeCount;
+				break;
+			}
+		}
+
+		const float ToPercent = 100.f / Iterations;
+
+		UE_LOG(LogTDDebug, Log, TEXT("%d강 시도 %d회 — 표 기준: 성공 %.0f%%, 실패 시 하락 %.0f%% (%d~%d단계), 비용 %d"),
+			Level, Iterations, Row.SuccessRate * 100.f, Row.DowngradeChanceOnFail * 100.f,
+			Row.MinDowngradeTiers, Row.MaxDowngradeTiers, Row.Cost);
+
+		UE_LOG(LogTDDebug, Log, TEXT("    성공     %6d  (%.1f%%)"), SuccessCount, SuccessCount * ToPercent);
+		UE_LOG(LogTDDebug, Log, TEXT("    하락     %6d  (%.1f%%)  평균 %.2f단계"),
+			DowngradeCount, DowngradeCount * ToPercent,
+			DowngradeCount > 0 ? static_cast<float>(TotalTiersLost) / DowngradeCount : 0.f);
+		UE_LOG(LogTDDebug, Log, TEXT("    변화없음 %6d  (%.1f%%)"), NoChangeCount, NoChangeCount * ToPercent);
+	}
+
+	/**
+	 * 착용 레벨제한에 따라 강화 배율이 어떻게 달라지는지 표로 찍는다.
+	 *
+	 * 실제 아이템이 없어도 확인할 수 있다. RequiredLevel 이 다른 장비 두 개를
+	 * 같은 단수까지 올려 비교하는 것은 골드가 너무 많이 든다.
+	 */
+	static void EnhanceCurve(const TArray<FString>& Args, UWorld* World)
+	{
+		// 인자를 주면 그 착용레벨 하나만, 안 주면 양 끝과 중간을 함께 보여준다.
+		TArray<int32> RequiredLevels;
+		if (Args.IsValidIndex(0))
+		{
+			RequiredLevels.Add(FCString::Atoi(*Args[0]));
+		}
+		else
+		{
+			RequiredLevels = { 0, 10, 25, 40, 50 };
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("강화 배율 — 착용레벨이 높은 장비일수록 1강당 많이 오른다"));
+
+		for (const int32 RequiredLevel : RequiredLevels)
+		{
+			const float PercentPerLevel = TDEnhance::GetStatPercentPerLevel(RequiredLevel);
+
+			UE_LOG(LogTDDebug, Log, TEXT("  착용Lv %-3d  %.1f%%/강    5강 x%.3f   10강 x%.3f   18강 x%.3f"),
+				RequiredLevel, PercentPerLevel * 100.f,
+				TDEnhance::GetStatMultiplier(5, RequiredLevel),
+				TDEnhance::GetStatMultiplier(10, RequiredLevel),
+				TDEnhance::GetStatMultiplier(18, RequiredLevel));
+		}
+	}
+
+	static void QuickSet(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.QuickSet <슬롯0~%d> <아이템ID> [skill]   예) TD.QuickSet 0 Elixir"),
+				UTDQuickSlotComponent::SlotCount - 1);
+			return;
+		}
+
+		UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.QuickSet: QuickSlotComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 SlotIndex = FCString::Atoi(*Args[0]);
+		const FName Id(*Args[1]);
+
+		// 세 번째 인자에 아무거나 넣으면 스킬로 등록한다. 스킬 시스템이 없어도
+		// 슬롯이 타입을 구분해 저장하는지는 확인할 수 있다.
+		const ETDQuickSlotType Type = Args.IsValidIndex(2)
+			? ETDQuickSlotType::Skill
+			: ETDQuickSlotType::Item;
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		QuickSlots->ServerSetSlot(SlotIndex, Type, Id);
+
+		UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %d 에 '%s' 등록을 요청했다. (결과는 TD.DumpQuick)"),
+			SlotIndex, *Id.ToString());
+	}
+
+	static void QuickUse(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.QuickUse <슬롯>"));
+			return;
+		}
+
+		UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World);
+		if (QuickSlots == nullptr)
+		{
+			return;
+		}
+
+		// 입력 바인딩과 **같은 경로**를 탄다. 여기서 통과하면 키를 눌렀을 때도 동작한다.
+		QuickSlots->ServerUseSlot(FCString::Atoi(*Args[0]));
+
+		UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %s 사용을 요청했다."), *Args[0]);
+	}
+
+	static void QuickClear(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.QuickClear <슬롯>"));
+			return;
+		}
+
+		if (UTDQuickSlotComponent* QuickSlots = GetLocalQuickSlots(World))
+		{
+			QuickSlots->ServerClearSlot(FCString::Atoi(*Args[0]));
+			UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %s 비우기를 요청했다."), *Args[0]);
+		}
+	}
+
+	/** 리매핑 목록을 찍는다. IA 설정이 제대로 됐는지 확인하는 용도다. */
+	static void DumpKeys(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		if (PC == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpKeys: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		const TArray<FTDKeyMappingRow> Rows = UTDInputSettingsLibrary::GetKeyMappings(PC);
+
+		// 비어 있으면 라이브러리가 이미 원인을 로그로 남긴다.
+		UE_LOG(LogTDDebug, Log, TEXT("── 리매핑 가능한 키 %d개 ──"), Rows.Num());
+
+		for (const FTDKeyMappingRow& Row : Rows)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("  %-14s %-12s %s"),
+				*Row.MappingName.ToString(),
+				*Row.CurrentKey.ToString(),
+				*Row.DisplayName.ToString());
+		}
+	}
+
+	/** 부활 버튼을 대신한다. UI 가 붙기 전까지 사망·부활을 검증하는 통로다. */
+	static void Respawn(const TArray<FString>& Args, UWorld* World)
+	{
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Respawn: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// 치트가 아니라 정식 경로를 그대로 쓴다. 버튼이 부를 함수와 같아야
+		// 여기서 통과한 것이 실제로도 동작한다.
+		Controller->ServerRequestRespawn();
+		UE_LOG(LogTDDebug, Log, TEXT("서버에 부활을 요청했다. (결과는 서버 로그에)"));
+	}
+
+	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Zone <존태그> [진입점]   예) TD.Zone Zone.Region1.Field02 West"));
+			return;
+		}
+
+		const FName EntryName = Args.IsValidIndex(1) ? FName(*Args[1]) : NAME_None;
+
+		// 태그가 등록돼 있지 않으면 여기서 걸러낸다. 서버까지 보내면 "테이블에 없다"는
+		// 엉뚱한 사유가 찍혀 오타인지 데이터 누락인지 구분되지 않는다.
+		const FGameplayTag ZoneTag =
+			FGameplayTag::RequestGameplayTag(FName(*Args[0]), /*ErrorIfNotFound=*/ false);
+
+		if (!ZoneTag.IsValid())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("'%s' 는 등록된 게임플레이 태그가 아니다. 오타이거나 태그가 없다."), *Args[0]);
+			return;
+		}
+
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			// 서버(또는 단일 PIE)에서는 로컬 컨트롤러를 직접 쓴다.
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Zone: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		Controller->ServerDebugTravelToZone(ZoneTag, EntryName);
+		UE_LOG(LogTDDebug, Log,
+			TEXT("서버에 '%s'%s 로 이동을 요청했다. (레벨 제한은 우회하지 않는다 / 결과는 서버 로그에)"),
+			*ZoneTag.ToString(),
+			EntryName.IsNone() ? TEXT("") : *FString::Printf(TEXT(" (진입점 %s)"), *EntryName.ToString()));
+	}
+
+	static void AddExp(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.AddExp <경험치> [이름필터]"));
+			return;
+		}
+
+		const int32 Amount = FCString::Atoi(*Args[0]);
+		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
+
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugAddExp(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 경험치 %d 지급을 요청했다. (자기 캐릭터만 / 결과는 서버 로그에)"), Amount);
+			return;
+		}
+
+		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
+		{
+			UTDProgressionComponent* Progression = Character.GetProgressionComponent();
+			if (Progression == nullptr)
+			{
+				return;
+			}
+
+			Progression->AddExp(Amount);
+
+			UE_LOG(LogTDDebug, Log, TEXT("%s — 경험치 +%d → Level %d, 누적 %d, 다음까지 %d (%.0f%%)"),
+				*Character.GetName(), Amount,
+				Progression->GetLevel(),
+				Progression->GetExp(),
+				Progression->GetExpToNextLevel(),
+				Progression->GetLevelProgress() * 100.f);
 		});
 	}
 
@@ -465,6 +1092,36 @@ namespace TDDebugCommands
 				Func(*PlayerState);
 			}
 		}
+	}
+
+	static void GiveGold(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.GiveGold <금액>"));
+			return;
+		}
+
+		const int32 Amount = FCString::Atoi(*Args[0]);
+
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugGiveGold(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 골드 %d 지급을 요청했다. (결과는 서버 로그에)"), Amount);
+			return;
+		}
+
+		ForEachPlayerState(World, [Amount](ATDPlayerState& PlayerState)
+		{
+			if (UTDInventoryComponent* Inventory = PlayerState.GetInventoryComponent())
+			{
+				const bool bAdded = Inventory->AddGold(Amount);
+				UE_LOG(LogTDDebug, Log, TEXT("%s — 골드 %d 지급 %s (보유 %d)"),
+					*PlayerState.GetPlayerName(), Amount,
+					bAdded ? TEXT("성공") : TEXT("실패"), Inventory->GetGold());
+			}
+		});
 	}
 
 	static void DumpCharacters(const TArray<FString>& Args, UWorld* World)
@@ -580,6 +1237,86 @@ namespace TDDebugCommands
 				*PlayerState.GetPlayerName(), SlotIndex, bSelected ? TEXT("성공") : TEXT("실패"));
 		});
 	}
+	
+	static void Damage(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Damage <양> [이름필터]"));
+			return;
+		}
+
+		const float Amount = FCString::Atof(*Args[0]);
+		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
+
+		// ApplyRawDamage 는 서버 권한을 요구한다. 클라이언트 창에서 그냥 부르면
+		// 조용히 무시되고 로그만 "피해 적용됨"처럼 보여 오해하기 쉽다.
+		if (ATDPlayerController* ClientController = GetClientControllerForCheat(World))
+		{
+			ClientController->ServerDebugDamage(Amount);
+			UE_LOG(LogTDDebug, Log,
+				TEXT("서버에 %.0f 피해를 요청했다. (자기 캐릭터만 / 결과는 서버 로그에)"), Amount);
+			return;
+		}
+
+		ForEachCharacter(World, NameFilter, [Amount](ATDCharacterBase& Character)
+		{
+			UTDCombatStatics::ApplyRawDamage(&Character, Amount);
+
+			// 결과 확인. 어트리뷰트는 ASC 를 통해 읽는다.
+			if (UAbilitySystemComponent* ASC = Character.GetAbilitySystemComponent())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("%s — %.0f 피해. 체력 %.1f / %.1f%s"),
+					*Character.GetName(), Amount,
+					ASC->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()),
+					ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
+					Character.IsDead() ? TEXT(" [사망]") : TEXT(""));
+			}
+		});
+	}
+
+	static void Hit(const TArray<FString>& Args, UWorld* World)
+	{
+		const FString NameFilter = Args.IsValidIndex(0) ? Args[0] : FString();
+
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		ATDCharacterBase* Attacker = PC ? Cast<ATDCharacterBase>(PC->GetPawn()) : nullptr;
+		if (Attacker == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Hit: 플레이어 캐릭터가 없다. TD.SelectCharacter 로 먼저 스폰할 것."));
+			return;
+		}
+
+		ForEachCharacter(World, NameFilter, [Attacker](ATDCharacterBase& Target)
+		{
+			if (&Target == Attacker)
+			{
+				return;   // 자해 방지
+			}
+
+			const FTDDamageResult Result = UTDCombatStatics::ApplyDamage(
+				Attacker, &Target, FGameplayTagContainer());
+
+			UE_LOG(LogTDDebug, Log, TEXT("%s → %s — %.1f 피해%s%s"),
+				*Attacker->GetName(), *Target.GetName(), Result.FinalDamage,
+				Result.bCritical ? TEXT(" (크리티컬!)") : TEXT(""),
+				Target.IsDead() ? TEXT(" [사망]") : TEXT(""));
+		});
+	}
+	
+	static void Attack(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		ATDCharacterBase* Attacker = PC ? Cast<ATDCharacterBase>(PC->GetPawn()) : nullptr;
+
+		if (Attacker == nullptr || Attacker->GetCombatComponent() == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Attack: 플레이어 캐릭터가 없다."));
+			return;
+		}
+
+		Attacker->GetCombatComponent()->ServerRequestAttack();
+	}
 }
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpStats(
@@ -592,10 +1329,100 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSetLevel(
 	TEXT("레벨을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetLevel <레벨> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetLevel));
 
+static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
+	TEXT("TD.AddExp"),
+	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpParty(
+	TEXT("TD.DumpParty"),
+	TEXT("접속자들의 파티 상태를 찍는다. 사용법: TD.DumpParty"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpParty));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyInvite(
+	TEXT("TD.PartyInvite"),
+	TEXT("이름으로 찾아 파티에 초대한다. 사용법: TD.PartyInvite <상대이름일부>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyInvite));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyAccept(
+	TEXT("TD.PartyAccept"),
+	TEXT("받은 초대에 응답한다. 사용법: TD.PartyAccept [0=거절]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyAccept));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyExp(
+	TEXT("TD.PartyExp"),
+	TEXT("처치 경험치를 파티에 분배한다(서버 전용). 사용법: TD.PartyExp <기본경험치>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDPartyLeave(
+	TEXT("TD.PartyLeave"),
+	TEXT("파티에서 나간다. 사용법: TD.PartyLeave"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyLeave));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDStart(
+	TEXT("TD.Start"),
+	TEXT("테스트 캐릭터를 넣고 곧바로 선택한다. 사용법: TD.Start [슬롯=1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickStart));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhance(
+	TEXT("TD.Enhance"),
+	TEXT("인벤토리 아이템을 한 단계 강화한다. 사용법: TD.Enhance <인벤슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceItem));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceStress(
+	TEXT("TD.EnhanceStress"),
+	TEXT("확률 판정만 여러 번 굴려 분포를 본다(아이템·골드 안 씀). 사용법: TD.EnhanceStress <목표강화단수> [횟수=1000]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceStress));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
+	TEXT("TD.EnhanceCurve"),
+	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
+	TEXT("TD.DumpQuick"),
+	TEXT("퀵슬롯 6칸과 각 칸의 보유 개수를 찍는다. 사용법: TD.DumpQuick"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpQuickSlots));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickSet(
+	TEXT("TD.QuickSet"),
+	TEXT("퀵슬롯에 등록한다. 사용법: TD.QuickSet <슬롯> <아이템ID> [skill]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickSet));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickUse(
+	TEXT("TD.QuickUse"),
+	TEXT("퀵슬롯을 사용한다(키 입력과 같은 경로). 사용법: TD.QuickUse <슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickUse));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDQuickClear(
+	TEXT("TD.QuickClear"),
+	TEXT("퀵슬롯을 비운다. 사용법: TD.QuickClear <슬롯>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickClear));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpKeys(
+	TEXT("TD.DumpKeys"),
+	TEXT("리매핑 가능한 키 목록을 찍는다. 사용법: TD.DumpKeys"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpKeys));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
+	TEXT("TD.Respawn"),
+	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDZone(
+	TEXT("TD.Zone"),
+	TEXT("지정한 존으로 이동한다(레벨 제한은 그대로 적용). 사용법: TD.Zone <존태그>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::TravelToZone));
+
 static FAutoConsoleCommandWithWorldAndArgs GTDSetClass(
 	TEXT("TD.SetClass"),
 	TEXT("직업을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetClass <ClassId> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetClass));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDGiveGold(
+	TEXT("TD.GiveGold"),
+	TEXT("골드를 지급한다. 사용법: TD.GiveGold <금액>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveGold));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveItem(
 	TEXT("TD.GiveItem"),
@@ -641,5 +1468,30 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSelectCharacter(
 	TEXT("TD.SelectCharacter"),
 	TEXT("캐릭터를 선택하고 Pawn 을 스폰한다. 사용법: TD.SelectCharacter <슬롯번호>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SelectCharacter));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDamage(
+	TEXT("TD.Damage"),
+	TEXT("고정 수치의 피해를 직접 적용한다(공식 미경유). 사용법: TD.Damage <양> [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Damage));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDHit(
+	TEXT("TD.Hit"),
+	TEXT("플레이어가 대상을 공격한다(스탯·공식 경유). 사용법: TD.Hit [이름필터]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Hit));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDAttack(
+	TEXT("TD.Attack"),
+	TEXT("전방 히트박스로 공격한다(쿨타임·팀 판정 포함). 사용법: TD.Attack"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Attack));
+
+/**
+ * 이동 입력의 축 값을 로그로 찍는다. 방향이 이상할 때 IMC 모디파이어를 확인하는 용도다.
+ *
+ * ATDPlayerCharacter::Move 가 이 값을 읽는다. 매 프레임 찍히므로 필요할 때만 켤 것.
+ */
+static FAutoConsoleVariableRef GTDInputDebug(
+	TEXT("TD.InputDebug"),
+	GTDInputDebugValue,
+	TEXT("1 이면 이동 입력의 축 값을 로그로 찍는다. 사용법: TD.InputDebug 1"));
 
 #endif // !UE_BUILD_SHIPPING

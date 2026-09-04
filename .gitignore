@@ -1,6 +1,6 @@
 # Created by https://www.toptal.com/developers/gitignore/api/c++,rider,visualstudio,unrealengine
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,rider,visualstudio,unrealengine
-
+*.slnx
 ### C++ ###
 # Prerequisites
 *.d

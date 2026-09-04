@@ -26,7 +26,14 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/**
-	 * 현재 존. Zone.Region1.Field01 처럼 계층을 가진다.
+	 * **월드 전체에 하나뿐인** 존 상태. 낮과 밤, 서버 이벤트처럼 모두에게 같은 것만 담는다.
+	 *
+	 * 플레이어가 지금 어느 존에 있는지는 여기가 아니라 `ATDPlayerState::CurrentZoneId` 다.
+	 * 좌표 텔레포트를 고른 이유가 "각자 다른 존에 있는 구조"이므로(D47),
+	 * 그것을 월드에 하나뿐인 값으로 표현하면 A 가 필드로 갈 때 마을에 있는 B 의
+	 * 음악까지 바뀐다.
+	 *
+	 * 지금은 사용처가 없다. 지우지 않는 이유는 월드 단위 상태가 생기면 다시 필요해서다.
 	 *
 	 * 지역 단위로 묻고 싶으면 상위 태그로 비교하면 된다.
 	 *   GetZoneId().MatchesTag(TDTags::Zone_Region1.GetTag())

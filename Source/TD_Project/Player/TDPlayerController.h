@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/TDChatTypes.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
@@ -52,6 +53,23 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FTDOnQuestActionResult,
 	FName, QuestId,
 	ETDQuestActionResult, Result);
+
+/**
+ * 채팅이 도착했을 때. 이 클라이언트에서만 불린다.
+ *
+ * SenderName 이 비어 있으면 서버가 보낸 것이다(System·Loot). UI 는 그때
+ * 이름을 그리지 않으면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FTDOnChatReceived,
+	ETDChatChannel, Channel,
+	FString, SenderName,
+	FString, Message);
+
+/** 보낸 채팅이 거부됐을 때. 성공했을 때는 오지 않는다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnChatSendFailed,
+	ETDChatSendResult, Reason);
 
 class ATDNPCBase;
 class UDataTable;
@@ -260,7 +278,51 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Quest")
 	FTDOnQuestActionResult OnQuestActionResult;
 
+public:
+	// ══════════════════════════════════════════════════════
+	//  채팅
+	// ══════════════════════════════════════════════════════
+
+	/**
+	 * 채팅을 보낸다. **UI 의 입력창이 부르는 함수다.**
+	 *
+	 * 검열·길이 제한·도배 방지는 전부 서버가 한다. 클라이언트에서 걸러 봐야
+	 * 우회되므로 UI 는 아무것도 검사하지 않고 그대로 넘기면 된다.
+	 *
+	 * @param TargetName  귓속말 대상의 이름. 다른 채널에서는 무시한다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Chat")
+	void ServerSendChat(ETDChatChannel Channel, const FString& Message, const FString& TargetName);
+
+	/** 서버가 보내온 채팅. 이 클라이언트에게만 온다. */
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveChat(ETDChatChannel Channel, const FString& SenderName, const FString& Message);
+
+	/** 채팅이 도착했을 때. **UI 가 구독할 지점이다.** */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Chat")
+	FTDOnChatReceived OnChatReceived;
+
+	/**
+	 * 보낸 채팅이 거부됐을 때. 보낸 사람에게만 온다.
+	 *
+	 * 성공했을 때는 오지 않는다 — 자기 말이 채팅창에 뜨는 것이 곧 성공 신호라
+	 * 따로 알릴 필요가 없다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Chat")
+	FTDOnChatSendFailed OnChatSendFailed;
+
+	UFUNCTION(Client, Reliable)
+	void ClientChatSendFailed(ETDChatSendResult Reason);
+
 private:
+	/**
+	 * 마지막으로 채팅을 보낸 시각. 도배 방지에 쓴다. **서버에서만 의미가 있다.**
+	 *
+	 * 요청에 시각을 담게 하지 않고 서버가 직접 잰다. 클라이언트가 보낸 시각을
+	 * 믿으면 그대로 조작된다.
+	 */
+	double LastChatSendTime = 0.0;
+
 	void SendCurrentDialogueLine();
 	void EndDialogueSession();
 	bool ApplyDialogueAction(

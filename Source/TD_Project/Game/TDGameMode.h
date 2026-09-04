@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/TDChatTypes.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameplayTagContainer.h"
 #include "TDGameMode.generated.h"
@@ -153,6 +154,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	float GetAutoRespawnSeconds() const { return AutoRespawnSeconds; }
 
+	// ══════════════════════════════════════════════════════════
+	//  채팅
+	// ══════════════════════════════════════════════════════════
+
+	/**
+	 * 채팅을 검사하고 채널에 맞는 사람들에게 보낸다. **서버 전용.**
+	 *
+	 * 라우팅이 GameMode 에 있는 이유는 접속자 전원을 아는 자리가 여기뿐이기 때문이다.
+	 * PlayerController 는 자기 자신만 알고, PlayerState 는 남의 것을 뒤질 이유가 없다.
+	 *
+	 * 검사 순서는 싼 것부터다 — 빈 내용·길이·채널 권한을 먼저 보고, 금지어 필터는
+	 * 통과한 메시지에만 건다. 필터가 목록 전체를 훑으므로 가장 비싸다.
+	 *
+	 * @param Sender      보낸 사람. 시스템 메시지는 nullptr 이다.
+	 * @param TargetName  귓속말 대상의 PlayerName. 다른 채널에서는 무시한다.
+	 * @return 성공 여부와 거부 사유. 호출한 쪽이 보낸 사람에게 알려준다.
+	 */
+	ETDChatSendResult RouteChatMessage(APlayerController* Sender, ETDChatChannel Channel,
+		const FString& Message, const FString& TargetName = FString());
+
+	/**
+	 * 시스템 메시지를 한 명에게 보낸다. 획득 알림(Loot)도 이 함수를 쓴다.
+	 *
+	 * 전투·인벤토리 쪽에서 "경험치 120 획득" 같은 것을 띄울 때 부르면 된다.
+	 * 검열과 쿨다운을 거치지 않는다 — 서버가 만든 문장이기 때문이다.
+	 */
+	void SendSystemMessage(APlayerController* Target, ETDChatChannel Channel, const FString& Message);
+
+	/** 접속자 전원에게 공지를 보낸다. 점검 안내 같은 것. */
+	void BroadcastSystemMessage(const FString& Message);
+
 protected:
 	/**
 	 * 캐릭터를 고르기 전에는 Pawn 을 만들지 않는다.
@@ -238,4 +270,24 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Network", meta = (ClampMin = "1"))
 	int32 MaxConnectedPlayers = 30;
+
+	// ── 채팅 ──────────────────────────────────────────────
+
+	/** 한 명에게 실제로 보낸다. 채널별 대상 추리기가 끝난 뒤 불린다. */
+	void DeliverChat(APlayerController* Target, ETDChatChannel Channel,
+		const FString& SenderName, const FString& Message) const;
+
+	/** 접속자 중 이 이름을 가진 사람을 찾는다. 귓속말 대상 확인용. */
+	APlayerController* FindPlayerControllerByName(const FString& PlayerName) const;
+
+	/**
+	 * 금지어 목록. 테이블을 매번 훑지 않으려고 처음 한 번만 읽어 둔다.
+	 *
+	 * 목록을 고쳤을 때 서버를 다시 띄워야 반영된다. 운영 중에 바꿀 일이 잦아지면
+	 * 그때 갱신 명령을 두면 된다 — 지금 넣으면 쓰지도 않는 코드가 된다.
+	 */
+	const TArray<FString>& GetBannedWords() const;
+
+	mutable TArray<FString> CachedBannedWords;
+	mutable bool bBannedWordsLoaded = false;
 };

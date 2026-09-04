@@ -4,7 +4,10 @@
 #include "Data/TDClassGrowthRow.h"
 #include "Data/TDLevelExpRow.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "Stats/TDStatComponent.h"
 
@@ -129,6 +132,20 @@ void UTDProgressionComponent::AddExp(int32 Amount)
 
 	// 레벨은 저장하지 않는 파생값이다. 경험치가 늘 때마다 다시 구한다.
 	ApplyLevelChange(CalculateLevelFromExp(Exp));
+
+	// 획득 알림은 이 플레이어에게만 간다. 레벨업 연출은 OnLevelUp 이 따로 맡는다 —
+	// 여기서 함께 처리하면 "경험치를 얻었다" 와 "레벨이 올랐다" 가 한 줄에 섞인다.
+	const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
+	APlayerController* Controller = OwnerState ? OwnerState->GetPlayerController() : nullptr;
+
+	if (Controller != nullptr)
+	{
+		if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
+		{
+			GameMode->SendSystemMessage(Controller, ETDChatChannel::Loot,
+				FString::Printf(TEXT("경험치 %d 획득"), Amount));
+		}
+	}
 }
 
 int32 UTDProgressionComponent::CalculateLevelFromExp(int32 TotalExp) const

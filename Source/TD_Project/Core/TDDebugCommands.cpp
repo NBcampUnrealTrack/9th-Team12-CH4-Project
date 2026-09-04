@@ -7,10 +7,13 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Chat/TDChatFilter.h"
+#include "Data/TDBannedWordRow.h"
 #include "Items/TDEnhanceStatics.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
+#include "Settings/TDChatSettings.h"
 #include "Settings/TDInputSettingsLibrary.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
@@ -870,6 +873,134 @@ namespace TDDebugCommands
 		}
 	}
 
+	// ── 채팅 ──────────────────────────────────────────────
+
+	/**
+	 * 콘솔 인자를 다시 한 문장으로 합친다.
+	 *
+	 * 콘솔이 공백마다 인자를 잘라 주기 때문에, 문장을 받으려면 되돌려야 한다.
+	 */
+	static FString JoinArgs(const TArray<FString>& Args, int32 StartIndex)
+	{
+		FString Result;
+
+		for (int32 Index = StartIndex; Index < Args.Num(); ++Index)
+		{
+			if (!Result.IsEmpty())
+			{
+				Result.AppendChar(TEXT(' '));
+			}
+			Result += Args[Index];
+		}
+
+		return Result;
+	}
+
+	/**
+	 * 채팅을 보낸다. ServerSendChat 이 Server RPC 라 클라이언트 창에서도 그대로 통한다.
+	 *
+	 * 정상 경로를 그대로 타므로 검열·길이·쿨다운 검사도 전부 거친다 —
+	 * 치트로 우회하면 그 검사들을 확인할 수 없다.
+	 */
+	static void SendChat(UWorld* World, ETDChatChannel Channel,
+		const FString& Message, const FString& TargetName)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ATDPlayerController* TDController = Cast<ATDPlayerController>(Controller);
+
+		if (TDController == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("채팅: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		TDController->ServerSendChat(Channel, Message, TargetName);
+	}
+
+	static void Say(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Say <할 말>"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::All, JoinArgs(Args, 0), FString());
+	}
+
+	static void SayParty(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.SayParty <할 말>"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::Party, JoinArgs(Args, 0), FString());
+	}
+
+	static void Whisper(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Whisper <상대이름> <할 말>   (TD.DumpParty 로 이름 확인)"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::Whisper, JoinArgs(Args, 1), Args[0]);
+	}
+
+	/**
+	 * 필터만 돌려 본다. **채팅을 보내지 않는다.**
+	 *
+	 * 금지어를 추가한 뒤 오탐이 없는지 확인하는 용도다. 정상 문장을 넣어 보고
+	 * 가려지지 않는지 보는 쪽이 실제로 더 중요하다 — 못 잡는 것보다 멀쩡한 말이
+	 * 가려지는 쪽이 불만이 크다.
+	 */
+	static void ChatFilterTest(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.ChatFilter <검사할 문장>"));
+			return;
+		}
+
+		const UTDChatSettings* Settings = UTDChatSettings::Get();
+		UDataTable* Table = Settings ? Settings->BannedWordTable.LoadSynchronous() : nullptr;
+
+		if (Table == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.ChatFilter: 금지어 테이블이 없다. 프로젝트 세팅 > TD > Chat 을 확인할 것."));
+			return;
+		}
+
+		TArray<FString> BannedWords;
+		Table->ForeachRow<FTDBannedWordRow>(TEXT("ChatFilterTest"),
+			[&BannedWords](const FName&, const FTDBannedWordRow& Row)
+			{
+				if (!Row.Word.IsEmpty())
+				{
+					BannedWords.Add(Row.Word);
+				}
+			});
+
+		const FString Input = JoinArgs(Args, 0);
+
+		bool bMasked = false;
+		const FString Output = TDChatFilter::Mask(Input, BannedWords, bMasked);
+
+		TArray<int32> SourceIndex;
+		const FString Normalized = TDChatFilter::Normalize(Input, SourceIndex);
+
+		UE_LOG(LogTDDebug, Log, TEXT("금지어 %d개로 검사"), BannedWords.Num());
+		UE_LOG(LogTDDebug, Log, TEXT("    입력   %s"), *Input);
+		UE_LOG(LogTDDebug, Log, TEXT("    정규화 %s"), *Normalized);
+		UE_LOG(LogTDDebug, Log, TEXT("    결과   %s  %s"),
+			*Output, bMasked ? TEXT("← 걸림") : TEXT("(통과)"));
+	}
+
 	static void QuickSet(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(1))
@@ -1411,6 +1542,26 @@ static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
 	TEXT("TD.EnhanceCurve"),
 	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSay(
+	TEXT("TD.Say"),
+	TEXT("전체 채팅을 보낸다. 사용법: TD.Say <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Say));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSayParty(
+	TEXT("TD.SayParty"),
+	TEXT("파티 채팅을 보낸다. 사용법: TD.SayParty <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SayParty));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDWhisper(
+	TEXT("TD.Whisper"),
+	TEXT("귓속말을 보낸다. 사용법: TD.Whisper <상대이름> <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Whisper));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDChatFilter(
+	TEXT("TD.ChatFilter"),
+	TEXT("금지어 필터만 돌려 본다(채팅을 보내지 않는다). 사용법: TD.ChatFilter <문장>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ChatFilterTest));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
 	TEXT("TD.DumpQuick"),

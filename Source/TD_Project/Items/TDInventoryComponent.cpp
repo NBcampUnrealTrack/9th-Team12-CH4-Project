@@ -3,7 +3,10 @@
 #include "Data/TDEnhanceRow.h"
 #include "Data/TDItemRow.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
 #include "Items/TDEnhanceStatics.h"
 #include "Net/UnrealNetwork.h"
 
@@ -76,10 +79,14 @@ bool UTDInventoryComponent::AddGold(int32 Amount)
 		return false;
 	}
 
+	// 상한에 걸려 일부만 들어갔을 수 있으므로 실제로 늘어난 만큼을 알린다.
+	const int32 ActualGain = NewGold - Gold;
 	Gold = NewGold;
 
 	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
 	OnGoldChanged.Broadcast(Gold);
+
+	NotifyLoot(FString::Printf(TEXT("%d 골드 획득"), ActualGain));
 
 	return true;
 }
@@ -104,6 +111,24 @@ bool UTDInventoryComponent::SpendGold(int32 Amount)
 	OnGoldChanged.Broadcast(Gold);
 
 	return true;
+}
+
+void UTDInventoryComponent::NotifyLoot(const FString& Message) const
+{
+	const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
+	APlayerController* Controller = OwnerState ? OwnerState->GetPlayerController() : nullptr;
+
+	if (Controller == nullptr)
+	{
+		return;
+	}
+
+	// GameMode 를 거치는 이유는 채팅이 나가는 길을 한 곳으로 모으기 위해서다.
+	// 나중에 로그나 차단 목록이 붙으면 그쪽만 고치면 된다.
+	if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
+	{
+		GameMode->SendSystemMessage(Controller, ETDChatChannel::Loot, Message);
+	}
 }
 
 void UTDInventoryComponent::OnRep_Gold()
@@ -422,6 +447,16 @@ bool UTDInventoryComponent::AddItem(FName ItemId, int32 Count)
 	}
 
 	BroadcastInventoryChanged();
+
+	// 위에서 이미 찾아 둔 행을 그대로 쓴다. 없으면 함수가 진작 돌아갔다.
+	// 표시명이 비어 있으면 RowName 을 쓴다 — 데이터가 덜 채워졌을 때
+	// 알림이 사라지는 것보다 "HPotion_Low x3" 이라도 보이는 편이 낫다.
+	const FString DisplayName = Row->DisplayName.IsEmpty()
+		? ItemId.ToString()
+		: Row->DisplayName.ToString();
+
+	NotifyLoot(FString::Printf(TEXT("%s x%d 획득"), *DisplayName, Count));
+
 	return true;
 }
 

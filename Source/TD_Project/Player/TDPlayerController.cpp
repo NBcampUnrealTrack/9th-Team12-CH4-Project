@@ -10,6 +10,7 @@
 #include "Items/TDInventoryComponent.h"
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
+#include "Settings/TDChatSettings.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
@@ -657,4 +658,66 @@ void ATDPlayerController::ClientQuestActionResult_Implementation(
 		TEXT("퀘스트 처리 결과: Quest='%s', Result=%d"),
 		*QuestId.ToString(),
 		static_cast<int32>(Result));
+}
+
+// ── 채팅 ──────────────────────────────────────────────────
+
+void ATDPlayerController::ServerSendChat_Implementation(ETDChatChannel Channel,
+	const FString& Message, const FString& TargetName)
+{
+	ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
+	if (GameMode == nullptr)
+	{
+		return;
+	}
+
+	// 도배 검사를 여기서 하는 이유는 "마지막으로 보낸 시각" 이 이 플레이어의 상태라서다.
+	// GameMode 가 들고 있으면 접속자마다 목록을 관리해야 하고, 나갈 때 지우는 것도
+	// 잊으면 안 된다. 컨트롤러가 사라지면 이 값도 함께 사라진다.
+	const UTDChatSettings* Settings = UTDChatSettings::Get();
+	const float Cooldown = Settings ? Settings->SendCooldownSeconds : 0.f;
+
+	if (Cooldown > 0.f)
+	{
+		// 서버 시각으로만 잰다. 클라이언트가 보낸 값을 믿으면 그대로 조작된다.
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastChatSendTime < Cooldown)
+		{
+			ClientChatSendFailed(ETDChatSendResult::TooFast);
+			return;
+		}
+	}
+
+	const ETDChatSendResult Result = GameMode->RouteChatMessage(this, Channel, Message, TargetName);
+
+	if (Result != ETDChatSendResult::Success)
+	{
+		ClientChatSendFailed(Result);
+		return;
+	}
+
+	// 성공한 뒤에 시각을 갱신한다. 거부된 요청까지 쿨다운에 넣으면
+	// 오타 한 번에 다음 말까지 막힌다.
+	LastChatSendTime = FPlatformTime::Seconds();
+}
+
+void ATDPlayerController::ClientReceiveChat_Implementation(ETDChatChannel Channel,
+	const FString& SenderName, const FString& Message)
+{
+	OnChatReceived.Broadcast(Channel, SenderName, Message);
+
+	// UI 가 붙기 전까지는 로그로 확인한다.
+	UE_LOG(LogTemp, Log, TEXT("[채팅/%s] %s%s"),
+		*UEnum::GetDisplayValueAsText(Channel).ToString(),
+		SenderName.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("%s: "), *SenderName),
+		*Message);
+}
+
+void ATDPlayerController::ClientChatSendFailed_Implementation(ETDChatSendResult Reason)
+{
+	// 문구는 만들지 않는다. UI 가 이 델리게이트를 받아 자기 형식으로 표시한다.
+	OnChatSendFailed.Broadcast(Reason);
+
+	UE_LOG(LogTemp, Log, TEXT("채팅 거부됨: %s"),
+		*UEnum::GetDisplayValueAsText(Reason).ToString());
 }

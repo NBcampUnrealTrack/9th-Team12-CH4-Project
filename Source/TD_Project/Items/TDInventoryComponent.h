@@ -41,6 +41,15 @@ public:
 	/** 확장의 상한. 없으면 클라이언트가 터무니없는 확장을 요청했을 때 막을 근거가 없다. */
 	static constexpr int32 MaxSlotCapacity = 200;
 
+	/**
+	 * 위 상한을 블루프린트에서도 읽게 연다. constexpr 은 C++ 에서만 보인다.
+	 *
+	 * UI 가 "40 / 200" 처럼 남은 확장 여지를 보여주거나, 상한에 닿았을 때
+	 * 확장 버튼을 잠그는 데 쓴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Inventory")
+	static int32 GetMaxSlotCapacity() { return MaxSlotCapacity; }
+
 	// ── 조작 (서버 전용) ──────────────────────────────────
 
 	/**
@@ -228,7 +237,17 @@ private:
 	UPROPERTY(Replicated)
 	FTDItemContainer ItemContainer;
 
-	/** 확장권으로 늘어나므로 플레이어의 선택이고, 따라서 저장 대상이다. */
-	UPROPERTY(Replicated)
+	/**
+	 * 확장권으로 늘어나므로 플레이어의 선택이고, 따라서 저장 대상이다.
+	 *
+	 * OnRep 을 다는 이유는 서버와 클라이언트의 알림 경로가 다르기 때문이다.
+	 * 서버는 SetSlotCapacity 안에서 직접 브로드캐스트하지만, 클라이언트는
+	 * 값이 도착하는 것 말고는 알 방법이 없다 — 없으면 확장 직후 UI 가
+	 * 옛 칸 수를 그대로 그리다가 재접속해야 반영된다(골드와 같은 구조).
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_SlotCapacity)
 	int32 SlotCapacity = 40;
+
+	UFUNCTION()
+	void OnRep_SlotCapacity();
 };

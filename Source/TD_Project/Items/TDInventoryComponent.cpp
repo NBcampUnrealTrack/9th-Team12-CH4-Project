@@ -111,6 +111,13 @@ void UTDInventoryComponent::OnRep_Gold()
 	OnGoldChanged.Broadcast(Gold);
 }
 
+void UTDInventoryComponent::OnRep_SlotCapacity()
+{
+	// 칸 수가 늘면 화면의 빈 칸도 늘어야 한다. 아이템 변경과 같은 알림을 쓴다 —
+	// UI 입장에서는 "인벤토리를 다시 그려라" 로 똑같기 때문이다.
+	BroadcastInventoryChanged();
+}
+
 bool UTDInventoryComponent::HasAuthorityToModify() const
 {
 	const AActor* Owner = GetOwner();

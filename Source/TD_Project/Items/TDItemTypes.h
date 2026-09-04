@@ -8,6 +8,31 @@
 class UActorComponent;
 
 /**
+ * 강화 요청 한 번의 결과. UI 에 그대로 돌려준다.
+ *
+ * `ETDEnhanceOutcome`(TDEnhanceStatics.h)과 다른 열거형인 이유는 성격이 다르기 때문이다.
+ * 그쪽은 "주사위를 굴린 결과"(성공/하락/변화없음)이고, 이쪽은 "요청 자체가 성립했는가"
+ * 까지 포함한다 — 골드가 모자라거나 이미 최고 레벨이면 주사위를 굴리지도 않는다.
+ * ETDZoneTravelResult 와 같은 이유로 문구가 아니라 enum 이다 — UI 가 문구를 정한다.
+ */
+UENUM(BlueprintType)
+enum class ETDEnhanceResult : uint8
+{
+	Success			UMETA(DisplayName = "성공"),
+	Downgraded		UMETA(DisplayName = "하락"),
+	FailedNoChange	UMETA(DisplayName = "실패"),
+
+	/** 이 레벨을 넘는 시도는 테이블에 없다. */
+	MaxLevelReached	UMETA(DisplayName = "최대 강화"),
+
+	NotEnoughGold	UMETA(DisplayName = "골드 부족"),
+	ItemNotFound	UMETA(DisplayName = "아이템 없음"),
+
+	/** DT_Enhance 가 지정되지 않았거나 해당 레벨 행이 없다. 데이터 누락이라 플레이어 잘못이 아니다. */
+	InternalError	UMETA(DisplayName = "내부 오류")
+};
+
+/**
  * 장신구에 굴려진 추가 옵션 하나.
  *
  * 어떤 범위에서 굴렸는지는 DT_OptionDefinition 에 있고, 여기에는 결과만 담긴다.

@@ -10,6 +10,7 @@
 #include "Engine/DataTable.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerState.h"
+#include "Items/TDEnhanceStatics.h"
 #include "Items/TDInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Stats/TDProgressionComponent.h"
@@ -478,6 +479,21 @@ bool UTDItemUseComponent::ApplyUseEffect(FGameplayTag EffectTag, float Value)
 	return false;
 }
 
+float UTDItemUseComponent::GetEnhanceMultiplier(FName ItemId, int32 EnhanceLevel) const
+{
+	if (EnhanceLevel <= 0)
+	{
+		return 1.f;
+	}
+
+	// 아이템 정의를 못 찾으면 RequiredLevel 0 으로 본다 — 가장 낮은 배율(2%/강)이라
+	// 데이터가 빠졌을 때 스탯이 부풀어 오르는 쪽으로 틀리지 않는다.
+	const FTDItemRow* ItemRow = FindItemRow(ItemId);
+	const int32 RequiredLevel = ItemRow != nullptr ? ItemRow->RequiredLevel : 0;
+
+	return TDEnhance::GetStatMultiplier(EnhanceLevel, RequiredLevel);
+}
+
 void UTDItemUseComponent::RefreshEquipmentModifiers()
 {
 	UTDStatComponent* StatComponent = GetStatComponent();
@@ -488,7 +504,7 @@ void UTDItemUseComponent::RefreshEquipmentModifiers()
 
 	TArray<FTDStatModifier> Modifiers;
 
-	// ── 1. 각 장신구의 고정 옵션 ──
+	// ── 1. 각 장신구의 고정 옵션 (+ 강화 배율) ──
 	if (ItemStatTable != nullptr)
 	{
 		TArray<FTDItemStatRow*> StatRows;
@@ -496,6 +512,10 @@ void UTDItemUseComponent::RefreshEquipmentModifiers()
 
 		for (const FTDItemInstance& Item : EquippedContainer.Items)
 		{
+			// 강화 배율은 이 아이템의 착용 레벨제한에 따라 정해진다(TDEnhanceStatics).
+			// EnhanceLevel 이 0 이면 1.0 이라 강화 전과 완전히 같은 값이 나온다.
+			const float EnhanceMultiplier = GetEnhanceMultiplier(Item.ItemId, Item.EnhanceLevel);
+
 			for (const FTDItemStatRow* StatRow : StatRows)
 			{
 				if (StatRow == nullptr || StatRow->ItemId != Item.ItemId || !StatRow->StatTag.IsValid())
@@ -503,7 +523,7 @@ void UTDItemUseComponent::RefreshEquipmentModifiers()
 					continue;
 				}
 
-				Modifiers.Emplace(StatRow->StatTag, StatRow->Op, StatRow->Value);
+				Modifiers.Emplace(StatRow->StatTag, StatRow->Op, StatRow->Value * EnhanceMultiplier);
 			}
 		}
 	}

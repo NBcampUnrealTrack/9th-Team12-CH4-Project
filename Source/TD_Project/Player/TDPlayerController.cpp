@@ -68,6 +68,23 @@ void ATDPlayerController::ServerDebugGiveItem_Implementation(FName ItemId, int32
 #endif
 }
 
+void ATDPlayerController::ServerDebugGiveGold_Implementation(int32 Amount)
+{
+#if !UE_BUILD_SHIPPING
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	if (UTDInventoryComponent* Inventory = PlayerState->FindComponentByClass<UTDInventoryComponent>())
+	{
+		const bool bAdded = Inventory->AddGold(Amount);
+		UE_LOG(LogTemp, Log, TEXT("[치트] 골드 %d 지급 %s (보유 %d)"),
+			Amount, bAdded ? TEXT("성공") : TEXT("실패"), Inventory->GetGold());
+	}
+#endif
+}
+
 void ATDPlayerController::ServerDebugSetLevel_Implementation(int32 NewLevel)
 {
 #if !UE_BUILD_SHIPPING

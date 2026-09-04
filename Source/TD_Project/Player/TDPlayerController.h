@@ -106,6 +106,10 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(FName ItemId, int32 Count);
 
+	/** 골드를 지급한다. 강화·거래소 테스트에 필요해 열어둔다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveGold(int32 Amount);
+
 	UFUNCTION(Server, Reliable)
 	void ServerDebugSetLevel(int32 NewLevel);
 

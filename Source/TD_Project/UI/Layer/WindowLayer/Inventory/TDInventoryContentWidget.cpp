@@ -2,6 +2,10 @@
 
 #include "TDInventorySlotListItem.h"
 #include "Components/TileView.h"
+#include "Components/TextBlock.h"
+#include "Components/Button.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "Data/TDItemRow.h"
 #include "Engine/DataTable.h"
 #include "GameFramework/PlayerController.h"
@@ -33,6 +37,7 @@ void UTDInventoryContentWidget::NativePreConstruct()
 			BuildPreviewInventory();
 		}
 	}
+	RefreshFooter();
 }
 
 void UTDInventoryContentWidget::NativeConstruct()
@@ -41,10 +46,27 @@ void UTDInventoryContentWidget::NativeConstruct()
 
 	BindInventoryComponent();
 	RefreshInventory();
+	if (ExpandInventoryButton)
+	{
+		ExpandInventoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExpandClicked);
+	}
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(SourceCheckTimer, this, &ThisClass::CheckInventorySource, 0.25f, true);
+	}
 }
 
 void UTDInventoryContentWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SourceCheckTimer);
+		World->GetTimerManager().ClearTimer(RefreshTimer);
+	}
+	if (ExpandInventoryButton)
+	{
+		ExpandInventoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleExpandClicked);
+	}
 	if (IsValid(InventoryComponent))
 	{
 		InventoryComponent->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
@@ -101,6 +123,7 @@ void UTDInventoryContentWidget::RefreshInventory()
 	if (IsValid(InventoryOverrideTable))
 	{
 		BuildInventoryFromTable(InventoryOverrideTable);
+		RefreshFooter();
 		BP_OnInventoryRefreshed();
 		return;
 	}
@@ -118,6 +141,7 @@ void UTDInventoryContentWidget::RefreshInventory()
 		{
 			InventoryTileView->ClearListItems();
 		}
+		RefreshFooter();
 		BP_OnInventoryRefreshed();
 		return;
 	}
@@ -162,12 +186,81 @@ void UTDInventoryContentWidget::RefreshInventory()
 	}
 
 	InventoryTileView->SetListItems(ListItems);
+	RefreshFooter();
 	BP_OnInventoryRefreshed();
 }
 
 void UTDInventoryContentWidget::HandleInventoryChanged()
 {
-	RefreshInventory();
+	// FastArray 삭제 알림 직후에는 삭제 전 항목이 남아 있으므로 다음 틱에 읽는다.
+	if (UWorld* World = GetWorld(); World && !World->GetTimerManager().IsTimerActive(RefreshTimer))
+	{
+		RefreshTimer = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::RefreshInventory);
+	}
+}
+
+void UTDInventoryContentWidget::SetDisplayedGold(int64 InGold)
+{
+	DisplayedGold = FMath::Max<int64>(0, InGold);
+	RefreshFooter();
+}
+
+void UTDInventoryContentWidget::RefreshFooter()
+{
+	if (GoldText)
+	{
+		FNumberFormattingOptions Format;
+		Format.SetUseGrouping(true);
+		GoldText->SetText(FText::Format(NSLOCTEXT("TDInventory", "Gold", "{0} G"),
+			FText::AsNumber(IsDesignTime() ? int64(12480) : DisplayedGold, &Format)));
+	}
+	if (CapacityText)
+	{
+		int32 Used = 0;
+		int32 Capacity = 0;
+		if (InventoryOverrideTable || (IsDesignTime() && bUsePreviewInventory))
+		{
+			Capacity = SlotListItems.Num();
+			for (const UTDInventorySlotListItem* Item : SlotListItems)
+			{
+				if (Item && Item->bHasItem) ++Used;
+			}
+		}
+		else if (IsDesignTime())
+		{
+			Used = 32;
+			Capacity = 60;
+		}
+		else if (IsValid(InventoryComponent))
+		{
+			Used = InventoryComponent->GetUsedSlotCount();
+			Capacity = InventoryComponent->GetSlotCapacity();
+		}
+		CapacityText->SetText(Capacity > 0
+			? FText::Format(NSLOCTEXT("TDInventory", "Capacity", "{0} / {1}"), FText::AsNumber(Used), FText::AsNumber(Capacity))
+			: NSLOCTEXT("TDInventory", "PendingCapacity", "-- / --"));
+	}
+}
+
+void UTDInventoryContentWidget::CheckInventorySource()
+{
+	UTDInventoryComponent* PreviousInventory = InventoryComponent;
+	BindInventoryComponent();
+	// PlayerState의 늦은 도착과 칸 수만 복제되는 확장도 반영한다.
+	if (PreviousInventory != InventoryComponent ||
+		(!InventoryOverrideTable && IsValid(InventoryComponent) && SlotListItems.Num() != InventoryComponent->GetSlotCapacity()))
+	{
+		RefreshInventory();
+	}
+	else
+	{
+		RefreshFooter();
+	}
+}
+
+void UTDInventoryContentWidget::HandleExpandClicked()
+{
+	OnExpansionRequested.Broadcast();
 }
 
 void UTDInventoryContentWidget::BuildPreviewInventory()

@@ -11,12 +11,6 @@ class UTextBlock;
 class UImage;
 class UTexture2D;
 
-UENUM(BlueprintType)
-enum class ETDCharacterEquipmentSlot : uint8
-{
-	Weapon, Necklace, Ring, Crown, Dress, Shoes
-};
-
 UCLASS(Abstract, Blueprintable)
 class TD_PROJECT_API UTDCharacterContentWidget : public UUserWidget
 {
@@ -32,9 +26,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TD|Character")
 	void SetCharacterPortrait(UTexture2D* InTexture);
 
-	/** 장착 시스템이 준비되면 실제 장착 아이템의 표시 데이터만 전달한다. */
-	UFUNCTION(BlueprintCallable, Category = "TD|Character")
-	void SetEquipmentVisual(ETDCharacterEquipmentSlot EquipmentSlot, const FTDItemSlotVisualData& Data);
+	/** 장신구 표시 전용. 서버 장착 칸 0..5를 UI Slot1..Slot6에 대응한다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Character", meta = (ClampMin = "0", ClampMax = "5"))
+	void SetEquipmentVisual(int32 EquipmentSlotIndex, const FTDItemSlotVisualData& Data);
 
 protected:
 	virtual void NativePreConstruct() override;
@@ -62,17 +56,18 @@ protected:
 	TObjectPtr<UTextBlock> CriticalValueText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> WeaponSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot1;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> NecklaceSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot2;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> RingSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot3;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> CrownSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot4;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> DressSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot5;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTDItemSlotVisualWidget> ShoesSlot;
+	TObjectPtr<UTDItemSlotVisualWidget> Slot6;
 
 private:
 	UPROPERTY(Transient)

@@ -1,4 +1,4 @@
-#include "UI/Layer/WindowLayer/Character/TDCharacterContentWidget.h"
+﻿#include "UI/Layer/WindowLayer/Character/TDCharacterContentWidget.h"
 
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -100,17 +100,16 @@ void UTDCharacterContentWidget::SetCharacterPortrait(UTexture2D* InTexture)
 	}
 }
 
-void UTDCharacterContentWidget::SetEquipmentVisual(ETDCharacterEquipmentSlot EquipmentSlot, const FTDItemSlotVisualData& Data)
+void UTDCharacterContentWidget::SetEquipmentVisual(int32 EquipmentSlotIndex, const FTDItemSlotVisualData& Data)
 {
-	UTDItemSlotVisualWidget* Target = nullptr;
-	switch (EquipmentSlot)
+	UTDItemSlotVisualWidget* EquipmentSlots[] = {Slot1, Slot2, Slot3, Slot4, Slot5, Slot6};
+	if (EquipmentSlotIndex < 0 || EquipmentSlotIndex >= UE_ARRAY_COUNT(EquipmentSlots))
 	{
-	case ETDCharacterEquipmentSlot::Weapon: Target = WeaponSlot; break;
-	case ETDCharacterEquipmentSlot::Necklace: Target = NecklaceSlot; break;
-	case ETDCharacterEquipmentSlot::Ring: Target = RingSlot; break;
-	case ETDCharacterEquipmentSlot::Crown: Target = CrownSlot; break;
-	case ETDCharacterEquipmentSlot::Dress: Target = DressSlot; break;
-	case ETDCharacterEquipmentSlot::Shoes: Target = ShoesSlot; break;
+		UE_LOG(LogTemp, Warning, TEXT("캐릭터 정보: 장착 칸 번호는 0~5여야 합니다. (입력: %d)"), EquipmentSlotIndex);
+		return;
 	}
-	if (Target) Target->SetSlotVisualData(Data);
+	if (UTDItemSlotVisualWidget* Target = EquipmentSlots[EquipmentSlotIndex])
+	{
+		Target->SetSlotVisualData(Data);
+	}
 }

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/TDChatTypes.h"
 #include "Game/TDGameMode.h"
+#include "Market/TDMarketTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "Data/TDDialogueRow.h"
@@ -53,8 +55,51 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FName, QuestId,
 	ETDQuestActionResult, Result);
 
+/**
+ * 채팅이 도착했을 때. 이 클라이언트에서만 불린다.
+ *
+ * SenderName 이 비어 있으면 서버가 보낸 것이다(System·Loot). UI 는 그때
+ * 이름을 그리지 않으면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FTDOnChatReceived,
+	ETDChatChannel, Channel,
+	FString, SenderName,
+	FString, Message);
+
+/** 보낸 채팅이 거부됐을 때. 성공했을 때는 오지 않는다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnChatSendFailed,
+	ETDChatSendResult, Reason);
+
+/**
+ * 거래소 요청(등록·구매·취소)의 결과. **성공했을 때도 온다.**
+ *
+ * 채팅과 달리 성공을 알려야 한다 — 등록이 됐는지 안 됐는지는 목록을 다시
+ * 받아보기 전까지 화면에서 알 수 없기 때문이다.
+ *
+ * ListingId 는 등록에 성공했을 때 발급된 번호다. 다른 경우에는 요청한 번호가
+ * 그대로 돌아온다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnMarketResult,
+	ETDMarketResult, Result,
+	int32, ListingId);
+
+/**
+ * 거래소 검색 결과. **그 시점의 스냅샷이다.**
+ *
+ * 목록은 복제되지 않는다 — 매물이 수천 개가 될 수 있어 전체 복제가 성립하지
+ * 않는다. 보는 사이 남이 사 가면 구매가 ListingNotFound 로 거부되므로,
+ * UI 는 그때 다시 검색하면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FTDOnMarketSearchResult,
+	const TArray<FTDMarketListing>&, Listings);
+
 class ATDNPCBase;
 class UDataTable;
+class UTDZoneEnvironmentComponent;
 
 /**
  * 플레이어 한 명의 의도를 나타내는 Controller.
@@ -74,6 +119,20 @@ class TD_PROJECT_API ATDPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	ATDPlayerController();
+
+	/**
+	 * Pawn 을 새로 잡았을 때(접속·부활) 존 환경을 다시 적용한다.
+	 *
+	 * 카메라는 Pawn 에 딸려 있어 죽고 살아나면 BP 기본값으로 돌아온다. 존이 바뀌지
+	 * 않았으니 OnZoneChanged 도 오지 않아, 여기서 부르지 않으면 그대로 남는다.
+	 *
+	 * 서버(리슨 호스트 포함)는 OnPossess, 클라이언트는 AcknowledgePossession 이 불린다.
+	 * 실제로 카메라를 만지는 것은 로컬 컨트롤러뿐이라 양쪽 다 걸어 둔다.
+	 */
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* InPawn) override;
+
 	/**
 	 * 개발용 접속 명령. 콘솔에 직접 입력한다.
 	 *
@@ -260,7 +319,108 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Quest")
 	FTDOnQuestActionResult OnQuestActionResult;
 
+public:
+	// ══════════════════════════════════════════════════════
+	//  채팅
+	// ══════════════════════════════════════════════════════
+
+	/**
+	 * 채팅을 보낸다. **UI 의 입력창이 부르는 함수다.**
+	 *
+	 * 검열·길이 제한·도배 방지는 전부 서버가 한다. 클라이언트에서 걸러 봐야
+	 * 우회되므로 UI 는 아무것도 검사하지 않고 그대로 넘기면 된다.
+	 *
+	 * @param TargetName  귓속말 대상의 이름. 다른 채널에서는 무시한다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Chat")
+	void ServerSendChat(ETDChatChannel Channel, const FString& Message, const FString& TargetName);
+
+	/** 서버가 보내온 채팅. 이 클라이언트에게만 온다. */
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveChat(ETDChatChannel Channel, const FString& SenderName, const FString& Message);
+
+	/** 채팅이 도착했을 때. **UI 가 구독할 지점이다.** */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Chat")
+	FTDOnChatReceived OnChatReceived;
+
+	/**
+	 * 보낸 채팅이 거부됐을 때. 보낸 사람에게만 온다.
+	 *
+	 * 성공했을 때는 오지 않는다 — 자기 말이 채팅창에 뜨는 것이 곧 성공 신호라
+	 * 따로 알릴 필요가 없다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Chat")
+	FTDOnChatSendFailed OnChatSendFailed;
+
+	UFUNCTION(Client, Reliable)
+	void ClientChatSendFailed(ETDChatSendResult Reason);
+
+	// ══════════════════════════════════════════════════════
+	//  거래소
+	// ══════════════════════════════════════════════════════
+	// 서버 서브시스템(UTDMarketSubsystem)이 실제 처리를 한다. 여기는 통로다.
+
+	/**
+	 * 인벤토리의 아이템을 매물로 올린다. **아이템이 인벤토리에서 빠진다.**
+	 *
+	 * @param Price  묶음 전체의 값. 낱개 가격이 아니다 — 부분 구매가 없다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerListItem(int32 InventorySlot, int32 Price);
+
+	/** 매물을 산다. 묶음 통째로만 산다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerBuyListing(int32 ListingId);
+
+	/** 자기 매물을 내린다. 아이템이 인벤토리로 돌아온다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerCancelListing(int32 ListingId);
+
+	/**
+	 * 매물을 찾는다. 결과는 OnMarketSearchResult 로 돌아온다.
+	 *
+	 * @param ItemIdFilter  비우면 전부. 넣으면 그 아이템만.
+	 * @param Page          0 부터. 한 쪽 크기는 프로젝트 세팅에서 정한다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerSearchListings(FName ItemIdFilter, int32 Page);
+
+	/** 자기가 올려 둔 매물을 받는다. "내 판매 목록" 탭에 쓴다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Market")
+	void ServerRequestMyListings();
+
+	UFUNCTION(Client, Reliable)
+	void ClientMarketResult(ETDMarketResult Result, int32 ListingId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientMarketSearchResult(const TArray<FTDMarketListing>& Listings);
+
+	/** 등록·구매·취소의 결과. **UI 가 구독할 지점이다.** */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Market")
+	FTDOnMarketResult OnMarketResult;
+
+	/** 검색 결과. 내 판매 목록도 같은 델리게이트로 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Market")
+	FTDOnMarketSearchResult OnMarketSearchResult;
+
 private:
+	/**
+	 * 존이 바뀔 때 카메라·라이팅을 맞춘다. 로컬 컨트롤러에서만 실제로 동작한다.
+	 *
+	 * 컨트롤러에 둔 이유는 카메라와 존을 둘 다 아는 자리가 여기뿐이어서다 —
+	 * 카메라는 Pawn 에 있고 존은 PlayerState 에 있다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|World")
+	TObjectPtr<UTDZoneEnvironmentComponent> ZoneEnvironmentComponent;
+
+	/**
+	 * 마지막으로 채팅을 보낸 시각. 도배 방지에 쓴다. **서버에서만 의미가 있다.**
+	 *
+	 * 요청에 시각을 담게 하지 않고 서버가 직접 잰다. 클라이언트가 보낸 시각을
+	 * 믿으면 그대로 조작된다.
+	 */
+	double LastChatSendTime = 0.0;
+
 	void SendCurrentDialogueLine();
 	void EndDialogueSession();
 	bool ApplyDialogueAction(

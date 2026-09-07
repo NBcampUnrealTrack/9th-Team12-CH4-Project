@@ -7,55 +7,86 @@
 
 class UTexture2D;
 
-/**
- * NPC가 어떤 대화부터 시작할지 고르는 규칙.
- * 배열의 위쪽 규칙부터 검사하며 첫 번째로 맞는 규칙을 사용한다.
- */
 USTRUCT(BlueprintType)
 struct TD_PROJECT_API FTDNPCDialogueRule
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
 	FTDWorldCondition Condition;
 
-	/** DT_Dialogue의 RowName */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
 	FName StartDialogueRow;
 };
 
-/** DT_NPC의 한 행 */
 USTRUCT(BlueprintType)
-struct TD_PROJECT_API FTDNPCRow : public FTableRowBase
+struct TD_PROJECT_API FTDNPCGiftPreference
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
-	FText DisplayName;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
-	TSoftObjectPtr<UTexture2D> Portrait;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
-	FText InteractionText;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Gift")
+	FName ItemId;
 
 	/**
-	 * NPC 자체가 보일 조건.
-	 * 비어 있으면 항상 보인다.
+	 * 0도 유효하다.
+	 * 아이템과 일일 기회는 소비되고 호감도만 0 오른다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Gift",
+		meta = (ClampMin = "0"))
+	int32 AffectionGain = 0;
+};
+
+USTRUCT(BlueprintType)
+struct TD_PROJECT_API FTDNPCRow
+	: public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
+	FText DisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
+	TSoftObjectPtr<UTexture2D> Portrait;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
+	FText InteractionText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
 	FTDWorldCondition VisibilityCondition;
 
 	/**
-	 * 가장 구체적인 조건부터 배치해야 한다.
-	 *
-	 * 권장 순서:
-	 * Completed
-	 * Ready
-	 * Accepted
-	 * 선행 조건 충족
-	 * 조건 없는 일반 대화
+	 * 퀘스트 대화가 하나도 없을 때 사용할 일반 대화.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
+	FName DefaultDialogueRow;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
 	TArray<FTDNPCDialogueRule> DialogueRules;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC")
+	bool bShowQuestMarker = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Gift")
+	bool bAcceptsGifts = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Gift",
+		meta = (MultiLine = "true"))
+	FText GiftThankYouText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Gift")
+	TArray<FTDNPCGiftPreference> GiftPreferences;
 };

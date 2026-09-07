@@ -45,6 +45,12 @@ public:
 	/** 처치 보상 지급. 죽인 쪽의 성장 컴포넌트에 경험치를 넣는다. 서버 전용. */
 	void GrantRewards(ATDCharacterBase* Killer);
 
+	UFUNCTION(BlueprintPure, Category = "TD|Monster")
+	FName GetMonsterId() const
+	{
+		return MonsterId;
+	}
+	
 protected:
 	virtual void BeginPlay() override;
 

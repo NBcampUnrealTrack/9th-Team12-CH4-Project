@@ -5,7 +5,6 @@
 
 namespace TDTags
 {
-
 	// ── 스탯 관련 ────────────────────────────────────────────
 
 	// ── 공격 ──────────────────────────────────────────────
@@ -154,7 +153,11 @@ namespace TDTags
 		Dialogue_Action_ReportQuestEvent,
 		"Dialogue.Action.ReportQuestEvent",
 		"대화 진행 시 퀘스트 목표 진행");
-	
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_CompleteDialogueQuest,
+		"Dialogue.Action.CompleteDialogueQuest",
+		"대화 목표를 진행하고 같은 입력에서 퀘스트 완료와 보상 지급까지 처리");
 	
 	// ── 퀘스트 진행 단계 ──────────────────────────────────
 
@@ -196,13 +199,48 @@ namespace TDTags
 	// ── 퀘스트 이벤트 ─────────────────────────────────────
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
-		Quest_Event_Talk_HanSuhyun,
-		"Quest.Event.Talk.HanSuhyun",
-		"한수현 NPC와 필요한 대화를 완료한 이벤트");
+		Quest_Event_Talk_GoHojin,
+		"Quest.Event.Talk.GoHojin",
+		"고호진 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_KimSoohyun,
+		"Quest.Event.Talk.KimSoohyun",
+		"김수현 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_KimHeejin,
+		"Quest.Event.Talk.KimHeejin",
+		"김희진 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_ParkJihoon,
+		"Quest.Event.Talk.ParkJihoon",
+		"박지훈 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_SeoAhyoung,
+		"Quest.Event.Talk.SeoAhyoung",
+		"서아영 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_LeeKyungjun,
+		"Quest.Event.Talk.LeeKyungjun",
+		"이경준 NPC와 필요한 대화를 완료한 이벤트");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Quest_Event_Talk_JangGoeun,
 		"Quest.Event.Talk.JangGoeun",
 		"장고은 NPC와 필요한 대화를 완료한 이벤트");
-	
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_HanSuhyun,
+		"Quest.Event.Talk.HanSuhyun",
+		"한수현 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_HongJongwoo,
+		"Quest.Event.Talk.HongJongwoo",
+		"홍종우 NPC와 필요한 대화를 완료한 이벤트");
+
 }

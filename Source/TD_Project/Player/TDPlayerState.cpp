@@ -102,18 +102,31 @@ bool ATDPlayerState::SetCurrentZoneId(FGameplayTag NewZoneId)
 		return false;
 	}
 
-	if (CurrentZoneId == NewZoneId)
+	if (!NewZoneId.IsValid())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("SetCurrentZoneId: 유효하지 않은 ZoneId다."));
 		return false;
 	}
+	
+	const bool bActuallyChanged =
+		CurrentZoneId != NewZoneId;
 
-	CurrentZoneId = NewZoneId;
+	if (bActuallyChanged)
+	{
+		CurrentZoneId = NewZoneId;
+		OnZoneChanged.Broadcast(CurrentZoneId);
+		ForceNetUpdate();
+	}
+	else
+	{
+		/**
+		 * 로그인·같은 존 부활도 지역 진입으로 인정해야 하므로,
+		 * 값이 같더라도 서버에서 진입 신호를 다시 보낸다.
+		 */
+		OnZoneChanged.Broadcast(CurrentZoneId);
+	}
 
-	// 서버에서는 OnRep 이 불리지 않으므로 직접 알린다.
-	OnZoneChanged.Broadcast(CurrentZoneId);
-	ForceNetUpdate();
-
-	return true;
+	return bActuallyChanged;
 }
 
 void ATDPlayerState::OnRep_CurrentZoneId()

@@ -1,6 +1,19 @@
 #include "UI/Dialogue/TDDialogueWidget.h"
 
-#include "Player/TDPlayerController.h"
+#include "GameFramework/PlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
+
+UTDInteractionFlowComponent*
+UTDDialogueWidget::GetFlow() const
+{
+	APlayerController* Controller =
+		GetOwningPlayer();
+
+	return Controller
+		? Controller->FindComponentByClass<
+			UTDInteractionFlowComponent>()
+		: nullptr;
+}
 
 void UTDDialogueWidget::NativeConstruct()
 {
@@ -8,45 +21,67 @@ void UTDDialogueWidget::NativeConstruct()
 
 	SetVisibility(ESlateVisibility::Collapsed);
 
-	if (ATDPlayerController* Controller =
-		Cast<ATDPlayerController>(GetOwningPlayer()))
+	if (UTDInteractionFlowComponent* Flow = GetFlow())
 	{
-		Controller->OnDialogueLineReceived.AddUniqueDynamic(
+		Flow->OnDialogueLine.AddUniqueDynamic(
 			this,
-			&UTDDialogueWidget::HandleDialogueLineReceived);
+			&UTDDialogueWidget::HandleDialogueLine);
 
-		Controller->OnDialogueClosed.AddUniqueDynamic(
+		Flow->OnDialogueClosed.AddUniqueDynamic(
 			this,
 			&UTDDialogueWidget::HandleDialogueClosed);
 
-		Controller->OnQuestActionResult.AddUniqueDynamic(
+		Flow->OnQuestActionResult.AddUniqueDynamic(
 			this,
-			&UTDDialogueWidget::HandleQuestActionResult);
+			&UTDDialogueWidget::HandleQuestResult);
+
+		Flow->OnGiftResult.AddUniqueDynamic(
+			this,
+			&UTDDialogueWidget::HandleGiftResult);
+
+		Flow->OnChapterShown.AddUniqueDynamic(
+			this,
+			&UTDDialogueWidget::HandleChapterShown);
+
+		Flow->OnChapterClosed.AddUniqueDynamic(
+			this,
+			&UTDDialogueWidget::HandleChapterClosed);
 	}
 }
 
 void UTDDialogueWidget::NativeDestruct()
 {
-	if (ATDPlayerController* Controller =
-		Cast<ATDPlayerController>(GetOwningPlayer()))
+	if (UTDInteractionFlowComponent* Flow = GetFlow())
 	{
-		Controller->OnDialogueLineReceived.RemoveDynamic(
+		Flow->OnDialogueLine.RemoveDynamic(
 			this,
-			&UTDDialogueWidget::HandleDialogueLineReceived);
+			&UTDDialogueWidget::HandleDialogueLine);
 
-		Controller->OnDialogueClosed.RemoveDynamic(
+		Flow->OnDialogueClosed.RemoveDynamic(
 			this,
 			&UTDDialogueWidget::HandleDialogueClosed);
 
-		Controller->OnQuestActionResult.RemoveDynamic(
+		Flow->OnQuestActionResult.RemoveDynamic(
 			this,
-			&UTDDialogueWidget::HandleQuestActionResult);
+			&UTDDialogueWidget::HandleQuestResult);
+
+		Flow->OnGiftResult.RemoveDynamic(
+			this,
+			&UTDDialogueWidget::HandleGiftResult);
+
+		Flow->OnChapterShown.RemoveDynamic(
+			this,
+			&UTDDialogueWidget::HandleChapterShown);
+
+		Flow->OnChapterClosed.RemoveDynamic(
+			this,
+			&UTDDialogueWidget::HandleChapterClosed);
 	}
 
 	Super::NativeDestruct();
 }
 
-void UTDDialogueWidget::HandleDialogueLineReceived(
+void UTDDialogueWidget::HandleDialogueLine(
 	int32 SessionId,
 	FName DialogueRow,
 	FTDDialogueLineView Line)
@@ -61,7 +96,7 @@ void UTDDialogueWidget::HandleDialogueLineReceived(
 void UTDDialogueWidget::HandleDialogueClosed(
 	int32 SessionId)
 {
-	if (SessionId != CurrentSessionId)
+	if (CurrentSessionId != SessionId)
 	{
 		return;
 	}
@@ -69,17 +104,50 @@ void UTDDialogueWidget::HandleDialogueClosed(
 	CurrentSessionId = 0;
 	CurrentDialogueRow = NAME_None;
 
-	SetVisibility(ESlateVisibility::Collapsed);
+	if (!bChapterVisible)
+	{
+		SetVisibility(
+			ESlateVisibility::Collapsed);
+	}
+
 	BP_OnDialogueClosed();
 }
 
-void UTDDialogueWidget::HandleQuestActionResult(
+void UTDDialogueWidget::HandleQuestResult(
 	FName QuestId,
 	ETDQuestActionResult Result)
 {
 	BP_OnQuestActionResult(
 		QuestId,
 		Result);
+}
+
+void UTDDialogueWidget::HandleGiftResult(
+	FTDGiftResultView Result)
+{
+	BP_OnGiftResult(Result);
+}
+
+void UTDDialogueWidget::HandleChapterShown(
+	FTDChapterPresentationView Chapter)
+{
+	bChapterVisible = true;
+
+	SetVisibility(ESlateVisibility::Visible);
+	BP_OnChapterShown(Chapter);
+}
+
+void UTDDialogueWidget::HandleChapterClosed()
+{
+	bChapterVisible = false;
+
+	if (CurrentSessionId == 0)
+	{
+		SetVisibility(
+			ESlateVisibility::Collapsed);
+	}
+
+	BP_OnChapterClosed();
 }
 
 void UTDDialogueWidget::RequestAdvance()
@@ -90,12 +158,44 @@ void UTDDialogueWidget::RequestAdvance()
 		return;
 	}
 
-	if (ATDPlayerController* Controller =
-		Cast<ATDPlayerController>(GetOwningPlayer()))
+	if (UTDInteractionFlowComponent* Flow =
+		GetFlow())
 	{
-		Controller->ServerAdvanceDialogue(
+		Flow->ServerAdvanceDialogue(
 			CurrentSessionId,
 			CurrentDialogueRow);
+	}
+}
+
+void UTDDialogueWidget::RequestAcceptQuest()
+{
+	if (CurrentSessionId == 0
+		|| CurrentDialogueRow.IsNone())
+	{
+		return;
+	}
+
+	if (UTDInteractionFlowComponent* Flow =
+		GetFlow())
+	{
+		Flow->ServerAcceptQuest(
+			CurrentSessionId,
+			CurrentDialogueRow);
+	}
+}
+
+void UTDDialogueWidget::RequestDeclineQuest()
+{
+	if (CurrentSessionId == 0)
+	{
+		return;
+	}
+
+	if (UTDInteractionFlowComponent* Flow =
+		GetFlow())
+	{
+		Flow->ServerDeclineQuest(
+			CurrentSessionId);
 	}
 }
 
@@ -106,10 +206,39 @@ void UTDDialogueWidget::RequestClose()
 		return;
 	}
 
-	if (ATDPlayerController* Controller =
-		Cast<ATDPlayerController>(GetOwningPlayer()))
+	if (UTDInteractionFlowComponent* Flow =
+		GetFlow())
 	{
-		Controller->ServerCancelDialogue(
+		Flow->ServerCancelDialogue(
 			CurrentSessionId);
 	}
+}
+
+void UTDDialogueWidget::RequestGiveGift(
+	int32 InventorySlot)
+{
+	if (CurrentSessionId == 0)
+	{
+		return;
+	}
+
+	if (UTDInteractionFlowComponent* Flow =
+		GetFlow())
+	{
+		Flow->ServerGiveGift(
+			CurrentSessionId,
+			InventorySlot);
+	}
+}
+
+TArray<FTDGiftItemView>
+UTDDialogueWidget::GetGiftItemViews() const
+{
+	if (const UTDInteractionFlowComponent* Flow =
+		GetFlow())
+	{
+		return Flow->GetGiftItemViews();
+	}
+
+	return {};
 }

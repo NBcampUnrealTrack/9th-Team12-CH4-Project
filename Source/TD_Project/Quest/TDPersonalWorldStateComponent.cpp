@@ -2,19 +2,23 @@
 
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
+#include "World/TDKoreanDailyResetSubsystem.h"
 
-UTDPersonalWorldStateComponent::UTDPersonalWorldStateComponent()
+UTDPersonalWorldStateComponent::
+UTDPersonalWorldStateComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 }
 
-void UTDPersonalWorldStateComponent::GetLifetimeReplicatedProps(
-	TArray<FLifetimeProperty>& OutLifetimeProps) const
+void UTDPersonalWorldStateComponent::
+GetLifetimeReplicatedProps(
+	TArray<FLifetimeProperty>&
+		OutLifetimeProps) const
 {
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	Super::GetLifetimeReplicatedProps(
+		OutLifetimeProps);
 
-	// 자기 퀘스트와 획득한 상자만 알면 된다.
 	DOREPLIFETIME_CONDITION(
 		UTDPersonalWorldStateComponent,
 		QuestProgressTags,
@@ -23,6 +27,21 @@ void UTDPersonalWorldStateComponent::GetLifetimeReplicatedProps(
 	DOREPLIFETIME_CONDITION(
 		UTDPersonalWorldStateComponent,
 		ClaimedChestIds,
+		COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(
+		UTDPersonalWorldStateComponent,
+		ChestClaimRecords,
+		COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(
+		UTDPersonalWorldStateComponent,
+		SeenChapterIds,
+		COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(
+		UTDPersonalWorldStateComponent,
+		NpcGiftRecords,
 		COND_OwnerOnly);
 }
 
@@ -43,14 +62,8 @@ bool UTDPersonalWorldStateComponent::HasQuestTag(
 bool UTDPersonalWorldStateComponent::MatchesCondition(
 	const FTDWorldCondition& Condition) const
 {
-	return Condition.IsSatisfiedBy(QuestProgressTags);
-}
-
-bool UTDPersonalWorldStateComponent::HasClaimedChest(
-	FName ChestId) const
-{
-	return !ChestId.IsNone()
-		&& ClaimedChestIds.Contains(ChestId);
+	return Condition.IsSatisfiedBy(
+		QuestProgressTags);
 }
 
 bool UTDPersonalWorldStateComponent::AddQuestTag(
@@ -58,14 +71,9 @@ bool UTDPersonalWorldStateComponent::AddQuestTag(
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("AddQuestTag는 서버에서만 호출할 수 있다."));
-		return false;
-	}
-
-	if (!Tag.IsValid()
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| !Tag.IsValid()
 		|| QuestProgressTags.HasTagExact(Tag))
 	{
 		return false;
@@ -73,7 +81,6 @@ bool UTDPersonalWorldStateComponent::AddQuestTag(
 
 	QuestProgressTags.AddTag(Tag);
 	NotifyStateChanged();
-
 	return true;
 }
 
@@ -82,14 +89,9 @@ bool UTDPersonalWorldStateComponent::RemoveQuestTag(
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("RemoveQuestTag는 서버에서만 호출할 수 있다."));
-		return false;
-	}
-
-	if (!Tag.IsValid()
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| !Tag.IsValid()
 		|| !QuestProgressTags.HasTagExact(Tag))
 	{
 		return false;
@@ -97,59 +99,245 @@ bool UTDPersonalWorldStateComponent::RemoveQuestTag(
 
 	QuestProgressTags.RemoveTag(Tag);
 	NotifyStateChanged();
-
 	return true;
+}
+
+const FTDChestClaimRecord*
+UTDPersonalWorldStateComponent::FindChestClaim(
+	FName ChestId) const
+{
+	return ChestClaimRecords.FindByPredicate(
+		[ChestId](const FTDChestClaimRecord& Record)
+		{
+			return Record.ChestId == ChestId;
+		});
+}
+
+FTDChestClaimRecord*
+UTDPersonalWorldStateComponent::FindMutableChestClaim(
+	FName ChestId)
+{
+	return ChestClaimRecords.FindByPredicate(
+		[ChestId](const FTDChestClaimRecord& Record)
+		{
+			return Record.ChestId == ChestId;
+		});
+}
+
+bool UTDPersonalWorldStateComponent::HasClaimedChest(
+	FName ChestId) const
+{
+	return !ChestId.IsNone()
+		&& (ClaimedChestIds.Contains(ChestId)
+			|| FindChestClaim(ChestId) != nullptr);
+}
+
+bool UTDPersonalWorldStateComponent::CanClaimChest(
+	FName ChestId,
+	ETDChestResetType ResetType) const
+{
+	if (ChestId.IsNone())
+	{
+		return false;
+	}
+
+	const FTDChestClaimRecord* Record =
+		FindChestClaim(ChestId);
+
+	if (ResetType ==
+		ETDChestResetType::OneTime)
+	{
+		return Record == nullptr
+			&& !ClaimedChestIds.Contains(ChestId);
+	}
+
+	if (Record == nullptr)
+	{
+		return true;
+	}
+
+	return Record->LastClaimKstDayKey
+		!= UTDKoreanDailyResetSubsystem::
+			GetCurrentKstDayKey();
 }
 
 bool UTDPersonalWorldStateComponent::MarkChestClaimed(
 	FName ChestId)
 {
+	return MarkChestClaimedWithReset(
+		ChestId,
+		ETDChestResetType::OneTime);
+}
+
+bool UTDPersonalWorldStateComponent::
+MarkChestClaimedWithReset(
+	FName ChestId,
+	ETDChestResetType ResetType)
+{
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("MarkChestClaimed는 서버에서만 호출할 수 있다."));
-		return false;
-	}
-
-	if (ChestId.IsNone()
-		|| ClaimedChestIds.Contains(ChestId))
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| !CanClaimChest(ChestId, ResetType))
 	{
 		return false;
 	}
 
-	ClaimedChestIds.Add(ChestId);
+	FTDChestClaimRecord* Record =
+		FindMutableChestClaim(ChestId);
+
+	if (Record == nullptr)
+	{
+		FTDChestClaimRecord& Added =
+			ChestClaimRecords.AddDefaulted_GetRef();
+
+		Added.ChestId = ChestId;
+		Record = &Added;
+	}
+
+	if (ResetType ==
+		ETDChestResetType::OneTime)
+	{
+		Record->LastClaimKstDayKey = 0;
+		ClaimedChestIds.AddUnique(ChestId);
+	}
+	else
+	{
+		Record->LastClaimKstDayKey =
+			UTDKoreanDailyResetSubsystem::
+				GetCurrentKstDayKey();
+	}
+
 	NotifyStateChanged();
-
 	return true;
 }
 
-void UTDPersonalWorldStateComponent::WriteSaveData(
-	FTDPlayerSaveData& Out) const
+bool UTDPersonalWorldStateComponent::HasSeenChapter(
+	FName ChapterId) const
 {
-	Out.QuestProgressTags = QuestProgressTags;
-	Out.ClaimedChestIds = ClaimedChestIds;
+	return !ChapterId.IsNone()
+		&& SeenChapterIds.Contains(ChapterId);
 }
 
-void UTDPersonalWorldStateComponent::ReadSaveData(
-	const FTDPlayerSaveData& In)
+bool UTDPersonalWorldStateComponent::MarkChapterSeen(
+	FName ChapterId)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| ChapterId.IsNone()
+		|| SeenChapterIds.Contains(ChapterId))
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("PersonalWorldState ReadSaveData는 서버에서만 호출해야 한다."));
+		return false;
+	}
+
+	SeenChapterIds.Add(ChapterId);
+	NotifyStateChanged();
+	return true;
+}
+
+const FTDNpcGiftRecord*
+UTDPersonalWorldStateComponent::FindGiftRecord(
+	FName NPCId) const
+{
+	return NpcGiftRecords.FindByPredicate(
+		[NPCId](const FTDNpcGiftRecord& Record)
+		{
+			return Record.NPCId == NPCId;
+		});
+}
+
+FTDNpcGiftRecord*
+UTDPersonalWorldStateComponent::FindMutableGiftRecord(
+	FName NPCId)
+{
+	return NpcGiftRecords.FindByPredicate(
+		[NPCId](const FTDNpcGiftRecord& Record)
+		{
+			return Record.NPCId == NPCId;
+		});
+}
+
+bool UTDPersonalWorldStateComponent::CanGiftToNPC(
+	FName NPCId) const
+{
+	if (NPCId.IsNone())
+	{
+		return false;
+	}
+
+	const FTDNpcGiftRecord* Record =
+		FindGiftRecord(NPCId);
+
+	return Record == nullptr
+		|| Record->LastGiftKstDayKey
+			!= UTDKoreanDailyResetSubsystem::
+				GetCurrentKstDayKey();
+}
+
+bool UTDPersonalWorldStateComponent::MarkGiftGiven(
+	FName NPCId)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| !CanGiftToNPC(NPCId))
+	{
+		return false;
+	}
+
+	FTDNpcGiftRecord* Record =
+		FindMutableGiftRecord(NPCId);
+
+	if (Record == nullptr)
+	{
+		FTDNpcGiftRecord& Added =
+			NpcGiftRecords.AddDefaulted_GetRef();
+
+		Added.NPCId = NPCId;
+		Record = &Added;
+	}
+
+	Record->LastGiftKstDayKey =
+		UTDKoreanDailyResetSubsystem::
+			GetCurrentKstDayKey();
+
+	NotifyStateChanged();
+	return true;
+}
+
+void UTDPersonalWorldStateComponent::
+WriteSaveData(FTDPlayerSaveData& Out) const
+{
+	Out.QuestProgressTags = QuestProgressTags;
+	Out.ClaimedChestIds = ClaimedChestIds;
+	Out.ChestClaimRecords = ChestClaimRecords;
+	Out.SeenChapterIds = SeenChapterIds;
+	Out.NpcGiftRecords = NpcGiftRecords;
+}
+
+void UTDPersonalWorldStateComponent::
+ReadSaveData(const FTDPlayerSaveData& In)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
+	{
 		return;
 	}
 
 	QuestProgressTags = In.QuestProgressTags;
 
-	// 저장 데이터에 잘못된 None 또는 중복 ID가 있어도 정리해서 읽는다.
 	ClaimedChestIds.Reset();
+	ChestClaimRecords.Reset();
+	SeenChapterIds.Reset();
+	NpcGiftRecords.Reset();
 
-	for (const FName ChestId : In.ClaimedChestIds)
+	for (const FName ChestId :
+		In.ClaimedChestIds)
 	{
 		if (!ChestId.IsNone())
 		{
@@ -157,26 +345,74 @@ void UTDPersonalWorldStateComponent::ReadSaveData(
 		}
 	}
 
+	for (const FTDChestClaimRecord& Saved :
+		In.ChestClaimRecords)
+	{
+		if (Saved.ChestId.IsNone()
+			|| FindChestClaim(Saved.ChestId)
+				!= nullptr)
+		{
+			continue;
+		}
+
+		ChestClaimRecords.Add(Saved);
+	}
+
+	/**
+	 * 구버전 ClaimedChestIds를 영구 상자 기록으로 변환한다.
+	 */
+	for (const FName LegacyChestId :
+		ClaimedChestIds)
+	{
+		if (FindChestClaim(LegacyChestId)
+			== nullptr)
+		{
+			FTDChestClaimRecord& Added =
+				ChestClaimRecords
+					.AddDefaulted_GetRef();
+
+			Added.ChestId = LegacyChestId;
+			Added.LastClaimKstDayKey = 0;
+		}
+	}
+
+	for (const FName ChapterId :
+		In.SeenChapterIds)
+	{
+		if (!ChapterId.IsNone())
+		{
+			SeenChapterIds.AddUnique(ChapterId);
+		}
+	}
+
+	for (const FTDNpcGiftRecord& Saved :
+		In.NpcGiftRecords)
+	{
+		if (Saved.NPCId.IsNone()
+			|| FindGiftRecord(Saved.NPCId)
+				!= nullptr)
+		{
+			continue;
+		}
+
+		NpcGiftRecords.Add(Saved);
+	}
+
 	NotifyStateChanged();
 }
 
-void UTDPersonalWorldStateComponent::NotifyStateChanged()
+void UTDPersonalWorldStateComponent::
+NotifyStateChanged()
 {
 	OnPersonalWorldStateChanged.Broadcast();
 
 	if (AActor* OwnerActor = GetOwner())
 	{
-		// PlayerState의 기본 전송 주기를 기다리지 않고 가능한 한 빨리 전송한다.
 		OwnerActor->ForceNetUpdate();
 	}
 }
 
-void UTDPersonalWorldStateComponent::OnRep_QuestProgressTags()
-{
-	OnPersonalWorldStateChanged.Broadcast();
-}
-
-void UTDPersonalWorldStateComponent::OnRep_ClaimedChestIds()
+void UTDPersonalWorldStateComponent::OnRep_State()
 {
 	OnPersonalWorldStateChanged.Broadcast();
 }

@@ -7,6 +7,8 @@
 #include "Core/TDGameplayTags.h"
 #include "GameplayEffect.h"
 #include "Stats/TDStatComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	const FGameplayTagContainer& ContextTags)
@@ -33,6 +35,22 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		return NoDamage;
 	}
 
+	// 플레이어가 대화창이나 컷씬 등으로 게임플레이가 잠겨있는 동안에는, 몬스터나 다른 캐릭터의 공격이 들어와도 데미지를 받지 않는다
+	if (APlayerController* TargetController =
+	Cast<APlayerController>(
+		TargetChar->GetController()))
+	{
+		const UTDInteractionFlowComponent* Flow =
+			TargetController->FindComponentByClass<
+				UTDInteractionFlowComponent>();
+
+		if (Flow != nullptr
+			&& Flow->IsGameplayLocked())
+		{
+			return NoDamage;
+		}
+	}
+	
 	UTDStatComponent* AttackerStats = AttackerChar->GetStatComponent();
 	if (AttackerStats == nullptr)
 	{
@@ -80,7 +98,22 @@ void UTDCombatStatics::ApplyRawDamage(AActor* Target, float Amount)
 	{
 		return;
 	}
+	// 플레이어가 대화/컷씬 등으로 게임플레이가 잠긴 동안엔 노 데미지
+	if (APlayerController* TargetController =
+	Cast<APlayerController>(
+		TargetChar->GetController()))
+	{
+		const UTDInteractionFlowComponent* Flow =
+			TargetController->FindComponentByClass<
+				UTDInteractionFlowComponent>();
 
+		if (Flow != nullptr
+			&& Flow->IsGameplayLocked())
+		{
+			return;
+		}
+	}
+	
 	UAbilitySystemComponent* TargetASC = TargetChar->GetAbilitySystemComponent();
 	if (TargetASC == nullptr)
 	{

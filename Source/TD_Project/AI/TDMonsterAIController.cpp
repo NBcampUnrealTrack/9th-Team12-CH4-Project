@@ -1,16 +1,18 @@
 #include "AI/TDMonsterAIController.h"
 
 #include "Character/TDCharacterBase.h"
+#include "Character/TDEnemyBase.h"
 #include "Combat/TDCombatComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 #include "TimerManager.h"
 
 void ATDMonsterAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
-	// AI 판단은 서버 몫이다.
 	if (!HasAuthority())
 	{
 		return;
@@ -22,11 +24,13 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 		return;
 	}
 
-	// 컨트롤러의 팀을 몸의 팀과 맞춘다. 나중에 Perception 을 붙여도 이 값이 기준이 된다.
 	SetGenericTeamId(PossessedCharacter->GetGenericTeamId());
-
-	// 죽으면 생각을 멈춘다 — OnDeath 소켓이 설계된 용도 그대로다.
 	PossessedCharacter->OnDeath.AddDynamic(this, &ATDMonsterAIController::HandlePawnDeath);
+
+	// 배회의 기준점. 스포너가 놓아준 자리가 곧 집이다.
+	HomeLocation = InPawn->GetActorLocation();
+
+	EnterIdle();
 
 	GetWorldTimerManager().SetTimer(
 		ThinkTimerHandle, this, &ATDMonsterAIController::Think, ThinkInterval, true);
@@ -35,7 +39,6 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 void ATDMonsterAIController::OnUnPossess()
 {
 	GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
-
 	Super::OnUnPossess();
 }
 
@@ -46,6 +49,58 @@ void ATDMonsterAIController::HandlePawnDeath()
 	ClearFocus(EAIFocusPriority::Gameplay);
 }
 
+// ── 상태 진입 ─────────────────────────────────────────────
+
+void ATDMonsterAIController::EnterIdle()
+{
+	State = ETDMonsterAIState::Idle;
+	StateEndTime = GetWorld()->GetTimeSeconds() + FMath::FRandRange(IdleTimeMin, IdleTimeMax);
+	AggroTarget = nullptr;
+	StopMovement();
+	ClearFocus(EAIFocusPriority::Gameplay);
+}
+
+void ATDMonsterAIController::EnterWander()
+{
+	// NavMesh 위의 도달 가능한 지점만 고른다. 실패하면(포인트가 초록 영역 밖 등) 그냥 더 쉰다.
+	FNavLocation WanderPoint;
+	UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+
+	if (NavSystem == nullptr ||
+		!NavSystem->GetRandomReachablePointInRadius(HomeLocation, WanderRadius, WanderPoint))
+	{
+		EnterIdle();
+		return;
+	}
+
+	State = ETDMonsterAIState::Wander;
+	StateEndTime = GetWorld()->GetTimeSeconds() + WanderTimeLimit;
+	MoveToLocation(WanderPoint.Location, 50.f);
+}
+
+void ATDMonsterAIController::EnterSense(ATDCharacterBase* Found)
+{
+	State = ETDMonsterAIState::Sense;
+	StateEndTime = GetWorld()->GetTimeSeconds() + SenseDuration;
+	AggroTarget = Found;
+
+	StopMovement();
+	SetFocus(Found, EAIFocusPriority::Gameplay);   // 굳은 채로 적을 바라본다
+
+	// "발견!" 연출 신호. 애니메이션은 BP 가 구독해서 재생한다.
+	if (ATDEnemyBase* Enemy = Cast<ATDEnemyBase>(GetPawn()))
+	{
+		Enemy->MulticastOnSense();
+	}
+}
+
+void ATDMonsterAIController::EnterCombat()
+{
+	State = ETDMonsterAIState::Combat;
+}
+
+// ── 주기 판단 ─────────────────────────────────────────────
+
 void ATDMonsterAIController::Think()
 {
 	ATDCharacterBase* Self = Cast<ATDCharacterBase>(GetPawn());
@@ -54,45 +109,70 @@ void ATDMonsterAIController::Think()
 		return;
 	}
 
-	// ── 어그로 갱신 ──
+	const float Now = GetWorld()->GetTimeSeconds();
+
+	switch (State)
+	{
+	case ETDMonsterAIState::Idle:
+		// 평화 시엔 적 탐지가 최우선이다.
+		if (ATDCharacterBase* Found = FindNearestEnemy())
+		{
+			EnterSense(Found);
+			return;
+		}
+		if (Now >= StateEndTime)
+		{
+			EnterWander();
+		}
+		return;
+
+	case ETDMonsterAIState::Wander:
+		if (ATDCharacterBase* Found = FindNearestEnemy())
+		{
+			EnterSense(Found);
+			return;
+		}
+		// 도착했거나(경로 추적이 놀고 있음) 너무 오래 걸리면 대기로.
+		if (GetMoveStatus() == EPathFollowingStatus::Idle || Now >= StateEndTime)
+		{
+			EnterIdle();
+		}
+		return;
+
+	case ETDMonsterAIState::Sense:
+		// 굳어 있는 동안은 아무것도 안 한다. 시간이 차면 전투로.
+		if (Now >= StateEndTime)
+		{
+			EnterCombat();
+		}
+		return;
+
+	case ETDMonsterAIState::Combat:
+		TickCombat(Self);
+		return;
+	}
+}
+
+void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
+{
 	ATDCharacterBase* Target = AggroTarget.Get();
 
-	// 대상이 사라졌거나, 죽었거나, 너무 멀어졌으면 포기한다.
-	if (Target != nullptr)
+	// 대상 상실 — 죽었거나, 사라졌거나, 너무 멀어졌다.
+	if (Target == nullptr || Target->IsDead() ||
+		FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation()) > LoseAggroRadius)
 	{
-		const float Distance = FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation());
-		if (Target->IsDead() || Distance > LoseAggroRadius)
-		{
-			AggroTarget = nullptr;
-			Target = nullptr;
-			StopMovement();
-			ClearFocus(EAIFocusPriority::Gameplay);
-		}
+		EnterIdle();
+		return;
 	}
 
-	// 대상이 없으면 새로 찾는다.
-	if (Target == nullptr)
-	{
-		Target = FindNearestEnemy();
-		AggroTarget = Target;
-
-		if (Target == nullptr)
-		{
-			return;   // 대기 상태. TODO: 스폰 지점 귀환·배회는 스폰 시스템과 함께 붙인다.
-		}
-	}
-
-	// ── 추적 / 공격 분기 ──
 	const float Distance = FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation());
 
-	// 대상을 계속 바라본다. 히트박스가 전방 판정이므로 이게 곧 조준이다.
 	SetFocus(Target, EAIFocusPriority::Gameplay);
 
 	if (Distance <= AttackRange)
 	{
 		StopMovement();
 
-		// 쿨타임은 CombatComponent 의 CanAttack 이 관리한다. 매 판단마다 눌러도 안전하다.
 		if (UTDCombatComponent* Combat = Self->GetCombatComponent())
 		{
 			Combat->ServerRequestAttack();
@@ -100,7 +180,6 @@ void ATDMonsterAIController::Think()
 	}
 	else
 	{
-		// 사거리보다 살짝 안쪽까지 접근해야 멈춘 자리에서 히트박스가 닿는다.
 		MoveToActor(Target, AttackRange * 0.7f);
 	}
 }
@@ -125,7 +204,6 @@ ATDCharacterBase* ATDMonsterAIController::FindNearestEnemy() const
 			continue;
 		}
 
-		// 같은 팀은 적이 아니다. 팀 값은 BP 에서 지정한다(플레이어 0 / 몬스터 1).
 		if (Candidate->GetGenericTeamId() == SelfCharacter->GetGenericTeamId())
 		{
 			continue;

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -30,11 +30,14 @@ public:
 	void SetHealth(float CurrentHealth, float MaxHealth, bool bIsCritical = false);
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
-	void SetHealthPercent(float InHealthPercent);
+	void ShowHealthDelta(float HealthDelta, bool bIsCritical);
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
 	void SetMonsterName(const FText& InMonsterName);
 
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
+		void SetHealthPercent(float InHealthPercent);
 	UFUNCTION(BlueprintPure, Category = "Enemy Health Bar")
 	float GetTargetHealthPercent() const { return TargetHealthPercent; }
 
@@ -89,7 +92,7 @@ protected:
 	float DamageLagPercent = 1.0f;
 
 private:
-	void ShowHealthDelta(float HealthDelta, bool bIsCritical);
+
 	void RemoveFeedbackAt(int32 Index);
 
 	float DamageDelayRemaining = 0.0f;

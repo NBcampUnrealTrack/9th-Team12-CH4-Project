@@ -13,6 +13,26 @@
 namespace
 {
 	const TCHAR* QuestTableContext = TEXT("UTDQuestComponent");
+
+	bool IsMainQuest(const FTDQuestRow& Definition)
+	{
+		return Definition.QuestTypeTag ==
+			TDTags::Quest_Type_Main.GetTag();
+	}
+
+	bool IsSubQuest(const FTDQuestRow& Definition)
+	{
+		return Definition.QuestTypeTag ==
+			TDTags::Quest_Type_Sub.GetTag();
+	}
+
+	bool IsActiveState(const FGameplayTag StateTag)
+	{
+		return StateTag ==
+				TDTags::Quest_State_Active.GetTag()
+			|| StateTag ==
+				TDTags::Quest_State_ReadyToTurnIn.GetTag();
+	}
 }
 
 UTDQuestComponent::UTDQuestComponent()
@@ -30,6 +50,37 @@ void UTDQuestComponent::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("%s: QuestComponent의 QuestTable(DT_Quest)이 지정되지 않았다."),
 			*GetNameSafe(GetOwner()));
+		return;
+	}
+
+	ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(GetOwner());
+
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	if (UTDInventoryComponent* Inventory =
+		PlayerState->GetInventoryComponent())
+	{
+		Inventory->OnInventoryChanged.AddUniqueDynamic(
+			this,
+			&UTDQuestComponent::HandleInventoryChanged);
+	}
+
+	PlayerState->OnZoneChanged.AddUniqueDynamic(
+		this,
+		&UTDQuestComponent::HandleZoneChanged);
+
+	PlayerState->OnCharacterSelected.AddUniqueDynamic(
+		this,
+		&UTDQuestComponent::HandleCharacterSelected);
+
+	if (PlayerState->HasAuthority()
+		&& PlayerState->HasSelectedCharacter())
+	{
+		HandleCharacterSelected();
 	}
 }
 
@@ -42,6 +93,22 @@ void UTDQuestComponent::GetLifetimeReplicatedProps(
 		UTDQuestComponent,
 		QuestEntries,
 		COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(
+		UTDQuestComponent,
+		AffectionEntries,
+		COND_OwnerOnly);
+}
+
+int32 UTDQuestComponent::GetCurrentKstDayKey()
+{
+	const FDateTime KoreaNow =
+		FDateTime::UtcNow()
+		+ FTimespan::FromHours(9.0);
+
+	return KoreaNow.GetYear() * 10000
+		+ KoreaNow.GetMonth() * 100
+		+ KoreaNow.GetDay();
 }
 
 const FTDQuestRow* UTDQuestComponent::FindQuestDefinition(
@@ -56,6 +123,12 @@ const FTDQuestRow* UTDQuestComponent::FindQuestDefinition(
 		QuestId,
 		QuestTableContext,
 		false);
+}
+
+const FTDQuestRow* UTDQuestComponent::GetQuestDefinition(
+	FName QuestId) const
+{
+	return FindQuestDefinition(QuestId);
 }
 
 FTDQuestRuntimeData* UTDQuestComponent::FindMutableQuest(
@@ -78,39 +151,481 @@ const FTDQuestRuntimeData* UTDQuestComponent::FindQuest(
 		});
 }
 
+FTDAffectionRuntimeData*
+UTDQuestComponent::FindMutableAffection(FName NPCId)
+{
+	return AffectionEntries.FindByPredicate(
+		[NPCId](const FTDAffectionRuntimeData& Entry)
+		{
+			return Entry.NPCId == NPCId;
+		});
+}
+
+const FTDAffectionRuntimeData*
+UTDQuestComponent::FindAffection(FName NPCId) const
+{
+	return AffectionEntries.FindByPredicate(
+		[NPCId](const FTDAffectionRuntimeData& Entry)
+		{
+			return Entry.NPCId == NPCId;
+		});
+}
+
 bool UTDQuestComponent::HasQuest(FName QuestId) const
 {
 	return FindQuest(QuestId) != nullptr;
 }
 
+bool UTDQuestComponent::HasCompletedQuest(
+	FName QuestId) const
+{
+	const FTDQuestRuntimeData* Entry =
+		FindQuest(QuestId);
+
+	return Entry != nullptr
+		&& Entry->StateTag ==
+			TDTags::Quest_State_Completed.GetTag();
+}
+
 FGameplayTag UTDQuestComponent::GetQuestStateTag(
 	FName QuestId) const
 {
-	const FTDQuestRuntimeData* Entry = FindQuest(QuestId);
-	return Entry ? Entry->StateTag : FGameplayTag();
+	const FTDQuestRuntimeData* Entry =
+		FindQuest(QuestId);
+
+	return Entry
+		? Entry->StateTag
+		: FGameplayTag();
+}
+
+int32 UTDQuestComponent::GetActiveSubQuestCount() const
+{
+	int32 Count = 0;
+
+	for (const FTDQuestRuntimeData& Entry : QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition != nullptr
+			&& IsSubQuest(*Definition))
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+int32 UTDQuestComponent::GetAffectionPoints(
+	FName NPCId) const
+{
+	const FTDAffectionRuntimeData* Entry =
+		FindAffection(NPCId);
+
+	return Entry ? Entry->Points : 0;
+}
+
+FText UTDQuestComponent::GetAffectionTierText(
+	FName NPCId) const
+{
+	const int32 Points =
+		GetAffectionPoints(NPCId);
+
+	if (Points >= 100)
+	{
+		return NSLOCTEXT(
+			"TDAffection",
+			"Max",
+			"호감 MAX");
+	}
+
+	if (Points >= 80)
+	{
+		return NSLOCTEXT(
+			"TDAffection",
+			"Special",
+			"특별한 사이");
+	}
+
+	if (Points >= 60)
+	{
+		return NSLOCTEXT(
+			"TDAffection",
+			"Trust",
+			"신뢰");
+	}
+
+	if (Points >= 40)
+	{
+		return NSLOCTEXT(
+			"TDAffection",
+			"Friendly",
+			"친밀");
+	}
+
+	if (Points >= 20)
+	{
+		return NSLOCTEXT(
+			"TDAffection",
+			"Acquaintance",
+			"아는 사이");
+	}
+
+	return NSLOCTEXT(
+		"TDAffection",
+		"Stranger",
+		"낯선 사이");
+}
+
+bool UTDQuestComponent::AddAffection(
+	FName NPCId,
+	int32 Amount)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| NPCId.IsNone()
+		|| Amount < 0)
+	{
+		return false;
+	}
+
+	FTDAffectionRuntimeData* Entry =
+		FindMutableAffection(NPCId);
+
+	if (Entry == nullptr)
+	{
+		FTDAffectionRuntimeData& NewEntry =
+			AffectionEntries.AddDefaulted_GetRef();
+
+		NewEntry.NPCId = NPCId;
+		NewEntry.Points = 0;
+		NewEntry.LastGiftKstDayKey = 0;
+
+		Entry = &NewEntry;
+	}
+
+	if (Amount > 0)
+	{
+		const int64 NewPoints =
+			static_cast<int64>(Entry->Points)
+			+ Amount;
+
+		Entry->Points = static_cast<int32>(
+			FMath::Min<int64>(
+				NewPoints,
+				MAX_int32));
+	}
+
+	OnAffectionChanged.Broadcast(
+		NPCId,
+		Entry->Points);
+
+	OwnerActor->ForceNetUpdate();
+	return true;
+}
+
+ETDQuestActionResult
+UTDQuestComponent::CheckAcceptConditions(
+	FName QuestId,
+	bool bIgnoreSubQuestLimit) const
+{
+	const FTDQuestRow* Definition =
+		FindQuestDefinition(QuestId);
+
+	if (Definition == nullptr)
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	const FTDQuestRuntimeData* Existing =
+		FindQuest(QuestId);
+
+	if (Existing != nullptr)
+	{
+		if (IsActiveState(Existing->StateTag))
+		{
+			return ETDQuestActionResult::AlreadyAccepted;
+		}
+
+		if (Existing->StateTag ==
+			TDTags::Quest_State_Completed.GetTag())
+		{
+			if (Definition->RepeatType ==
+				ETDQuestRepeatType::None)
+			{
+				return ETDQuestActionResult::AlreadyCompleted;
+			}
+
+			if (Existing->CompletedKstDayKey ==
+				GetCurrentKstDayKey())
+			{
+				return ETDQuestActionResult::DailyAlreadyCompleted;
+			}
+		}
+	}
+
+	const ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(GetOwner());
+
+	if (PlayerState == nullptr)
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	if (IsMainQuest(*Definition))
+	{
+		for (const FTDQuestRuntimeData& Other :
+			QuestEntries)
+		{
+			if (Other.QuestId == QuestId
+				|| !IsActiveState(Other.StateTag))
+			{
+				continue;
+			}
+
+			const FTDQuestRow* OtherDefinition =
+				FindQuestDefinition(Other.QuestId);
+
+			if (OtherDefinition != nullptr
+				&& IsMainQuest(*OtherDefinition))
+			{
+				return ETDQuestActionResult::
+					MainQuestAlreadyActive;
+			}
+		}
+	}
+	else if (IsSubQuest(*Definition)
+		&& !bIgnoreSubQuestLimit
+		&& GetActiveSubQuestCount() >= 2)
+	{
+		return ETDQuestActionResult::
+			ActiveSubQuestLimit;
+	}
+
+	for (const FName PrerequisiteId :
+		Definition->PrerequisiteQuestIds)
+	{
+		if (PrerequisiteId.IsNone()
+			|| !HasCompletedQuest(PrerequisiteId))
+		{
+			return ETDQuestActionResult::
+				PrerequisiteNotMet;
+		}
+	}
+
+	const UTDProgressionComponent* Progression =
+		PlayerState->GetProgressionComponent();
+
+	const int32 CurrentLevel =
+		Progression ? Progression->GetLevel() : 0;
+
+	if (CurrentLevel < Definition->MinimumLevel)
+	{
+		return ETDQuestActionResult::
+			PrerequisiteNotMet;
+	}
+
+	if (!Definition->AllowedClassIds.IsEmpty())
+	{
+		const FName CurrentClass =
+			PlayerState->GetCharacterClassId();
+
+		if (!Definition->AllowedClassIds.Contains(
+			CurrentClass))
+		{
+			return ETDQuestActionResult::
+				PrerequisiteNotMet;
+		}
+	}
+
+	for (const FTDQuestAffectionRequirement& Requirement :
+		Definition->AffectionRequirements)
+	{
+		if (Requirement.NPCId.IsNone()
+			|| GetAffectionPoints(Requirement.NPCId)
+				< Requirement.RequiredPoints)
+		{
+			return ETDQuestActionResult::
+				PrerequisiteNotMet;
+		}
+	}
+
+	const UTDPersonalWorldStateComponent* PersonalState =
+		PlayerState->GetPersonalWorldStateComponent();
+
+	if (PersonalState == nullptr
+		|| !PersonalState->MatchesCondition(
+			Definition->AcceptCondition))
+	{
+		return ETDQuestActionResult::
+			PrerequisiteNotMet;
+	}
+
+	return ETDQuestActionResult::Success;
+}
+
+ETDQuestActionResult
+UTDQuestComponent::GetQuestAcceptResult(
+	FName QuestId,
+	bool bIgnoreSubQuestLimit) const
+{
+	return CheckAcceptConditions(
+		QuestId,
+		bIgnoreSubQuestLimit);
+}
+
+void UTDQuestComponent::InitializeObjectiveProgress(
+	FTDQuestRuntimeData& Entry,
+	const FTDQuestRow& Definition) const
+{
+	Entry.ObjectiveProgress.Init(
+		0,
+		Definition.Objectives.Num());
+
+	const ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(GetOwner());
+
+	const UTDInventoryComponent* Inventory =
+		PlayerState
+			? PlayerState->GetInventoryComponent()
+			: nullptr;
+
+	const FGameplayTag CurrentZone =
+		PlayerState
+			? PlayerState->GetCurrentZoneId()
+			: FGameplayTag();
+
+	for (int32 Index = 0;
+		Index < Definition.Objectives.Num();
+		++Index)
+	{
+		const FTDQuestObjectiveDefinition& Objective =
+			Definition.Objectives[Index];
+
+		const int32 Required =
+			FMath::Max(1, Objective.RequiredCount);
+
+		if (Objective.ObjectiveType ==
+			ETDQuestObjectiveType::OwnItem)
+		{
+			const int32 CurrentCount =
+				Inventory
+					? Inventory->GetItemCount(
+						Objective.TargetId)
+					: 0;
+
+			Entry.ObjectiveProgress[Index] =
+				FMath::Clamp(
+					CurrentCount,
+					0,
+					Required);
+		}
+		else if (Objective.ObjectiveType ==
+			ETDQuestObjectiveType::EnterZone)
+		{
+			Entry.ObjectiveProgress[Index] =
+				CurrentZone.IsValid()
+				&& CurrentZone ==
+					Objective.TargetZone
+					? 1
+					: 0;
+		}
+	}
 }
 
 bool UTDQuestComponent::IsReadyToTurnIn(
 	const FTDQuestRuntimeData& Entry,
 	const FTDQuestRow& Definition) const
 {
-	if (Entry.ObjectiveProgress.Num() != Definition.Objectives.Num())
+	if (Definition.bWaitForFutureContent)
 	{
 		return false;
 	}
 
-	for (int32 Index = 0; Index < Definition.Objectives.Num(); ++Index)
+	if (Entry.ObjectiveProgress.Num()
+		!= Definition.Objectives.Num())
+	{
+		return false;
+	}
+
+	for (int32 Index = 0;
+		Index < Definition.Objectives.Num();
+		++Index)
 	{
 		const int32 Required =
-			FMath::Max(1, Definition.Objectives[Index].RequiredCount);
+			FMath::Max(
+				1,
+				Definition.Objectives[Index]
+					.RequiredCount);
 
-		if (Entry.ObjectiveProgress[Index] < Required)
+		if (Entry.ObjectiveProgress[Index]
+			< Required)
 		{
 			return false;
 		}
 	}
 
 	return true;
+}
+
+bool UTDQuestComponent::RefreshQuestState(
+	FTDQuestRuntimeData& Entry,
+	const FTDQuestRow& Definition)
+{
+	if (Entry.StateTag ==
+		TDTags::Quest_State_Completed.GetTag())
+	{
+		return false;
+	}
+
+	const FGameplayTag NewState =
+		IsReadyToTurnIn(Entry, Definition)
+			? TDTags::Quest_State_ReadyToTurnIn.GetTag()
+			: TDTags::Quest_State_Active.GetTag();
+
+	if (Entry.StateTag == NewState)
+	{
+		return false;
+	}
+
+	Entry.StateTag = NewState;
+	ApplyQuestStateTags(Entry, Definition);
+	return true;
+}
+
+void UTDQuestComponent::RemoveQuestStateTags(
+	const FTDQuestRow& Definition)
+{
+	ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(GetOwner());
+
+	UTDPersonalWorldStateComponent* PersonalState =
+		PlayerState
+			? PlayerState
+				->GetPersonalWorldStateComponent()
+			: nullptr;
+
+	if (PersonalState == nullptr)
+	{
+		return;
+	}
+
+	PersonalState->RemoveQuestTag(
+		Definition.AcceptedTag);
+
+	PersonalState->RemoveQuestTag(
+		Definition.ReadyTag);
+
+	PersonalState->RemoveQuestTag(
+		Definition.CompletedTag);
 }
 
 void UTDQuestComponent::ApplyQuestStateTags(
@@ -122,7 +637,8 @@ void UTDQuestComponent::ApplyQuestStateTags(
 
 	UTDPersonalWorldStateComponent* PersonalState =
 		PlayerState
-			? PlayerState->GetPersonalWorldStateComponent()
+			? PlayerState
+				->GetPersonalWorldStateComponent()
 			: nullptr;
 
 	if (PersonalState == nullptr)
@@ -130,35 +646,65 @@ void UTDQuestComponent::ApplyQuestStateTags(
 		return;
 	}
 
-	// 이전 단계 태그를 모두 지우고 현재 단계 하나만 넣는다.
-	PersonalState->RemoveQuestTag(Definition.AcceptedTag);
-	PersonalState->RemoveQuestTag(Definition.ReadyTag);
-	PersonalState->RemoveQuestTag(Definition.CompletedTag);
+	RemoveQuestStateTags(Definition);
 
-	if (Entry.StateTag == TDTags::Quest_State_Active.GetTag())
+	if (Entry.StateTag ==
+		TDTags::Quest_State_Active.GetTag())
 	{
-		PersonalState->AddQuestTag(Definition.AcceptedTag);
+		PersonalState->AddQuestTag(
+			Definition.AcceptedTag);
 	}
 	else if (Entry.StateTag ==
 		TDTags::Quest_State_ReadyToTurnIn.GetTag())
 	{
-		PersonalState->AddQuestTag(Definition.ReadyTag);
+		PersonalState->AddQuestTag(
+			Definition.ReadyTag);
 	}
 	else if (Entry.StateTag ==
 		TDTags::Quest_State_Completed.GetTag())
 	{
-		PersonalState->AddQuestTag(Definition.CompletedTag);
+		PersonalState->AddQuestTag(
+			Definition.CompletedTag);
 	}
 }
 
 ETDQuestActionResult UTDQuestComponent::AcceptQuest(
 	FName QuestId)
 {
+	return AcceptQuestInternal(
+		QuestId,
+		false,
+		ETDQuestTargetType::None,
+		NAME_None);
+}
+
+ETDQuestActionResult
+UTDQuestComponent::AcceptQuestAtTarget(
+	FName QuestId,
+	ETDQuestTargetType TargetType,
+	FName TargetId)
+{
+	return AcceptQuestInternal(
+		QuestId,
+		true,
+		TargetType,
+		TargetId);
+}
+
+ETDQuestActionResult
+UTDQuestComponent::AcceptQuestInternal(
+	FName QuestId,
+	bool bValidateTarget,
+	ETDQuestTargetType TargetType,
+	FName TargetId)
+{
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
 	{
-		return ETDQuestActionResult::InvalidDefinition;
+		return ETDQuestActionResult::
+			InvalidDefinition;
 	}
 
 	const FTDQuestRow* Definition =
@@ -166,56 +712,58 @@ ETDQuestActionResult UTDQuestComponent::AcceptQuest(
 
 	if (Definition == nullptr)
 	{
-		return ETDQuestActionResult::InvalidDefinition;
+		return ETDQuestActionResult::
+			InvalidDefinition;
 	}
 
-	if (const FTDQuestRuntimeData* Existing = FindQuest(QuestId))
+	if (bValidateTarget
+		&& (Definition->AcceptTargetType != TargetType
+			|| Definition->AcceptTargetId != TargetId))
 	{
-		return Existing->StateTag ==
-			TDTags::Quest_State_Completed.GetTag()
-				? ETDQuestActionResult::AlreadyCompleted
-				: ETDQuestActionResult::AlreadyAccepted;
+		return ETDQuestActionResult::
+			WrongAcceptTarget;
 	}
 
-	ATDPlayerState* PlayerState =
-		Cast<ATDPlayerState>(OwnerActor);
+	const ETDQuestActionResult CheckResult =
+		CheckAcceptConditions(
+			QuestId,
+			false);
 
-	UTDPersonalWorldStateComponent* PersonalState =
-		PlayerState
-			? PlayerState->GetPersonalWorldStateComponent()
-			: nullptr;
-
-	if (PersonalState == nullptr)
+	if (CheckResult !=
+		ETDQuestActionResult::Success)
 	{
-		return ETDQuestActionResult::InvalidDefinition;
+		return CheckResult;
 	}
 
-	if (!PersonalState->MatchesCondition(
-		Definition->AcceptCondition))
+	FTDQuestRuntimeData* Entry =
+		FindMutableQuest(QuestId);
+
+	if (Entry == nullptr)
 	{
-		return ETDQuestActionResult::PrerequisiteNotMet;
+		FTDQuestRuntimeData& NewEntry =
+			QuestEntries.AddDefaulted_GetRef();
+
+		NewEntry.QuestId = QuestId;
+		Entry = &NewEntry;
 	}
 
-	FTDQuestRuntimeData NewEntry;
-	NewEntry.QuestId = QuestId;
-	NewEntry.StateTag =
+	Entry->StateTag =
 		TDTags::Quest_State_Active.GetTag();
 
-	NewEntry.ObjectiveProgress.Init(
-		0,
-		Definition->Objectives.Num());
+	Entry->CompletedKstDayKey = 0;
+	Entry->AcceptSequence =
+		NextAcceptSequence++;
 
-	// 목표가 없는 퀘스트는 수락 즉시 완료 보고 가능 상태가 된다.
-	if (IsReadyToTurnIn(NewEntry, *Definition))
-	{
-		NewEntry.StateTag =
-			TDTags::Quest_State_ReadyToTurnIn.GetTag();
-	}
+	InitializeObjectiveProgress(
+		*Entry,
+		*Definition);
 
-	QuestEntries.Add(MoveTemp(NewEntry));
+	RefreshQuestState(
+		*Entry,
+		*Definition);
 
 	ApplyQuestStateTags(
-		QuestEntries.Last(),
+		*Entry,
 		*Definition);
 
 	NotifyQuestListChanged();
@@ -225,6 +773,71 @@ ETDQuestActionResult UTDQuestComponent::AcceptQuest(
 		*GetNameSafe(OwnerActor),
 		*QuestId.ToString());
 
+	if (Definition->bAutoCompleteWithoutTurnIn
+		&& Entry->StateTag ==
+			TDTags::Quest_State_ReadyToTurnIn.GetTag())
+	{
+		TurnInQuest(QuestId);
+	}
+
+	return ETDQuestActionResult::Success;
+}
+
+void UTDQuestComponent::ServerAbandonQuest_Implementation(
+	FName QuestId)
+{
+	AbandonQuest(QuestId);
+}
+
+ETDQuestActionResult UTDQuestComponent::AbandonQuest(
+	FName QuestId)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
+	{
+		return ETDQuestActionResult::
+			InvalidDefinition;
+	}
+
+	const int32 Index =
+		QuestEntries.IndexOfByPredicate(
+			[QuestId](const FTDQuestRuntimeData& Entry)
+			{
+				return Entry.QuestId == QuestId;
+			});
+
+	if (!QuestEntries.IsValidIndex(Index))
+	{
+		return ETDQuestActionResult::NotActive;
+	}
+
+	const FTDQuestRow* Definition =
+		FindQuestDefinition(QuestId);
+
+	if (Definition == nullptr)
+	{
+		return ETDQuestActionResult::
+			InvalidDefinition;
+	}
+
+	if (IsMainQuest(*Definition))
+	{
+		return ETDQuestActionResult::
+			CannotAbandonMain;
+	}
+
+	if (!IsActiveState(
+		QuestEntries[Index].StateTag))
+	{
+		return ETDQuestActionResult::NotActive;
+	}
+
+	RemoveQuestStateTags(*Definition);
+	QuestEntries.RemoveAt(Index);
+
+	NotifyQuestListChanged();
 	return ETDQuestActionResult::Success;
 }
 
@@ -244,10 +857,10 @@ int32 UTDQuestComponent::ReportQuestEvent(
 
 	int32 ChangedQuestCount = 0;
 
-	for (FTDQuestRuntimeData& Entry : QuestEntries)
+	for (FTDQuestRuntimeData& Entry :
+		QuestEntries)
 	{
-		if (Entry.StateTag !=
-			TDTags::Quest_State_Active.GetTag())
+		if (!IsActiveState(Entry.StateTag))
 		{
 			continue;
 		}
@@ -260,13 +873,6 @@ int32 UTDQuestComponent::ReportQuestEvent(
 			continue;
 		}
 
-		if (Entry.ObjectiveProgress.Num()
-			!= Definition->Objectives.Num())
-		{
-			Entry.ObjectiveProgress.SetNumZeroed(
-				Definition->Objectives.Num());
-		}
-
 		bool bChanged = false;
 
 		for (int32 Index = 0;
@@ -276,14 +882,19 @@ int32 UTDQuestComponent::ReportQuestEvent(
 			const FTDQuestObjectiveDefinition& Objective =
 				Definition->Objectives[Index];
 
-			if (!Objective.EventTag.IsValid()
-				|| !EventTag.MatchesTag(Objective.EventTag))
+			if (Objective.ObjectiveType !=
+					ETDQuestObjectiveType::GameplayEvent
+				|| !Objective.EventTag.IsValid()
+				|| !EventTag.MatchesTag(
+					Objective.EventTag))
 			{
 				continue;
 			}
 
 			const int32 Required =
-				FMath::Max(1, Objective.RequiredCount);
+				FMath::Max(
+					1,
+					Objective.RequiredCount);
 
 			const int32 Previous =
 				Entry.ObjectiveProgress[Index];
@@ -295,36 +906,378 @@ int32 UTDQuestComponent::ReportQuestEvent(
 					Required);
 
 			bChanged |=
-				Entry.ObjectiveProgress[Index] != Previous;
+				Entry.ObjectiveProgress[Index]
+				!= Previous;
 		}
 
-		if (!bChanged)
+		if (bChanged)
 		{
-			continue;
-		}
-
-		++ChangedQuestCount;
-
-		if (IsReadyToTurnIn(Entry, *Definition))
-		{
-			Entry.StateTag =
-				TDTags::Quest_State_ReadyToTurnIn.GetTag();
-
-			ApplyQuestStateTags(
+			RefreshQuestState(
 				Entry,
 				*Definition);
+
+			++ChangedQuestCount;
 		}
 	}
 
 	if (ChangedQuestCount > 0)
 	{
 		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
 	}
 
 	return ChangedQuestCount;
 }
 
-bool UTDQuestComponent::CanReceiveAllRewards(
+int32 UTDQuestComponent::ReportMonsterKilled(
+	FName MonsterId)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| MonsterId.IsNone())
+	{
+		return 0;
+	}
+
+	int32 ChangedQuestCount = 0;
+
+	for (FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr)
+		{
+			continue;
+		}
+
+		bool bChanged = false;
+
+		for (int32 Index = 0;
+			Index < Definition->Objectives.Num();
+			++Index)
+		{
+			const FTDQuestObjectiveDefinition& Objective =
+				Definition->Objectives[Index];
+
+			if (Objective.ObjectiveType !=
+					ETDQuestObjectiveType::KillMonster
+				|| Objective.TargetId != MonsterId)
+			{
+				continue;
+			}
+
+			const int32 Required =
+				FMath::Max(
+					1,
+					Objective.RequiredCount);
+
+			const int32 Previous =
+				Entry.ObjectiveProgress[Index];
+
+			Entry.ObjectiveProgress[Index] =
+				FMath::Min(
+					Previous + 1,
+					Required);
+
+			bChanged |=
+				Entry.ObjectiveProgress[Index]
+				!= Previous;
+		}
+
+		if (bChanged)
+		{
+			RefreshQuestState(
+				Entry,
+				*Definition);
+
+			++ChangedQuestCount;
+		}
+	}
+
+	if (ChangedQuestCount > 0)
+	{
+		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
+	}
+
+	return ChangedQuestCount;
+}
+
+int32 UTDQuestComponent::ReportZoneEntered(
+	FGameplayTag ZoneId)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| !ZoneId.IsValid())
+	{
+		return 0;
+	}
+
+	int32 ChangedQuestCount = 0;
+
+	for (FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr)
+		{
+			continue;
+		}
+
+		bool bChanged = false;
+
+		for (int32 Index = 0;
+			Index < Definition->Objectives.Num();
+			++Index)
+		{
+			const FTDQuestObjectiveDefinition& Objective =
+				Definition->Objectives[Index];
+
+			if (Objective.ObjectiveType !=
+					ETDQuestObjectiveType::EnterZone
+				|| Objective.TargetZone != ZoneId)
+			{
+				continue;
+			}
+
+			if (Entry.ObjectiveProgress[Index] < 1)
+			{
+				Entry.ObjectiveProgress[Index] = 1;
+				bChanged = true;
+			}
+		}
+
+		if (bChanged)
+		{
+			RefreshQuestState(
+				Entry,
+				*Definition);
+
+			++ChangedQuestCount;
+		}
+	}
+
+	if (ChangedQuestCount > 0)
+	{
+		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
+	}
+
+	return ChangedQuestCount;
+}
+
+int32 UTDQuestComponent::ReportChestOpened(
+	FName ChestId)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
+	{
+		return 0;
+	}
+
+	int32 ChangedQuestCount = 0;
+
+	for (FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr)
+		{
+			continue;
+		}
+
+		bool bChanged = false;
+
+		for (int32 Index = 0;
+			Index < Definition->Objectives.Num();
+			++Index)
+		{
+			const FTDQuestObjectiveDefinition& Objective =
+				Definition->Objectives[Index];
+
+			if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::OpenChest)
+			{
+				continue;
+			}
+
+			const bool bMatches =
+				Objective.TargetId.IsNone()
+				|| Objective.TargetId == ChestId;
+
+			if (!bMatches)
+			{
+				continue;
+			}
+
+			const int32 Required =
+				FMath::Max(
+					1,
+					Objective.RequiredCount);
+
+			const int32 Previous =
+				Entry.ObjectiveProgress[Index];
+
+			Entry.ObjectiveProgress[Index] =
+				FMath::Min(
+					Previous + 1,
+					Required);
+
+			bChanged |=
+				Entry.ObjectiveProgress[Index]
+				!= Previous;
+		}
+
+		if (bChanged)
+		{
+			RefreshQuestState(
+				Entry,
+				*Definition);
+
+			++ChangedQuestCount;
+		}
+	}
+
+	if (ChangedQuestCount > 0)
+	{
+		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
+	}
+
+	return ChangedQuestCount;
+}
+
+int32 UTDQuestComponent::RecalculateInventoryObjectives()
+{
+	if (bApplyingTurnInTransaction)
+	{
+		return 0;
+	}
+
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
+	{
+		return 0;
+	}
+
+	const ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(OwnerActor);
+
+	const UTDInventoryComponent* Inventory =
+		PlayerState
+			? PlayerState->GetInventoryComponent()
+			: nullptr;
+
+	if (Inventory == nullptr)
+	{
+		return 0;
+	}
+
+	int32 ChangedQuestCount = 0;
+
+	for (FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr)
+		{
+			continue;
+		}
+
+		bool bChanged = false;
+
+		for (int32 Index = 0;
+			Index < Definition->Objectives.Num();
+			++Index)
+		{
+			const FTDQuestObjectiveDefinition& Objective =
+				Definition->Objectives[Index];
+
+			if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::OwnItem)
+			{
+				continue;
+			}
+
+			const int32 Required =
+				FMath::Max(
+					1,
+					Objective.RequiredCount);
+
+			const int32 NewProgress =
+				FMath::Clamp(
+					Inventory->GetItemCount(
+						Objective.TargetId),
+					0,
+					Required);
+
+			if (Entry.ObjectiveProgress[Index]
+				!= NewProgress)
+			{
+				Entry.ObjectiveProgress[Index] =
+					NewProgress;
+
+				bChanged = true;
+			}
+		}
+
+		bChanged |= RefreshQuestState(
+			Entry,
+			*Definition);
+
+		if (bChanged)
+		{
+			++ChangedQuestCount;
+		}
+	}
+
+	if (ChangedQuestCount > 0)
+	{
+		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
+	}
+
+	return ChangedQuestCount;
+}
+
+bool UTDQuestComponent::
+CanApplyTurnInInventoryTransaction(
 	const FTDQuestRow& Definition,
 	ETDQuestActionResult& OutFailure) const
 {
@@ -338,32 +1291,6 @@ bool UTDQuestComponent::CanReceiveAllRewards(
 			? PlayerState->GetInventoryComponent()
 			: nullptr;
 
-	TMap<FName, int32> AggregatedRewards;
-
-	for (const FTDQuestItemReward& Reward :
-		Definition.ItemRewards)
-	{
-		if (Reward.Count <= 0)
-		{
-			continue;
-		}
-
-		if (Reward.ItemId.IsNone())
-		{
-			OutFailure =
-				ETDQuestActionResult::InvalidDefinition;
-			return false;
-		}
-
-		AggregatedRewards.FindOrAdd(Reward.ItemId)
-			+= Reward.Count;
-	}
-
-	if (AggregatedRewards.IsEmpty())
-	{
-		return true;
-	}
-
 	if (Inventory == nullptr)
 	{
 		OutFailure =
@@ -371,79 +1298,293 @@ bool UTDQuestComponent::CanReceiveAllRewards(
 		return false;
 	}
 
-	int32 RemainingFreeSlots =
-		Inventory->GetSlotCapacity()
-		- Inventory->GetUsedSlotCount();
+	TArray<FTDItemInstance> SimulatedItems =
+		Inventory->GetItems();
+
+	TMap<FName, int32> ItemsToConsume;
+
+	for (const FTDQuestObjectiveDefinition& Objective :
+		Definition.Objectives)
+	{
+		if (Objective.ObjectiveType ==
+				ETDQuestObjectiveType::OwnItem
+			&& Objective.bConsumeOnTurnIn)
+		{
+			if (Objective.TargetId.IsNone())
+			{
+				OutFailure =
+					ETDQuestActionResult::
+						InvalidDefinition;
+				return false;
+			}
+
+			ItemsToConsume.FindOrAdd(
+				Objective.TargetId)
+				+= FMath::Max(
+					1,
+					Objective.RequiredCount);
+		}
+	}
 
 	for (const TPair<FName, int32>& Pair :
-		AggregatedRewards)
+		ItemsToConsume)
 	{
+		int32 Remaining = Pair.Value;
+
+		for (FTDItemInstance& Item :
+			SimulatedItems)
+		{
+			if (Item.ItemId != Pair.Key
+				|| Remaining <= 0)
+			{
+				continue;
+			}
+
+			const int32 Removed =
+				FMath::Min(
+					Item.Count,
+					Remaining);
+
+			Item.Count -= Removed;
+			Remaining -= Removed;
+		}
+
+		if (Remaining > 0)
+		{
+			OutFailure =
+				ETDQuestActionResult::
+					RequiredItemMissing;
+			return false;
+		}
+
+		SimulatedItems.RemoveAll(
+			[](const FTDItemInstance& Item)
+			{
+				return Item.Count <= 0;
+			});
+	}
+
+	for (const FTDQuestItemReward& Reward :
+		Definition.ItemRewards)
+	{
+		if (Reward.ItemId.IsNone()
+			|| Reward.Count <= 0)
+		{
+			OutFailure =
+				ETDQuestActionResult::
+					InvalidDefinition;
+			return false;
+		}
+
 		const FTDItemRow* ItemDefinition =
-			Inventory->FindItemDefinition(Pair.Key);
+			Inventory->FindItemDefinition(
+				Reward.ItemId);
 
 		if (ItemDefinition == nullptr)
 		{
 			OutFailure =
-				ETDQuestActionResult::InvalidDefinition;
+				ETDQuestActionResult::
+					InvalidDefinition;
 			return false;
 		}
 
 		const int32 MaxStack =
 			ItemDefinition->bStackable
-				? FMath::Max(1, ItemDefinition->MaxStackSize)
+				? FMath::Max(
+					1,
+					ItemDefinition->MaxStackSize)
 				: 1;
 
-		int32 RemainingCount = Pair.Value;
+		int32 Remaining = Reward.Count;
 
 		if (ItemDefinition->bStackable)
 		{
-			for (const FTDItemInstance& Existing :
-				Inventory->GetItems())
+			for (FTDItemInstance& Item :
+				SimulatedItems)
 			{
-				if (Existing.ItemId != Pair.Key
-					|| Existing.Count >= MaxStack)
+				if (Item.ItemId != Reward.ItemId
+					|| Item.Count >= MaxStack
+					|| Remaining <= 0)
 				{
 					continue;
 				}
 
-				RemainingCount -=
-					MaxStack - Existing.Count;
+				const int32 Added =
+					FMath::Min(
+						Remaining,
+						MaxStack - Item.Count);
 
-				if (RemainingCount <= 0)
-				{
-					break;
-				}
+				Item.Count += Added;
+				Remaining -= Added;
 			}
 		}
 
-		if (RemainingCount > 0)
+		while (Remaining > 0)
 		{
-			RemainingFreeSlots -=
-				FMath::DivideAndRoundUp(
-					RemainingCount,
-					MaxStack);
-		}
+			if (SimulatedItems.Num()
+				>= Inventory->GetSlotCapacity())
+			{
+				OutFailure =
+					ETDQuestActionResult::
+						InventoryFull;
+				return false;
+			}
 
-		if (RemainingFreeSlots < 0)
-		{
-			OutFailure =
-				ETDQuestActionResult::InventoryFull;
-			return false;
+			FTDItemInstance NewItem;
+			NewItem.ItemId = Reward.ItemId;
+			NewItem.Count =
+				FMath::Min(
+					Remaining,
+					MaxStack);
+
+			Remaining -= NewItem.Count;
+			SimulatedItems.Add(NewItem);
 		}
 	}
 
 	return true;
 }
 
+bool UTDQuestComponent::
+ApplyTurnInInventoryTransaction(
+	const FTDQuestRow& Definition)
+{
+	ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(GetOwner());
+
+	UTDInventoryComponent* Inventory =
+		PlayerState
+			? PlayerState->GetInventoryComponent()
+			: nullptr;
+
+	if (Inventory == nullptr)
+	{
+		return false;
+	}
+
+	TMap<FName, int32> ItemsToConsume;
+
+	for (const FTDQuestObjectiveDefinition& Objective :
+		Definition.Objectives)
+	{
+		if (Objective.ObjectiveType ==
+				ETDQuestObjectiveType::OwnItem
+			&& Objective.bConsumeOnTurnIn)
+		{
+			ItemsToConsume.FindOrAdd(
+				Objective.TargetId)
+				+= FMath::Max(
+					1,
+					Objective.RequiredCount);
+		}
+	}
+
+	bApplyingTurnInTransaction = true;
+
+	for (const TPair<FName, int32>& Pair :
+		ItemsToConsume)
+	{
+		int32 Remaining = Pair.Value;
+
+		while (Remaining > 0)
+		{
+			int32 FoundSlot = INDEX_NONE;
+			int32 FoundCount = 0;
+
+			for (const FTDItemInstance& Item :
+				Inventory->GetItems())
+			{
+				if (Item.ItemId == Pair.Key)
+				{
+					FoundSlot = Item.SlotIndex;
+					FoundCount = Item.Count;
+					break;
+				}
+			}
+
+			if (FoundSlot == INDEX_NONE)
+			{
+				bApplyingTurnInTransaction = false;
+				return false;
+			}
+
+			const int32 ToConsume =
+				FMath::Min(
+					Remaining,
+					FoundCount);
+
+			if (!Inventory->ConsumeItemAt(
+				FoundSlot,
+				ToConsume))
+			{
+				bApplyingTurnInTransaction = false;
+				return false;
+			}
+
+			Remaining -= ToConsume;
+		}
+	}
+
+	for (const FTDQuestItemReward& Reward :
+		Definition.ItemRewards)
+	{
+		if (!Inventory->AddItem(
+			Reward.ItemId,
+			Reward.Count))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("사전 검사 통과 후 퀘스트 보상 지급 실패: Item='%s'"),
+				*Reward.ItemId.ToString());
+
+			bApplyingTurnInTransaction = false;
+			return false;
+		}
+	}
+
+	bApplyingTurnInTransaction = false;
+	return true;
+}
+
 ETDQuestActionResult UTDQuestComponent::TurnInQuest(
 	FName QuestId)
 {
+	return TurnInQuestInternal(
+		QuestId,
+		false,
+		ETDQuestTargetType::None,
+		NAME_None);
+}
+
+ETDQuestActionResult
+UTDQuestComponent::TurnInQuestAtTarget(
+	FName QuestId,
+	ETDQuestTargetType TargetType,
+	FName TargetId)
+{
+	return TurnInQuestInternal(
+		QuestId,
+		true,
+		TargetType,
+		TargetId);
+}
+
+ETDQuestActionResult
+UTDQuestComponent::TurnInQuestInternal(
+	FName QuestId,
+	bool bValidateTarget,
+	ETDQuestTargetType TargetType,
+	FName TargetId)
+{
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
 	{
-		return ETDQuestActionResult::InvalidDefinition;
+		return ETDQuestActionResult::
+			InvalidDefinition;
 	}
+
+	RecalculateInventoryObjectives();
 
 	FTDQuestRuntimeData* Entry =
 		FindMutableQuest(QuestId);
@@ -456,7 +1597,8 @@ ETDQuestActionResult UTDQuestComponent::TurnInQuest(
 	if (Entry->StateTag ==
 		TDTags::Quest_State_Completed.GetTag())
 	{
-		return ETDQuestActionResult::AlreadyCompleted;
+		return ETDQuestActionResult::
+			AlreadyCompleted;
 	}
 
 	if (Entry->StateTag !=
@@ -470,16 +1612,27 @@ ETDQuestActionResult UTDQuestComponent::TurnInQuest(
 
 	if (Definition == nullptr)
 	{
-		return ETDQuestActionResult::InvalidDefinition;
+		return ETDQuestActionResult::
+			InvalidDefinition;
 	}
 
-	ETDQuestActionResult RewardFailure;
-
-	if (!CanReceiveAllRewards(
-		*Definition,
-		RewardFailure))
+	if (bValidateTarget
+		&& (Definition->TurnInTargetType
+				!= TargetType
+			|| Definition->TurnInTargetId
+				!= TargetId))
 	{
-		return RewardFailure;
+		return ETDQuestActionResult::
+			WrongTurnInTarget;
+	}
+
+	ETDQuestActionResult InventoryFailure;
+
+	if (!CanApplyTurnInInventoryTransaction(
+		*Definition,
+		InventoryFailure))
+	{
+		return InventoryFailure;
 	}
 
 	ATDPlayerState* PlayerState =
@@ -490,72 +1643,622 @@ ETDQuestActionResult UTDQuestComponent::TurnInQuest(
 			? PlayerState->GetInventoryComponent()
 			: nullptr;
 
-	for (const FTDQuestItemReward& Reward :
-		Definition->ItemRewards)
+	UTDProgressionComponent* Progression =
+		PlayerState
+			? PlayerState->GetProgressionComponent()
+			: nullptr;
+
+	if ((Definition->GoldReward > 0
+			&& Inventory == nullptr)
+		|| (Definition->ExpReward > 0
+			&& Progression == nullptr))
 	{
-		if (Reward.Count <= 0)
-		{
-			continue;
-		}
+		return ETDQuestActionResult::
+			InvalidDefinition;
+	}
 
-		if (Inventory == nullptr
-			|| !Inventory->AddItem(
-				Reward.ItemId,
-				Reward.Count))
-		{
-			// 사전 계산을 통과했다면 정상적으로는 도달하지 않는다.
-			UE_LOG(LogTemp, Error,
-				TEXT("퀘스트 보상 사전 검사 후 지급 실패: Quest='%s', Item='%s'"),
-				*QuestId.ToString(),
-				*Reward.ItemId.ToString());
+	if (!ApplyTurnInInventoryTransaction(
+		*Definition))
+	{
+		return ETDQuestActionResult::
+			InvalidDefinition;
+	}
 
-			return ETDQuestActionResult::InvalidDefinition;
-		}
+	if (Definition->GoldReward > 0)
+	{
+		Inventory->AddGold(
+			Definition->GoldReward);
 	}
 
 	if (Definition->ExpReward > 0)
 	{
-		UTDProgressionComponent* Progression =
-			PlayerState
-				? PlayerState->GetProgressionComponent()
-				: nullptr;
-
-		if (Progression == nullptr)
-		{
-			return ETDQuestActionResult::InvalidDefinition;
-		}
-
 		Progression->AddExp(
 			Definition->ExpReward);
 	}
 
+	for (const FTDQuestAffectionReward& Reward :
+		Definition->AffectionRewards)
+	{
+		if (!Reward.NPCId.IsNone()
+			&& Reward.Amount >= 0)
+		{
+			AddAffection(
+				Reward.NPCId,
+				Reward.Amount);
+		}
+	}
+
+	const bool bWasMainQuest =
+		IsMainQuest(*Definition);
+
+	const FName NextQuestId =
+		Definition->NextQuestId;
+
 	Entry->StateTag =
 		TDTags::Quest_State_Completed.GetTag();
+
+	Entry->CompletedKstDayKey =
+		Definition->RepeatType ==
+			ETDQuestRepeatType::Cooldown24Hours
+				? GetCurrentKstDayKey()
+				: 0;
 
 	ApplyQuestStateTags(
 		*Entry,
 		*Definition);
 
+	// 아이템 제출로 다른 퀘스트의 보유량이 줄 수 있다.
+	RecalculateInventoryObjectives();
+
 	NotifyQuestListChanged();
 
 	UE_LOG(LogTemp, Log,
-		TEXT("퀘스트 완료: Player='%s', Quest='%s', Exp=%d"),
+		TEXT("퀘스트 완료: Player='%s', Quest='%s'"),
 		*GetNameSafe(OwnerActor),
-		*QuestId.ToString(),
-		Definition->ExpReward);
+		*QuestId.ToString());
+
+	/**
+	 * 메인만 자동 연계한다.
+	 * 서브 연계는 선행 조건만 열리고 NPC/물건에서 직접 받아야 한다.
+	 */
+	if (bWasMainQuest
+		&& !NextQuestId.IsNone())
+	{
+		const ETDQuestActionResult NextResult =
+			AcceptQuest(NextQuestId);
+
+		if (NextResult !=
+				ETDQuestActionResult::Success
+			&& NextResult !=
+				ETDQuestActionResult::AlreadyAccepted)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("다음 메인 퀘스트 시작 실패: Current='%s', Next='%s', Result=%d"),
+				*QuestId.ToString(),
+				*NextQuestId.ToString(),
+				static_cast<int32>(NextResult));
+		}
+	}
 
 	return ETDQuestActionResult::Success;
+}
+
+FTDQuestViewData UTDQuestComponent::MakeQuestView(
+	const FTDQuestRuntimeData& Entry,
+	const FTDQuestRow& Definition) const
+{
+	FTDQuestViewData View;
+
+	View.QuestId = Entry.QuestId;
+	View.QuestTypeTag =
+		Definition.QuestTypeTag;
+	View.StateTag = Entry.StateTag;
+	View.DisplayName =
+		Definition.DisplayName;
+	View.Description =
+		Definition.Description;
+	View.ItemRewards =
+		Definition.ItemRewards;
+	View.ExpReward =
+		Definition.ExpReward;
+	View.GoldReward =
+		Definition.GoldReward;
+	View.bDailyQuest =
+		Definition.RepeatType ==
+			ETDQuestRepeatType::Cooldown24Hours;
+	View.AcceptSequence =
+		Entry.AcceptSequence;
+
+	for (int32 Index = 0;
+		 Index < Definition.Objectives.Num();
+		 ++Index)
+	{
+		const FTDQuestObjectiveDefinition& Objective =
+			Definition.Objectives[Index];
+
+		FTDQuestObjectiveView& ObjectiveView =
+			View.Objectives.AddDefaulted_GetRef();
+
+		ObjectiveView.Description =
+			Objective.Description;
+
+		ObjectiveView.RequiredCount =
+			FMath::Max(
+				1,
+				Objective.RequiredCount);
+
+		ObjectiveView.CurrentCount =
+			Entry.ObjectiveProgress.IsValidIndex(Index)
+				? Entry.ObjectiveProgress[Index]
+				: 0;
+
+		ObjectiveView.bCompleted =
+			ObjectiveView.CurrentCount
+			>= ObjectiveView.RequiredCount;
+
+		/**
+		 * 숫자 진행도는 몬스터 처치와
+		 * 현재 아이템 보유 목표에만 표시한다.
+		 *
+		 * NPC 대화, 지역 진입, 상자 열기는
+		 * 목표 설명만 표시한다.
+		 */
+		ObjectiveView.bShowNumericProgress =
+			Objective.ObjectiveType ==
+				ETDQuestObjectiveType::KillMonster
+			|| Objective.ObjectiveType ==
+				ETDQuestObjectiveType::OwnItem;
+	}
+
+	return View;
 }
 
 TArray<FTDQuestViewData>
 UTDQuestComponent::GetQuestViews() const
 {
 	TArray<FTDQuestViewData> Result;
-	Result.Reserve(QuestEntries.Num());
 
 	for (const FTDQuestRuntimeData& Entry :
 		QuestEntries)
 	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition != nullptr)
+		{
+			Result.Add(
+				MakeQuestView(
+					Entry,
+					*Definition));
+		}
+	}
+
+	Result.Sort(
+		[](const FTDQuestViewData& A,
+		   const FTDQuestViewData& B)
+		{
+			const bool bAMain =
+				A.QuestTypeTag ==
+					TDTags::Quest_Type_Main.GetTag();
+
+			const bool bBMain =
+				B.QuestTypeTag ==
+					TDTags::Quest_Type_Main.GetTag();
+
+			if (bAMain != bBMain)
+			{
+				return bAMain;
+			}
+
+			return A.AcceptSequence
+				< B.AcceptSequence;
+		});
+
+	return Result;
+}
+
+TArray<FTDQuestViewData>
+UTDQuestComponent::GetQuestTrackerViews() const
+{
+	const TArray<FTDQuestViewData> AllViews =
+		GetQuestViews();
+
+	TArray<FTDQuestViewData> Result;
+	int32 AddedSubQuestCount = 0;
+
+	for (const FTDQuestViewData& View :
+		AllViews)
+	{
+		const bool bMain =
+			View.QuestTypeTag ==
+				TDTags::Quest_Type_Main.GetTag();
+
+		if (bMain)
+		{
+			if (!Result.ContainsByPredicate(
+				[](const FTDQuestViewData& Existing)
+				{
+					return Existing.QuestTypeTag ==
+						TDTags::Quest_Type_Main.GetTag();
+				}))
+			{
+				Result.Add(View);
+			}
+
+			continue;
+		}
+
+		if (AddedSubQuestCount < 2)
+		{
+			Result.Add(View);
+			++AddedSubQuestCount;
+		}
+	}
+
+	return Result;
+}
+
+FName UTDQuestComponent::
+FindBestTurnInQuestForTarget(
+	ETDQuestTargetType TargetType,
+	FName TargetId) const
+{
+	const FTDQuestRuntimeData* Best = nullptr;
+	bool bBestIsMain = false;
+
+	for (const FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (Entry.StateTag !=
+			TDTags::Quest_State_ReadyToTurnIn.GetTag())
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr
+			|| Definition->TurnInTargetType != TargetType
+			|| Definition->TurnInTargetId != TargetId)
+		{
+			continue;
+		}
+
+		const bool bCurrentIsMain =
+			IsMainQuest(*Definition);
+
+		if (Best == nullptr
+			|| (bCurrentIsMain && !bBestIsMain)
+			|| (bCurrentIsMain == bBestIsMain
+				&& Entry.AcceptSequence
+					< Best->AcceptSequence))
+		{
+			Best = &Entry;
+			bBestIsMain = bCurrentIsMain;
+		}
+	}
+
+	return Best ? Best->QuestId : NAME_None;
+}
+
+FName UTDQuestComponent::
+FindBestOfferQuestForTarget(
+	ETDQuestTargetType TargetType,
+	FName TargetId,
+	bool bIgnoreSubQuestLimitForMarker) const
+{
+	if (QuestTable == nullptr)
+	{
+		return NAME_None;
+	}
+
+	FName BestQuestId = NAME_None;
+	bool bBestIsMain = false;
+
+	QuestTable->ForeachRow<FTDQuestRow>(
+		TEXT("FindBestOfferQuestForTarget"),
+		[this,
+		 TargetType,
+		 TargetId,
+		 bIgnoreSubQuestLimitForMarker,
+		 &BestQuestId,
+		 &bBestIsMain](
+			const FName& RowName,
+			const FTDQuestRow& Definition)
+		{
+			if (Definition.AcceptTargetType != TargetType
+				|| Definition.AcceptTargetId != TargetId)
+			{
+				return;
+			}
+
+			const ETDQuestActionResult Result =
+				CheckAcceptConditions(
+					RowName,
+					bIgnoreSubQuestLimitForMarker);
+
+			if (Result !=
+				ETDQuestActionResult::Success)
+			{
+				return;
+			}
+
+			const bool bCurrentIsMain =
+				IsMainQuest(Definition);
+
+			if (BestQuestId.IsNone()
+				|| (bCurrentIsMain && !bBestIsMain))
+			{
+				BestQuestId = RowName;
+				bBestIsMain = bCurrentIsMain;
+			}
+		});
+
+	return BestQuestId;
+}
+
+FTDQuestMarkerView
+UTDQuestComponent::GetQuestMarkerForTarget(
+	ETDQuestTargetType TargetType,
+	FName TargetId) const
+{
+	FTDQuestMarkerView View;
+
+	/**
+	 * 1순위: 목표를 모두 달성하여 완료 보고 가능한 퀘스트.
+	 *
+	 * 몬스터 처치, 아이템 수집, 지역 진입 등의 목표를
+	 * 모두 달성하면 완료 NPC 머리 위에 ?를 표시한다.
+	 */
+	const FName TurnInQuestId =
+		FindBestTurnInQuestForTarget(
+			TargetType,
+			TargetId);
+
+	if (!TurnInQuestId.IsNone())
+	{
+		View.MarkerType =
+			ETDQuestMarkerType::TurnIn;
+
+		View.QuestId = TurnInQuestId;
+
+		if (const FTDQuestRow* Definition =
+			FindQuestDefinition(TurnInQuestId))
+		{
+			View.QuestTypeTag =
+				Definition->QuestTypeTag;
+		}
+
+		return View;
+	}
+
+	/**
+	 * 2순위: 대화 자체가 목표인 진행 중 메인 퀘스트.
+	 *
+	 * 모든 목표가 GameplayEvent인 메인 퀘스트만
+	 * 대화 목적지에 !를 표시한다.
+	 *
+	 * KillMonster, OwnItem, EnterZone, OpenChest 같은
+	 * 목표가 하나라도 포함되어 있으면 진행 중에는
+	 * NPC 머리 위에 아무 마커도 표시하지 않는다.
+	 */
+	const FTDQuestRuntimeData*
+		ActiveDialogueMainQuest = nullptr;
+
+	for (const FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (Entry.StateTag !=
+			TDTags::Quest_State_Active.GetTag())
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr
+			|| !IsMainQuest(*Definition)
+			|| Definition->Objectives.IsEmpty()
+			|| Definition
+				->InProgressDialogueRow.IsNone())
+		{
+			continue;
+		}
+
+		bool bDialogueOnlyQuest = true;
+
+		for (const FTDQuestObjectiveDefinition&
+			 Objective : Definition->Objectives)
+		{
+			if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::
+					GameplayEvent)
+			{
+				bDialogueOnlyQuest = false;
+				break;
+			}
+		}
+
+		if (!bDialogueOnlyQuest)
+		{
+			continue;
+		}
+
+		const bool bMatchesAcceptTarget =
+			Definition->AcceptTargetType ==
+				TargetType
+			&& Definition->AcceptTargetId ==
+				TargetId;
+
+		const bool bMatchesTurnInTarget =
+			Definition->TurnInTargetType ==
+				TargetType
+			&& Definition->TurnInTargetId ==
+				TargetId;
+
+		if (!bMatchesAcceptTarget
+			&& !bMatchesTurnInTarget)
+		{
+			continue;
+		}
+
+		if (ActiveDialogueMainQuest == nullptr
+			|| Entry.AcceptSequence <
+				ActiveDialogueMainQuest
+					->AcceptSequence)
+		{
+			ActiveDialogueMainQuest = &Entry;
+		}
+	}
+
+	if (ActiveDialogueMainQuest != nullptr)
+	{
+		View.MarkerType =
+			ETDQuestMarkerType::Available;
+
+		View.QuestId =
+			ActiveDialogueMainQuest->QuestId;
+
+		if (const FTDQuestRow* Definition =
+			FindQuestDefinition(
+				ActiveDialogueMainQuest
+					->QuestId))
+		{
+			View.QuestTypeTag =
+				Definition->QuestTypeTag;
+		}
+
+		return View;
+	}
+
+	/**
+	 * 3순위: NPC나 물건에서 직접 수락 가능한 퀘스트.
+	 *
+	 * 서브 퀘스트와 일일 퀘스트가 주로 해당한다.
+	 */
+	const FName OfferQuestId =
+		FindBestOfferQuestForTarget(
+			TargetType,
+			TargetId,
+			true);
+
+	if (!OfferQuestId.IsNone())
+	{
+		View.MarkerType =
+			ETDQuestMarkerType::Available;
+
+		View.QuestId = OfferQuestId;
+
+		if (const FTDQuestRow* Definition =
+			FindQuestDefinition(OfferQuestId))
+		{
+			View.QuestTypeTag =
+				Definition->QuestTypeTag;
+		}
+	}
+
+	return View;
+}
+
+void UTDQuestComponent::EnsureInitialMainQuest()
+{
+	for (const FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (!IsActiveState(Entry.StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition != nullptr
+			&& IsMainQuest(*Definition))
+		{
+			return;
+		}
+	}
+
+	if (QuestTable == nullptr)
+	{
+		return;
+	}
+
+	FName InitialQuestId = NAME_None;
+
+	QuestTable->ForeachRow<FTDQuestRow>(
+		TEXT("EnsureInitialMainQuest"),
+		[&InitialQuestId](
+			const FName& RowName,
+			const FTDQuestRow& Definition)
+		{
+			if (InitialQuestId.IsNone()
+				&& Definition.bInitialMainQuest)
+			{
+				InitialQuestId = RowName;
+			}
+		});
+
+	if (InitialQuestId.IsNone())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("DT_Quest에 bInitialMainQuest가 체크된 행이 없다."));
+		return;
+	}
+
+	if (!HasQuest(InitialQuestId))
+	{
+		AcceptQuest(InitialQuestId);
+	}
+}
+
+void UTDQuestComponent::
+RepairDuplicateActiveMainQuests()
+{
+	TArray<int32> MainIndices;
+
+	for (int32 Index = 0;
+		Index < QuestEntries.Num();
+		++Index)
+	{
+		if (!IsActiveState(
+			QuestEntries[Index].StateTag))
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(
+				QuestEntries[Index].QuestId);
+
+		if (Definition != nullptr
+			&& IsMainQuest(*Definition))
+		{
+			MainIndices.Add(Index);
+		}
+	}
+
+	if (MainIndices.Num() <= 1)
+	{
+		return;
+	}
+
+	int32 BestIndex = MainIndices[0];
+	double BestScore = -1.0;
+
+	for (const int32 Index : MainIndices)
+	{
+		const FTDQuestRuntimeData& Entry =
+			QuestEntries[Index];
+
 		const FTDQuestRow* Definition =
 			FindQuestDefinition(Entry.QuestId);
 
@@ -564,42 +2267,146 @@ UTDQuestComponent::GetQuestViews() const
 			continue;
 		}
 
-		FTDQuestViewData& View =
-			Result.AddDefaulted_GetRef();
+		double Score = 0.0;
 
-		View.QuestId = Entry.QuestId;
-		View.QuestTypeTag =
-			Definition->QuestTypeTag;
-		View.StateTag = Entry.StateTag;
-		View.DisplayName =
-			Definition->DisplayName;
-		View.Description =
-			Definition->Description;
-
-		for (int32 Index = 0;
-			Index < Definition->Objectives.Num();
-			++Index)
+		for (int32 ObjectiveIndex = 0;
+			ObjectiveIndex <
+				Definition->Objectives.Num();
+			++ObjectiveIndex)
 		{
-			const FTDQuestObjectiveDefinition& Objective =
-				Definition->Objectives[Index];
+			const int32 Required =
+				FMath::Max(
+					1,
+					Definition->Objectives[
+						ObjectiveIndex]
+						.RequiredCount);
 
-			FTDQuestObjectiveView& ObjectiveView =
-				View.Objectives.AddDefaulted_GetRef();
-
-			ObjectiveView.Description =
-				Objective.Description;
-
-			ObjectiveView.RequiredCount =
-				FMath::Max(1, Objective.RequiredCount);
-
-			ObjectiveView.CurrentCount =
-				Entry.ObjectiveProgress.IsValidIndex(Index)
-					? Entry.ObjectiveProgress[Index]
+			const int32 Current =
+				Entry.ObjectiveProgress.IsValidIndex(
+					ObjectiveIndex)
+					? Entry.ObjectiveProgress[
+						ObjectiveIndex]
 					: 0;
+
+			Score += static_cast<double>(Current)
+				/ Required;
+		}
+
+		if (Score > BestScore)
+		{
+			BestScore = Score;
+			BestIndex = Index;
 		}
 	}
 
-	return Result;
+	MainIndices.Sort(
+		[](int32 A, int32 B)
+		{
+			return A > B;
+		});
+
+	for (const int32 Index : MainIndices)
+	{
+		if (Index == BestIndex)
+		{
+			continue;
+		}
+
+		if (const FTDQuestRow* Definition =
+			FindQuestDefinition(
+				QuestEntries[Index].QuestId))
+		{
+			RemoveQuestStateTags(*Definition);
+		}
+
+		UE_LOG(LogTemp, Error,
+			TEXT("활성 메인 퀘스트 중복 복구: '%s' 제거"),
+			*QuestEntries[Index].QuestId.ToString());
+
+		QuestEntries.RemoveAt(Index);
+
+		if (Index < BestIndex)
+		{
+			--BestIndex;
+		}
+	}
+}
+
+void UTDQuestComponent::ProcessAutomaticQuests()
+{
+	TArray<FName> AutomaticQuestIds;
+
+	for (const FTDQuestRuntimeData& Entry :
+		QuestEntries)
+	{
+		if (Entry.StateTag !=
+			TDTags::Quest_State_ReadyToTurnIn.GetTag())
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition != nullptr
+			&& Definition->bAutoCompleteWithoutTurnIn)
+		{
+			AutomaticQuestIds.Add(
+				Entry.QuestId);
+		}
+	}
+
+	for (const FName QuestId :
+		AutomaticQuestIds)
+	{
+		TurnInQuest(QuestId);
+	}
+}
+
+void UTDQuestComponent::HandleInventoryChanged()
+{
+	if (GetOwner() != nullptr
+		&& GetOwner()->HasAuthority())
+	{
+		RecalculateInventoryObjectives();
+	}
+}
+
+void UTDQuestComponent::HandleZoneChanged(
+	FGameplayTag NewZoneId)
+{
+	if (GetOwner() != nullptr
+		&& GetOwner()->HasAuthority())
+	{
+		ReportZoneEntered(NewZoneId);
+	}
+}
+
+void UTDQuestComponent::HandleCharacterSelected()
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	RepairDuplicateActiveMainQuests();
+	EnsureInitialMainQuest();
+	RecalculateInventoryObjectives();
+
+	const ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(OwnerActor);
+
+	if (PlayerState != nullptr
+		&& PlayerState->GetCurrentZoneId().IsValid())
+	{
+		ReportZoneEntered(
+			PlayerState->GetCurrentZoneId());
+	}
+
+	ProcessAutomaticQuests();
 }
 
 void UTDQuestComponent::NotifyQuestListChanged()
@@ -617,10 +2424,22 @@ void UTDQuestComponent::OnRep_QuestEntries()
 	OnQuestListChanged.Broadcast();
 }
 
+void UTDQuestComponent::OnRep_AffectionEntries()
+{
+	for (const FTDAffectionRuntimeData& Entry :
+		AffectionEntries)
+	{
+		OnAffectionChanged.Broadcast(
+			Entry.NPCId,
+			Entry.Points);
+	}
+}
+
 void UTDQuestComponent::WriteSaveData(
 	FTDPlayerSaveData& Out) const
 {
 	Out.QuestStates = QuestEntries;
+	Out.AffectionStates = AffectionEntries;
 }
 
 void UTDQuestComponent::ReadSaveData(
@@ -628,12 +2447,15 @@ void UTDQuestComponent::ReadSaveData(
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority())
 	{
 		return;
 	}
 
 	QuestEntries.Reset();
+	AffectionEntries.Reset();
+	NextAcceptSequence = 1;
 
 	if (QuestTable == nullptr)
 	{
@@ -651,7 +2473,8 @@ void UTDQuestComponent::ReadSaveData(
 			FindQuestDefinition(Saved.QuestId);
 
 		if (Definition == nullptr
-			|| LoadedQuestIds.Contains(Saved.QuestId))
+			|| LoadedQuestIds.Contains(
+				Saved.QuestId))
 		{
 			continue;
 		}
@@ -659,6 +2482,15 @@ void UTDQuestComponent::ReadSaveData(
 		FTDQuestRuntimeData Sanitized;
 		Sanitized.QuestId = Saved.QuestId;
 		Sanitized.StateTag = Saved.StateTag;
+		Sanitized.AcceptSequence =
+			FMath::Max<int64>(
+				1,
+				Saved.AcceptSequence);
+		Sanitized.CompletedKstDayKey =
+			FMath::Max(
+				0,
+				Saved.CompletedKstDayKey);
+
 		Sanitized.ObjectiveProgress.Init(
 			0,
 			Definition->Objectives.Num());
@@ -670,10 +2502,12 @@ void UTDQuestComponent::ReadSaveData(
 			const int32 Required =
 				FMath::Max(
 					1,
-					Definition->Objectives[Index].RequiredCount);
+					Definition->Objectives[Index]
+						.RequiredCount);
 
 			const int32 SavedProgress =
-				Saved.ObjectiveProgress.IsValidIndex(Index)
+				Saved.ObjectiveProgress.IsValidIndex(
+					Index)
 					? Saved.ObjectiveProgress[Index]
 					: 0;
 
@@ -686,21 +2520,58 @@ void UTDQuestComponent::ReadSaveData(
 
 		const bool bCompleted =
 			Sanitized.StateTag ==
-			TDTags::Quest_State_Completed.GetTag();
+				TDTags::Quest_State_Completed.GetTag();
 
 		if (!bCompleted)
 		{
 			Sanitized.StateTag =
-				IsReadyToTurnIn(Sanitized, *Definition)
-					? TDTags::Quest_State_ReadyToTurnIn.GetTag()
-					: TDTags::Quest_State_Active.GetTag();
+				TDTags::Quest_State_Active.GetTag();
+
+			RefreshQuestState(
+				Sanitized,
+				*Definition);
 		}
 
-		LoadedQuestIds.Add(Sanitized.QuestId);
-		QuestEntries.Add(MoveTemp(Sanitized));
+		NextAcceptSequence =
+			FMath::Max(
+				NextAcceptSequence,
+				Sanitized.AcceptSequence + 1);
+
+		LoadedQuestIds.Add(
+			Sanitized.QuestId);
+
+		QuestEntries.Add(
+			MoveTemp(Sanitized));
 	}
 
-	for (const FTDQuestRuntimeData& Entry : QuestEntries)
+	TSet<FName> LoadedNPCIds;
+
+	for (const FTDAffectionRuntimeData& Saved :
+		In.AffectionStates)
+	{
+		if (Saved.NPCId.IsNone()
+			|| LoadedNPCIds.Contains(Saved.NPCId))
+		{
+			continue;
+		}
+
+		FTDAffectionRuntimeData Sanitized;
+		Sanitized.NPCId = Saved.NPCId;
+		Sanitized.Points =
+			FMath::Max(0, Saved.Points);
+		Sanitized.LastGiftKstDayKey =
+			FMath::Max(
+				0,
+				Saved.LastGiftKstDayKey);
+
+		LoadedNPCIds.Add(Sanitized.NPCId);
+		AffectionEntries.Add(Sanitized);
+	}
+
+	RepairDuplicateActiveMainQuests();
+
+	for (const FTDQuestRuntimeData& Entry :
+		QuestEntries)
 	{
 		if (const FTDQuestRow* Definition =
 			FindQuestDefinition(Entry.QuestId))
@@ -711,5 +2582,25 @@ void UTDQuestComponent::ReadSaveData(
 		}
 	}
 
+	const ATDPlayerState* PlayerState =
+		Cast<ATDPlayerState>(OwnerActor);
+
+	if (PlayerState != nullptr
+		&& PlayerState->HasSelectedCharacter())
+	{
+		EnsureInitialMainQuest();
+		RecalculateInventoryObjectives();
+
+		if (PlayerState
+			->GetCurrentZoneId()
+			.IsValid())
+		{
+			ReportZoneEntered(
+				PlayerState
+					->GetCurrentZoneId());
+		}
+	}
+
+	ProcessAutomaticQuests();
 	NotifyQuestListChanged();
 }

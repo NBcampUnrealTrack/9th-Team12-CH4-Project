@@ -3,25 +3,18 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Data/TDWorldCondition.h"
+#include "Data/TDWorldProgressTypes.h"
 #include "GameplayTagContainer.h"
 #include "Save/TDPlayerSaveData.h"
 #include "TDPersonalWorldStateComponent.generated.h"
 
-/**
- * 퀘스트 또는 개인 월드 상태가 변경됐을 때.
- *
- * NPC·상자·퀘스트 UI가 이 이벤트를 받아 자기 표시 상태를 갱신한다.
- */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnPersonalWorldStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(
+	FTDOnPersonalWorldStateChanged);
 
-/**
- * 플레이어마다 다른 퀘스트 및 월드 상태.
- *
- * PlayerState가 소유하므로 캐릭터가 죽고 부활해도 유지된다.
- * 다른 플레이어에게는 필요하지 않으므로 값은 OwnerOnly로 복제한다.
- */
-UCLASS(ClassGroup = (TD), meta = (BlueprintSpawnableComponent))
-class TD_PROJECT_API UTDPersonalWorldStateComponent : public UActorComponent
+UCLASS(ClassGroup = (TD),
+	meta = (BlueprintSpawnableComponent))
+class TD_PROJECT_API UTDPersonalWorldStateComponent
+	: public UActorComponent
 {
 	GENERATED_BODY()
 
@@ -29,12 +22,12 @@ public:
 	UTDPersonalWorldStateComponent();
 
 	virtual void GetLifetimeReplicatedProps(
-		TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-	// ── 조회 ──────────────────────────────────────────────
+		TArray<FLifetimeProperty>&
+			OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "TD|Quest")
-	FGameplayTagContainer GetQuestProgressTags() const
+	FGameplayTagContainer
+	GetQuestProgressTags() const
 	{
 		return QuestProgressTags;
 	}
@@ -48,73 +41,90 @@ public:
 	bool MatchesCondition(
 		const FTDWorldCondition& Condition) const;
 
-	UFUNCTION(BlueprintPure, Category = "TD|World")
-	bool HasClaimedChest(FName ChestId) const;
-
-	UFUNCTION(BlueprintPure, Category = "TD|World")
-	const TArray<FName>& GetClaimedChestIds() const
-	{
-		return ClaimedChestIds;
-	}
-
-	// ── 서버 전용 변경 ────────────────────────────────────
-
-	/**
-	 * 퀘스트 진행 태그를 추가한다.
-	 * 클라이언트에서 직접 호출하면 실패한다.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "TD|Quest",
 		meta = (BlueprintAuthorityOnly = "true"))
 	bool AddQuestTag(FGameplayTag Tag);
 
-	/**
-	 * 퀘스트 진행 태그를 제거한다.
-	 * 클라이언트에서 직접 호출하면 실패한다.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "TD|Quest",
 		meta = (BlueprintAuthorityOnly = "true"))
 	bool RemoveQuestTag(FGameplayTag Tag);
 
-	/**
-	 * 상자를 획득 완료 상태로 만든다.
-	 *
-	 * 이미 획득한 상자면 false를 반환하므로 중복 보상을 막는 데 사용한다.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "TD|World",
+	// ── 상자 ─────────────────────────────────────────────
+
+	UFUNCTION(BlueprintPure, Category = "TD|Treasure")
+	bool HasClaimedChest(FName ChestId) const;
+
+	UFUNCTION(BlueprintPure, Category = "TD|Treasure")
+	bool CanClaimChest(
+		FName ChestId,
+		ETDChestResetType ResetType) const;
+
+	UFUNCTION(BlueprintCallable, Category = "TD|Treasure",
 		meta = (BlueprintAuthorityOnly = "true"))
 	bool MarkChestClaimed(FName ChestId);
 
-	// ── 저장 데이터 ───────────────────────────────────────
+	UFUNCTION(BlueprintCallable, Category = "TD|Treasure",
+		meta = (BlueprintAuthorityOnly = "true"))
+	bool MarkChestClaimedWithReset(
+		FName ChestId,
+		ETDChestResetType ResetType);
+
+	// ── 챕터 ─────────────────────────────────────────────
+
+	UFUNCTION(BlueprintPure, Category = "TD|Chapter")
+	bool HasSeenChapter(FName ChapterId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "TD|Chapter",
+		meta = (BlueprintAuthorityOnly = "true"))
+	bool MarkChapterSeen(FName ChapterId);
+
+	// ── NPC 선물 ─────────────────────────────────────────
+
+	UFUNCTION(BlueprintPure, Category = "TD|Affection")
+	bool CanGiftToNPC(FName NPCId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "TD|Affection",
+		meta = (BlueprintAuthorityOnly = "true"))
+	bool MarkGiftGiven(FName NPCId);
 
 	void WriteSaveData(FTDPlayerSaveData& Out) const;
 	void ReadSaveData(const FTDPlayerSaveData& In);
 
-	/** 서버 상태 변경과 클라이언트 복제 수신 양쪽에서 발생한다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|World")
-	FTDOnPersonalWorldStateChanged OnPersonalWorldStateChanged;
+	FTDOnPersonalWorldStateChanged
+	OnPersonalWorldStateChanged;
 
 private:
 	void NotifyStateChanged();
 
-	UFUNCTION()
-	void OnRep_QuestProgressTags();
+	const FTDChestClaimRecord* FindChestClaim(
+		FName ChestId) const;
+
+	FTDChestClaimRecord* FindMutableChestClaim(
+		FName ChestId);
+
+	const FTDNpcGiftRecord* FindGiftRecord(
+		FName NPCId) const;
+
+	FTDNpcGiftRecord* FindMutableGiftRecord(
+		FName NPCId);
 
 	UFUNCTION()
-	void OnRep_ClaimedChestIds();
+	void OnRep_State();
 
-	/**
-	 * 현재 퀘스트 단계와 완료 상태.
-	 *
-	 * 다른 플레이어에게 보낼 필요가 없으므로 OwnerOnly로 복제한다.
-	 */
-	UPROPERTY(ReplicatedUsing = OnRep_QuestProgressTags)
+	UPROPERTY(ReplicatedUsing = OnRep_State)
 	FGameplayTagContainer QuestProgressTags;
 
-	/**
-	 * 이 플레이어가 이미 획득한 영구 상자 ID 목록.
-	 *
-	 * 상자 Actor 이름이 아니라 DT_TreasureChest의 고정 RowName을 저장한다.
-	 */
-	UPROPERTY(ReplicatedUsing = OnRep_ClaimedChestIds)
+	/** 구버전과 BP 호환용 일회성 상자 목록 */
+	UPROPERTY(ReplicatedUsing = OnRep_State)
 	TArray<FName> ClaimedChestIds;
+
+	UPROPERTY(ReplicatedUsing = OnRep_State)
+	TArray<FTDChestClaimRecord> ChestClaimRecords;
+
+	UPROPERTY(ReplicatedUsing = OnRep_State)
+	TArray<FName> SeenChapterIds;
+
+	UPROPERTY(ReplicatedUsing = OnRep_State)
+	TArray<FTDNpcGiftRecord> NpcGiftRecords;
 };

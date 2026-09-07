@@ -17,6 +17,11 @@ namespace
 	{
 		if (Player == nullptr)
 		{
+			// 조용히 넘기면 "목록이 그냥 비어 있는" 것과 구분되지 않는다.
+			// 대개 위젯을 만들 때 Owning Player 를 넘기지 않아 GetOwningPlayer 가 null 인 경우다.
+			UE_LOG(LogTemp, Warning,
+				TEXT("키 설정: PlayerController 가 null 이다. "
+				     "위젯을 Create Widget 으로 만들 때 Owning Player 를 지정했는지 확인할 것."));
 			return nullptr;
 		}
 

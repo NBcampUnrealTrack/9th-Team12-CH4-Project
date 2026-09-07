@@ -5,6 +5,7 @@
 #include "Items/TDItemTypes.h"
 #include "Items/TDQuickSlotTypes.h"
 #include "Data/TDQuestTypes.h"
+#include "Data/TDWorldProgressTypes.h"
 #include "TDPlayerSaveData.generated.h"
 
 
@@ -82,10 +83,7 @@ struct FTDPlayerSaveData
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	//~~~~~기존
-	//int32 SaveVersion = 1;
-
-	//~~~~희진변경 테스트
-	int32 SaveVersion = 3;
+	int32 SaveVersion = 1;
 	
 	/**
 	 * 직업. DT_ClassGrowth 의 ClassId 와 짝이다.
@@ -129,11 +127,12 @@ struct FTDPlayerSaveData
 	// 계산으로 복원할 수 없는 값이라 저장한다. 다만 절대값이 아니라 비율로 담는다. (체력 1200/1000 같은 상황 방지)
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
-	float HealthRatio = 1.f;
+	float HealthRatio = 1.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
-	float ManaRatio = 1.f;
+	float ManaRatio = 1.0f;
 
+	
 	/**
 	 * 마지막으로 있던 존. 다시 접속하면 이 존의 시작 지점에서 시작한다.
 	 *
@@ -167,6 +166,14 @@ struct FTDPlayerSaveData
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	TArray<FName> ClaimedChestIds;
 	
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FTDChestClaimRecord> ChestClaimRecords;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FName> SeenChapterIds;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FTDNpcGiftRecord> NpcGiftRecords;
 	
 	/**
 	 * 퀵슬롯 배치. **캐릭터별**이다 — 전사의 1번과 법사의 1번이 같을 이유가 없다.
@@ -187,5 +194,8 @@ struct FTDPlayerSaveData
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDQuestRuntimeData> QuestStates;
 	
+	/** 캐릭터별 NPC 호감도와 마지막 선물 날짜 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	TArray<FTDAffectionRuntimeData> AffectionStates;
 	
 };

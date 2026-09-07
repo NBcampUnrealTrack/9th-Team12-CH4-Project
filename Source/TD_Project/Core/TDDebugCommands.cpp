@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Blueprint/UserWidget.h"
 #include "Chat/TDChatFilter.h"
 #include "Data/TDBannedWordRow.h"
 #include "Engine/GameInstance.h"
@@ -17,6 +18,9 @@
 #include "Party/TDPartyComponent.h"
 #include "Settings/TDChatSettings.h"
 #include "Settings/TDInputSettingsLibrary.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
+#include "UI/Settings/TDUISettings.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
@@ -876,6 +880,101 @@ namespace TDDebugCommands
 		}
 	}
 
+	// ── UI ────────────────────────────────────────────────
+
+	/**
+	 * UI 루트(WBP_Root)를 띄운다. 창은 전부 그 안에 붙으므로 이것이 없으면
+	 * 어떤 창도 열리지 않는다.
+	 *
+	 * **임시 통로다.** 지금 루트를 띄우는 코드는 ATDUITestPlayerController 에만 있어서,
+	 * 정식 게임모드로 실행하면 UI 가 하나도 나오지 않는다. 실제로 누가 띄울지
+	 * (PlayerController / HUD / 서브시스템)는 UI 담당이 정할 몫이라, 그때까지
+	 * 다른 시스템을 정상 데이터로 테스트할 수 있게 해 두는 것이다.
+	 */
+	static void ShowUIRoot(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (Controller == nullptr || !Controller->IsLocalController())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.ShowUIRoot: 로컬 PlayerController 가 없다."));
+			return;
+		}
+
+		// ATDUITestPlayerController 가 쓰는 것과 같은 경로다. 그쪽이 바뀌면 여기도 바꿔야 한다.
+		const TCHAR* RootPath = TEXT("/Game/UI/WBP_Root.WBP_Root_C");
+
+		UClass* RootClass = LoadClass<UUserWidget>(nullptr, RootPath);
+		if (RootClass == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShowUIRoot: '%s' 를 찾지 못했다."), RootPath);
+			return;
+		}
+
+		UUserWidget* Root = CreateWidget<UUserWidget>(Controller, RootClass);
+		if (Root == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShowUIRoot: 위젯 생성에 실패했다."));
+			return;
+		}
+
+		// 뷰포트에 올라가는 순간 NativeConstruct 가 스스로 UI 관리자에 등록한다.
+		Root->AddToViewport();
+		Controller->bShowMouseCursor = true;
+
+		UE_LOG(LogTDDebug, Log, TEXT("UI 루트를 띄웠다. 이제 TD.OpenSettings 로 창을 열 수 있다."));
+	}
+
+	/**
+	 * 설정 창을 연다(토글). 레벨 블루프린트로 띄우는 것과 달리 **로컬 플레이어에서**
+	 * 부르므로, 서버 인스턴스에서 실행되어 null 이 나오는 문제가 생기지 않는다.
+	 *
+	 * 단계마다 로그를 남긴다. 창이 안 뜨는 원인이 매번 다른 자리에 있어서,
+	 * 어디까지 갔는지 보이지 않으면 짐작으로 뒤지게 된다.
+	 */
+	static void OpenSettings(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.OpenSettings: PlayerController 가 없다."));
+			return;
+		}
+
+		ULocalPlayer* LocalPlayer = Controller->GetLocalPlayer();
+		if (LocalPlayer == nullptr)
+		{
+			// 서버가 들고 있는 원격 컨트롤러다. UI 는 화면이 있는 쪽에만 있다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.OpenSettings: 로컬 플레이어가 없다. 클라이언트 창에서 칠 것."));
+			return;
+		}
+
+		// 창 클래스가 지정되지 않으면 서브시스템이 조용히 돌아간다. 먼저 확인해 준다.
+		const UTDUISettings* UISettings = GetDefault<UTDUISettings>();
+		if (UISettings == nullptr || UISettings->SystemWindowClass.IsNull())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.OpenSettings: System Window Class 가 비어 있다. "
+					 "프로젝트 세팅 > Game > TD UI > Windows 에서 WBP_SettingsWindow 를 지정할 것."));
+			return;
+		}
+
+		UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>();
+		if (UI == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.OpenSettings: UIManagerSubsystem 을 찾지 못했다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("설정 창 토글을 요청했다. (창 클래스 '%s')"),
+			*UISettings->SystemWindowClass.ToString());
+
+		// 실제로 열리지 않으면 여기서부터는 서브시스템이 이유를 로그로 남긴다
+		// (WBP_Root 미등록 등).
+		UI->RequestMenu(ETDNavMenuType::System);
+	}
+
 	// ── 채팅 ──────────────────────────────────────────────
 
 	/**
@@ -1654,6 +1753,16 @@ static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
 	TEXT("TD.EnhanceCurve"),
 	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDShowUIRoot(
+	TEXT("TD.ShowUIRoot"),
+	TEXT("UI 루트(WBP_Root)를 띄운다. 창을 열려면 먼저 이것이 있어야 한다. 사용법: TD.ShowUIRoot"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShowUIRoot));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDOpenSettings(
+	TEXT("TD.OpenSettings"),
+	TEXT("설정 창을 연다(토글). 사용법: TD.OpenSettings"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::OpenSettings));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSay(
 	TEXT("TD.Say"),

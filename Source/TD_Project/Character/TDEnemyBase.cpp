@@ -12,6 +12,9 @@
 #include "Components/WidgetComponent.h"
 #include "UI/Combat/TDEnemyHealthBarWidget.h"
 #include "Net/UnrealNetwork.h"
+#include "Party/TDPartyComponent.h"
+#include "Player/TDPlayerState.h"
+#include "Quest/TDQuestComponent.h"
 
 ATDEnemyBase::ATDEnemyBase()
 {
@@ -167,17 +170,120 @@ void ATDEnemyBase::HandleDeath()
 	
 }
 
-void ATDEnemyBase::GrantRewards(ATDCharacterBase* Killer)
+void ATDEnemyBase::GrantRewards(
+	ATDCharacterBase* Killer)
 {
-	if (!HasAuthority() || bRewardsGranted || Killer == nullptr)
+	if (!HasAuthority()
+		|| bRewardsGranted
+		|| Killer == nullptr)
 	{
 		return;
 	}
+
 	bRewardsGranted = true;
 
-	if (UTDProgressionComponent* Progression = Killer->GetProgressionComponent())
+	ATDPlayerState* KillerPlayerState = nullptr;
+
+	/**
+	 * 일반 플레이어 캐릭터인 경우.
+	 */
+	KillerPlayerState =
+		Killer->GetPlayerState<ATDPlayerState>();
+
+	/**
+	 * 향후 펫·소환수인 경우:
+	 * 소환수의 Controller가 플레이어 컨트롤러라면 그 PlayerState를 사용한다.
+	 */
+	if (KillerPlayerState == nullptr)
 	{
-		Progression->AddExp(ExpReward);   // 레벨업 판정은 AddExp 안에서 이뤄진다
+		if (AController* KillerController =
+			Killer->GetController())
+		{
+			KillerPlayerState =
+				KillerController
+					->GetPlayerState<ATDPlayerState>();
+		}
+	}
+
+	/**
+	 * 소환수 Owner가 플레이어 캐릭터인 경우도 확인한다.
+	 */
+	if (KillerPlayerState == nullptr)
+	{
+		AActor* OwnerActor = Killer->GetOwner();
+
+		if (ACharacter* OwnerCharacter =
+			Cast<ACharacter>(OwnerActor))
+		{
+			KillerPlayerState =
+				OwnerCharacter
+					->GetPlayerState<ATDPlayerState>();
+		}
+	}
+
+	if (KillerPlayerState == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("몬스터 '%s': 처치자 PlayerState를 찾지 못했다."),
+			*MonsterId.ToString());
+		return;
+	}
+
+	/**
+	 * 경험치는 기존 파티 분배 경로를 사용한다.
+	 */
+	if (UTDPartyComponent* Party =
+		KillerPlayerState->GetPartyComponent())
+	{
+		Party->AwardKillExp(ExpReward);
+	}
+
+	/**
+	 * 퀘스트는 같은 존의 살아 있는 파티원만 받는다.
+	 * 거리는 검사하지 않으며 실제 공격 참여 여부도 검사하지 않는다.
+	 */
+	const FGameplayTag KillZone =
+		KillerPlayerState->GetCurrentZoneId();
+
+	UTDPartyComponent* KillerParty =
+		KillerPlayerState->GetPartyComponent();
+
+	const TArray<ATDPlayerState*> Members =
+		KillerParty
+			? KillerParty->GetPartyMembers()
+			: TArray<ATDPlayerState*>{
+				KillerPlayerState
+			};
+
+	for (ATDPlayerState* Member : Members)
+	{
+		if (Member == nullptr
+			|| Member->GetCurrentZoneId()
+				!= KillZone)
+		{
+			continue;
+		}
+
+		const ATDCharacterBase* MemberCharacter =
+			Cast<ATDCharacterBase>(
+				Member->GetPawn());
+
+		/**
+		 * 접속은 했지만 캐릭터가 없거나,
+		 * 사망 상태인 파티원은 진행도를 받지 않는다.
+		 */
+		if (MemberCharacter == nullptr
+			|| MemberCharacter->IsDead())
+		{
+			continue;
+		}
+
+		if (UTDQuestComponent* Quest =
+			Member->GetQuestComponent())
+		{
+			Quest->ReportMonsterKilled(
+				MonsterId);
+		}
 	}
 }
 

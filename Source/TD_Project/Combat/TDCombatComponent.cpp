@@ -6,6 +6,8 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Interaction/TDInteractionFlowComponent.h"
+#include "GameFramework/PlayerController.h"
 
 UTDCombatComponent::UTDCombatComponent()
 {
@@ -88,6 +90,20 @@ bool UTDCombatComponent::CanAttack() const
 		return false;
 	}
 
+	//추가- "플레이어가 대화 중이거나 컷씬을 보는 중이면, 쿨다운이 다 됐어도 공격을 못 하게 막는다"
+	const APlayerController* Controller = Cast<APlayerController>(Owner->GetController());
+	const UTDInteractionFlowComponent* Flow =
+			Controller
+				? Controller->FindComponentByClass<
+					UTDInteractionFlowComponent>()
+				: nullptr;
+	if (Flow != nullptr
+			&& Flow->IsGameplayLocked())
+	{
+		return false;
+	}
+	
+	
 	// 쿨다운회복률: 실제 쿨타임 = 기본 ÷ (1 + 회복률). 시전 시점에 1회 계산한다.
 	const float RecoveryRate = FMath::Max(0.f, Owner->GetStat(TDTags::Stat_Utility_CooldownRecoveryRate));
 	const float ActualCooldown = AttackCooldown / (1.f + RecoveryRate);

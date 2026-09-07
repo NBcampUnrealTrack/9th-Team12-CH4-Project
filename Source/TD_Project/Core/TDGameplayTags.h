@@ -8,7 +8,6 @@
  */
 namespace TDTags
 {
-
 	// ── 스탯 관련 ────────────────────────────────────────────
 
 	// ── 공격 ──────────────────────────────────────────────
@@ -148,11 +147,17 @@ namespace TDTags
 
 	// ── 대화 작업 ─────────────────────────────────────────
 
-	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_AcceptQuest);
-	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_TurnInQuest);
-	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_ReportQuestEvent);
-	
-	
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Dialogue_Action_AcceptQuest);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Dialogue_Action_TurnInQuest);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Dialogue_Action_ReportQuestEvent);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Dialogue_Action_CompleteDialogueQuest);
 	
 	// ── 퀘스트 진행 단계 ──────────────────────────────────
 
@@ -180,9 +185,29 @@ namespace TDTags
 	// ── 퀘스트 이벤트 ─────────────────────────────────────
 
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
-		Quest_Event_Talk_HanSuhyun);
+		Quest_Event_Talk_GoHojin);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_KimSoohyun);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_KimHeejin);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_ParkJihoon);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_SeoAhyoung);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_LeeKyungjun);
 
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
 		Quest_Event_Talk_JangGoeun);
-	
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_HanSuhyun);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_HongJongwoo);
 }

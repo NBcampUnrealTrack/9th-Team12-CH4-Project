@@ -529,8 +529,12 @@ bool ATDPlayerController::ApplyDialogueAction(
 		TDTags::Dialogue_Action_AcceptQuest.GetTag())
 	{
 		const ETDQuestActionResult Result =
-			QuestComponent->AcceptQuest(
-				Action.QuestId);
+			QuestComponent->AcceptQuestAtTarget(
+				Action.QuestId,
+				ETDQuestTargetType::NPC,
+				ActiveDialogueNPC
+					? ActiveDialogueNPC->GetNPCId()
+					: NAME_None);
 
 		ClientQuestActionResult(
 			Action.QuestId,
@@ -544,8 +548,12 @@ bool ATDPlayerController::ApplyDialogueAction(
 		TDTags::Dialogue_Action_TurnInQuest.GetTag())
 	{
 		const ETDQuestActionResult Result =
-			QuestComponent->TurnInQuest(
-				Action.QuestId);
+			QuestComponent->TurnInQuestAtTarget(
+				Action.QuestId,
+				ETDQuestTargetType::NPC,
+				ActiveDialogueNPC
+					? ActiveDialogueNPC->GetNPCId()
+					: NAME_None);
 
 		ClientQuestActionResult(
 			Action.QuestId,
@@ -608,6 +616,7 @@ void ATDPlayerController::ServerAdvanceDialogue_Implementation(
 	if (!ApplyDialogueAction(
 		Row->OnAdvanceAction))
 	{
+		EndDialogueSession();
 		return;
 	}
 

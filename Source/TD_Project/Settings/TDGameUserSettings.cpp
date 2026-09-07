@@ -1,10 +1,12 @@
 #include "Settings/TDGameUserSettings.h"
 
+#include "Algo/Reverse.h"
 #include "AudioModulationStatics.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Misc/App.h"
 #include "SoundControlBus.h"
 #include "Settings/TDAudioSettings.h"
@@ -83,6 +85,79 @@ TArray<int32> UTDGameUserSettings::GetFrameRateLimitOptions()
 {
 	// 0 = 제한 없음. UI 는 이 값을 "무제한"으로 표시하면 된다.
 	return { 30, 60, 120, 144, 0 };
+}
+
+TArray<FIntPoint> UTDGameUserSettings::GetSupportedResolutions()
+{
+	TArray<FIntPoint> Resolutions;
+	UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
+
+	// 큰 것부터 내려오게 뒤집는다. 엔진은 작은 것부터 주는데, 대개 위쪽에서 고른다.
+	Algo::Reverse(Resolutions);
+
+	if (Resolutions.Num() == 0)
+	{
+		// 전체화면 목록을 못 얻는 환경(일부 창모드 전용 설정)이 있다.
+		// 빈 드롭다운을 내놓는 것보다 흔한 해상도라도 보이는 편이 낫다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("지원 해상도 목록이 비었다. 기본 목록으로 대체한다."));
+
+		Resolutions = { FIntPoint(1920, 1080), FIntPoint(1600, 900), FIntPoint(1280, 720) };
+	}
+
+	return Resolutions;
+}
+
+TArray<FString> UTDGameUserSettings::GetSupportedResolutionLabels()
+{
+	const TArray<FIntPoint> Resolutions = GetSupportedResolutions();
+
+	TArray<FString> Labels;
+	Labels.Reserve(Resolutions.Num());
+
+	for (const FIntPoint& Resolution : Resolutions)
+	{
+		Labels.Add(FString::Printf(TEXT("%d x %d"), Resolution.X, Resolution.Y));
+	}
+
+	return Labels;
+}
+
+TArray<FString> UTDGameUserSettings::GetFrameRateLimitLabels()
+{
+	const TArray<int32> Limits = GetFrameRateLimitOptions();
+
+	TArray<FString> Labels;
+	Labels.Reserve(Limits.Num());
+
+	for (const int32 Limit : Limits)
+	{
+		Labels.Add(Limit <= 0
+			? NSLOCTEXT("TDSettings", "FrameRateUnlimited", "무제한").ToString()
+			: FString::Printf(TEXT("%d"), Limit));
+	}
+
+	return Labels;
+}
+
+TArray<FText> UTDGameUserSettings::GetQualityPresetNames()
+{
+	// 인덱스가 곧 SetShadowQuality 등에 넣을 값이다(0~3).
+	return {
+		NSLOCTEXT("TDSettings", "QualityLow", "낮음"),
+		NSLOCTEXT("TDSettings", "QualityMedium", "중간"),
+		NSLOCTEXT("TDSettings", "QualityHigh", "높음"),
+		NSLOCTEXT("TDSettings", "QualityEpic", "에픽")
+	};
+}
+
+void UTDGameUserSettings::RevertToSaved()
+{
+	// ini 를 다시 읽는다. 적용하지 않은 변경은 여기서 버려진다.
+	LoadSettings(/*bForceReload=*/ true);
+
+	// 값을 되읽는 것만으로는 소리가 돌아오지 않는다. 버스에 다시 밀어넣어야 한다.
+	ApplyAllSettings();
 }
 
 void UTDGameUserSettings::SetFrameRateLimitPreset(int32 InLimit)

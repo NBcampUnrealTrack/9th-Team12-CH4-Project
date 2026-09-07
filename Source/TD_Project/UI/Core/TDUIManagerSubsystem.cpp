@@ -71,6 +71,8 @@ void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
 	switch (MenuType)
 	{
 	case ETDNavMenuType::Inventory:
+	case ETDNavMenuType::Character:
+	case ETDNavMenuType::System:
 		ToggleWindow(MenuType);
 		break;
 
@@ -92,6 +94,27 @@ bool UTDUIManagerSubsystem::IsMenuOpen(ETDNavMenuType MenuType) const
 
 void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 {
+	// 삼항으로 두면 메뉴가 늘 때마다 "인벤토리" 로 잘못 찍힌다. 경고 문구가 틀리면
+	// 원인을 엉뚱한 곳에서 찾게 되므로 switch 로 바꾼다.
+	const TCHAR* MenuName = TEXT("인벤토리");
+	const TCHAR* SettingName = TEXT("Inventory Window Class");
+
+	switch (MenuType)
+	{
+	case ETDNavMenuType::Character:
+		MenuName = TEXT("캐릭터 정보");
+		SettingName = TEXT("Character Window Class");
+		break;
+
+	case ETDNavMenuType::System:
+		MenuName = TEXT("설정");
+		SettingName = TEXT("System Window Class");
+		break;
+
+	default:
+		break;
+	}
+
 	if (TWeakObjectPtr<UTDWindowBaseWidget>* FoundWindow = OpenWindows.Find(MenuType))
 	{
 		if (UTDWindowBaseWidget* OpenWindow = FoundWindow->Get())
@@ -107,7 +130,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	if (!IsValid(Root))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UI: 인벤토리를 열 수 없습니다. WBP_Root가 UI 관리자에 등록되지 않았습니다."));
+			TEXT("UI: %s 창을 열 수 없습니다. WBP_Root가 UI 관리자에 등록되지 않았습니다."), MenuName);
 		return;
 	}
 
@@ -129,7 +152,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	if (!WindowClass)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UI: 인벤토리 위젯이 설정되지 않았습니다. 프로젝트 설정 > Game > TD UI > Inventory Window Class를 지정하세요."));
+			TEXT("UI: %s 위젯이 설정되지 않았습니다. 프로젝트 설정 > Game > TD UI > %s를 지정하세요."), MenuName, SettingName);
 		return;
 	}
 
@@ -139,7 +162,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	if (!IsValid(PlayerController))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UI: 인벤토리를 열 수 없습니다. 현재 로컬 플레이어를 찾지 못했습니다."));
+			TEXT("UI: %s 창을 열 수 없습니다. 현재 로컬 플레이어를 찾지 못했습니다."), MenuName);
 		return;
 	}
 
@@ -148,14 +171,14 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	if (!IsValid(NewWindow))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UI: 인벤토리 위젯 생성에 실패했습니다. Inventory Window Class 설정을 확인하세요."));
+			TEXT("UI: %s 위젯 생성에 실패했습니다. %s 설정을 확인하세요."), MenuName, SettingName);
 		return;
 	}
 
 	if (!Root->AddWindow(NewWindow))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UI: 인벤토리를 표시할 수 없습니다. WBP_Root의 WindowLayer 연결을 확인하세요."));
+			TEXT("UI: %s 창을 표시할 수 없습니다. WBP_Root의 WindowLayer 연결을 확인하세요."), MenuName);
 		return;
 	}
 
@@ -224,6 +247,20 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
 		{
 			return UISettings->InventoryWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	case ETDNavMenuType::Character:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
+		{
+			return UISettings->CharacterWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	case ETDNavMenuType::System:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
+		{
+			return UISettings->SystemWindowClass.LoadSynchronous();
 		}
 		return nullptr;
 

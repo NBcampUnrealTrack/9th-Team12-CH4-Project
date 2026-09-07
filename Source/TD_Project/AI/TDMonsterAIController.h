@@ -5,17 +5,25 @@
 #include "TDMonsterAIController.generated.h"
 
 class ATDCharacterBase;
+class ATDEnemyBase;
+
+/** 필드 몬스터의 행동 상태. 항상 이 중 하나다. */
+UENUM()
+enum class ETDMonsterAIState : uint8
+{
+	Idle,     // 제자리 대기. 시간이 지나면 배회로.
+	Wander,   // 스폰 주변 랜덤 지점으로 이동 중.
+	Sense,    // 적 발견 직후의 반응 모션. 잠깐 정지 — 플레이어가 도망칠 틈이다.
+	Combat    // 추적·공격. 거리로 세부 행동이 갈린다.
+};
 
 /**
- * 필드 몬스터의 두뇌. 반경 어그로 → 추적 → 사거리 내 공격.
+ * 필드 몬스터의 두뇌. 대기 ↔ 배회 → (발견) 인지 → 전투.
  *
- * 감지는 시야각 없는 반경 방식이다(MMO 필드몹 표준). 시야각이 필요해지면
- * FindNearestEnemy 만 교체하면 된다.
+ * 명시적 상태 머신이다. 배회·인지처럼 "시간이 걸리는 상태"가 생기면서
+ * if문 암묵 FSM 으로는 "지금 뭐 하는 중 + 언제 끝나는지"를 표현할 수 없게 됐다.
  *
- * 공격 자체는 CombatComponent 에 위임한다 — 쿨타임·히트박스·데미지가
- * 플레이어와 완전히 같은 경로를 타므로, 밸런스를 한 곳에서 관리할 수 있다.
- *
- * 서버 전용으로 동작한다. AI 는 데디케이티드 서버에만 존재하는 로직이다.
+ * 공격은 CombatComponent 에 위임한다. 서버 전용.
  */
 UCLASS()
 class TD_PROJECT_API ATDMonsterAIController : public AAIController
@@ -26,34 +34,66 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
 
-	/** 이 반경 안에 적이 들어오면 어그로가 잡힌다. */
+	// ── 전투 파라미터 (기존과 동일) ──────────────────────
+
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0"))
 	float AggroRadius = 800.f;
 
-	/** 어그로 대상이 이보다 멀어지면 포기한다. Aggro 보다 커야 경계에서 떨림이 없다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0"))
 	float LoseAggroRadius = 1400.f;
 
-	/** 이 거리 안이면 이동을 멈추고 공격한다. 히트박스 길이와 맞춰야 헛방이 없다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0"))
 	float AttackRange = 150.f;
 
-	/** 판단 주기(초). Tick 대신 타이머를 쓴다 — 몬스터 수십 마리가 매 프레임 생각할 이유가 없다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0.05"))
 	float ThinkInterval = 0.25f;
 
+	// ── 배회·인지 파라미터 ────────────────────────────────
+
+	/** 스폰 지점에서 이 반경 안의 지점으로만 배회한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|AI|Wander", meta = (ClampMin = "0"))
+	float WanderRadius = 500.f;
+
+	/** 배회 후 다음 배회까지 서 있는 시간 범위(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|AI|Wander", meta = (ClampMin = "0"))
+	float IdleTimeMin = 2.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "TD|AI|Wander", meta = (ClampMin = "0"))
+	float IdleTimeMax = 4.f;
+
+	/** 배회 이동의 포기 시한(초). 경로가 막혀도 이 시간이 지나면 대기로 돌아간다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|AI|Wander", meta = (ClampMin = "1"))
+	float WanderTimeLimit = 6.f;
+
+	/** 적 발견 후 굳어 있는 시간(초). 발견 모션 길이에 맞춘다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|AI|Wander", meta = (ClampMin = "0"))
+	float SenseDuration = 0.8f;
+
 private:
-	/** 주기적 판단. 상태 분기가 전부 여기 있다. */
 	void Think();
 
-	/** 어그로 반경 안의 가장 가까운 적. 없으면 nullptr. 감지 방식을 바꾸려면 여기만 고친다. */
+	// 상태 진입 함수들. 상태 전환은 반드시 이들을 거친다 — 진입 시 해야 할 일을 한 곳에 모은다.
+	void EnterIdle();
+	void EnterWander();
+	void EnterSense(ATDCharacterBase* Found);
+	void EnterCombat();
+
+	/** 전투 상태의 매 판단. 기존 추적/공격 로직이 그대로 여기 있다. */
+	void TickCombat(ATDCharacterBase* Self);
+
 	ATDCharacterBase* FindNearestEnemy() const;
 
-	/** 빙의한 몬스터가 죽었을 때. OnDeath 델리게이트가 부른다. */
 	UFUNCTION()
 	void HandlePawnDeath();
 
-	/** 지금 노리는 대상. 대상 액터가 파괴되면 자동으로 무효가 되는 약한 참조다. */
+	ETDMonsterAIState State = ETDMonsterAIState::Idle;
+
+	/** 현재 상태가 끝나는 시각(서버 월드시간). Idle/Wander/Sense 가 쓴다. */
+	float StateEndTime = 0.f;
+
+	/** 스폰 지점. 배회의 중심이자, 나중에 귀환(Leash)의 목적지가 된다. */
+	FVector HomeLocation = FVector::ZeroVector;
+
 	TWeakObjectPtr<ATDCharacterBase> AggroTarget;
 
 	FTimerHandle ThinkTimerHandle;

@@ -200,6 +200,15 @@ protected:
 	TObjectPtr<UDataTable> EnhanceTable;
 
 private:
+	/**
+	 * 획득 알림을 이 플레이어의 채팅창에 보낸다. **서버에서만 의미가 있다.**
+	 *
+	 * 세이브를 읽을 때는 불리지 않는다 — ReadSaveData 는 AddItem 을 거치지 않고
+	 * 컨테이너를 통째로 갈아끼우기 때문이다. 접속할 때마다 가진 아이템이
+	 * 전부 "획득" 으로 올라오면 창이 못 쓰게 된다.
+	 */
+	void NotifyLoot(const FString& Message) const;
+
 	UFUNCTION()
 	void OnRep_Gold();
 

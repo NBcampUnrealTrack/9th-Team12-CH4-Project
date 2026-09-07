@@ -7,11 +7,20 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Blueprint/UserWidget.h"
+#include "Chat/TDChatFilter.h"
+#include "Data/TDBannedWordRow.h"
+#include "Engine/GameInstance.h"
 #include "Items/TDEnhanceStatics.h"
+#include "Market/TDMarketSubsystem.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Party/TDPartyComponent.h"
+#include "Settings/TDChatSettings.h"
 #include "Settings/TDInputSettingsLibrary.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
+#include "UI/Settings/TDUISettings.h"
 #include "Items/TDItemUseComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
@@ -678,6 +687,7 @@ namespace TDDebugCommands
 			return;
 		}
 
+
 		// 기본은 1번(Mage, Lv.12). 스탯이 충분히 올라 있어 전투·회복 테스트에 편하다.
 		const int32 SlotIndex = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 1;
 
@@ -867,6 +877,338 @@ namespace TDDebugCommands
 				TDEnhance::GetStatMultiplier(5, RequiredLevel),
 				TDEnhance::GetStatMultiplier(10, RequiredLevel),
 				TDEnhance::GetStatMultiplier(18, RequiredLevel));
+		}
+	}
+
+	// ── UI ────────────────────────────────────────────────
+
+	/**
+	 * UI 루트(WBP_Root)를 띄운다. 창은 전부 그 안에 붙으므로 이것이 없으면
+	 * 어떤 창도 열리지 않는다.
+	 *
+	 * **임시 통로다.** 지금 루트를 띄우는 코드는 ATDUITestPlayerController 에만 있어서,
+	 * 정식 게임모드로 실행하면 UI 가 하나도 나오지 않는다. 실제로 누가 띄울지
+	 * (PlayerController / HUD / 서브시스템)는 UI 담당이 정할 몫이라, 그때까지
+	 * 다른 시스템을 정상 데이터로 테스트할 수 있게 해 두는 것이다.
+	 */
+	static void ShowUIRoot(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (Controller == nullptr || !Controller->IsLocalController())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.ShowUIRoot: 로컬 PlayerController 가 없다."));
+			return;
+		}
+
+		// ATDUITestPlayerController 가 쓰는 것과 같은 경로다. 그쪽이 바뀌면 여기도 바꿔야 한다.
+		const TCHAR* RootPath = TEXT("/Game/UI/WBP_Root.WBP_Root_C");
+
+		UClass* RootClass = LoadClass<UUserWidget>(nullptr, RootPath);
+		if (RootClass == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShowUIRoot: '%s' 를 찾지 못했다."), RootPath);
+			return;
+		}
+
+		UUserWidget* Root = CreateWidget<UUserWidget>(Controller, RootClass);
+		if (Root == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShowUIRoot: 위젯 생성에 실패했다."));
+			return;
+		}
+
+		// 뷰포트에 올라가는 순간 NativeConstruct 가 스스로 UI 관리자에 등록한다.
+		Root->AddToViewport();
+		Controller->bShowMouseCursor = true;
+
+		UE_LOG(LogTDDebug, Log, TEXT("UI 루트를 띄웠다. 이제 TD.OpenSettings 로 창을 열 수 있다."));
+	}
+
+	/**
+	 * 설정 창을 연다(토글). 레벨 블루프린트로 띄우는 것과 달리 **로컬 플레이어에서**
+	 * 부르므로, 서버 인스턴스에서 실행되어 null 이 나오는 문제가 생기지 않는다.
+	 *
+	 * 단계마다 로그를 남긴다. 창이 안 뜨는 원인이 매번 다른 자리에 있어서,
+	 * 어디까지 갔는지 보이지 않으면 짐작으로 뒤지게 된다.
+	 */
+	static void OpenSettings(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.OpenSettings: PlayerController 가 없다."));
+			return;
+		}
+
+		ULocalPlayer* LocalPlayer = Controller->GetLocalPlayer();
+		if (LocalPlayer == nullptr)
+		{
+			// 서버가 들고 있는 원격 컨트롤러다. UI 는 화면이 있는 쪽에만 있다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.OpenSettings: 로컬 플레이어가 없다. 클라이언트 창에서 칠 것."));
+			return;
+		}
+
+		// 창 클래스가 지정되지 않으면 서브시스템이 조용히 돌아간다. 먼저 확인해 준다.
+		const UTDUISettings* UISettings = GetDefault<UTDUISettings>();
+		if (UISettings == nullptr || UISettings->SystemWindowClass.IsNull())
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.OpenSettings: System Window Class 가 비어 있다. "
+					 "프로젝트 세팅 > Game > TD UI > Windows 에서 WBP_SettingsWindow 를 지정할 것."));
+			return;
+		}
+
+		UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>();
+		if (UI == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.OpenSettings: UIManagerSubsystem 을 찾지 못했다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("설정 창 토글을 요청했다. (창 클래스 '%s')"),
+			*UISettings->SystemWindowClass.ToString());
+
+		// 실제로 열리지 않으면 여기서부터는 서브시스템이 이유를 로그로 남긴다
+		// (WBP_Root 미등록 등).
+		UI->RequestMenu(ETDNavMenuType::System);
+	}
+
+	// ── 채팅 ──────────────────────────────────────────────
+
+	/**
+	 * 콘솔 인자를 다시 한 문장으로 합친다.
+	 *
+	 * 콘솔이 공백마다 인자를 잘라 주기 때문에, 문장을 받으려면 되돌려야 한다.
+	 */
+	static FString JoinArgs(const TArray<FString>& Args, int32 StartIndex)
+	{
+		FString Result;
+
+		for (int32 Index = StartIndex; Index < Args.Num(); ++Index)
+		{
+			if (!Result.IsEmpty())
+			{
+				Result.AppendChar(TEXT(' '));
+			}
+			Result += Args[Index];
+		}
+
+		return Result;
+	}
+
+	/**
+	 * 채팅을 보낸다. ServerSendChat 이 Server RPC 라 클라이언트 창에서도 그대로 통한다.
+	 *
+	 * 정상 경로를 그대로 타므로 검열·길이·쿨다운 검사도 전부 거친다 —
+	 * 치트로 우회하면 그 검사들을 확인할 수 없다.
+	 */
+	static void SendChat(UWorld* World, ETDChatChannel Channel,
+		const FString& Message, const FString& TargetName)
+	{
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ATDPlayerController* TDController = Cast<ATDPlayerController>(Controller);
+
+		if (TDController == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("채팅: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		TDController->ServerSendChat(Channel, Message, TargetName);
+	}
+
+	static void Say(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Say <할 말>"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::All, JoinArgs(Args, 0), FString());
+	}
+
+	static void SayParty(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.SayParty <할 말>"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::Party, JoinArgs(Args, 0), FString());
+	}
+
+	static void Whisper(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Whisper <상대이름> <할 말>   (TD.DumpParty 로 이름 확인)"));
+			return;
+		}
+
+		SendChat(World, ETDChatChannel::Whisper, JoinArgs(Args, 1), Args[0]);
+	}
+
+	/**
+	 * 필터만 돌려 본다. **채팅을 보내지 않는다.**
+	 *
+	 * 금지어를 추가한 뒤 오탐이 없는지 확인하는 용도다. 정상 문장을 넣어 보고
+	 * 가려지지 않는지 보는 쪽이 실제로 더 중요하다 — 못 잡는 것보다 멀쩡한 말이
+	 * 가려지는 쪽이 불만이 크다.
+	 */
+	static void ChatFilterTest(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.ChatFilter <검사할 문장>"));
+			return;
+		}
+
+		const UTDChatSettings* Settings = UTDChatSettings::Get();
+		UDataTable* Table = Settings ? Settings->BannedWordTable.LoadSynchronous() : nullptr;
+
+		if (Table == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.ChatFilter: 금지어 테이블이 없다. 프로젝트 세팅 > TD > Chat 을 확인할 것."));
+			return;
+		}
+
+		TArray<FString> BannedWords;
+		Table->ForeachRow<FTDBannedWordRow>(TEXT("ChatFilterTest"),
+			[&BannedWords](const FName&, const FTDBannedWordRow& Row)
+			{
+				if (!Row.Word.IsEmpty())
+				{
+					BannedWords.Add(Row.Word);
+				}
+			});
+
+		const FString Input = JoinArgs(Args, 0);
+
+		bool bMasked = false;
+		const FString Output = TDChatFilter::Mask(Input, BannedWords, bMasked);
+
+		TArray<int32> SourceIndex;
+		const FString Normalized = TDChatFilter::Normalize(Input, SourceIndex);
+
+		UE_LOG(LogTDDebug, Log, TEXT("금지어 %d개로 검사"), BannedWords.Num());
+		UE_LOG(LogTDDebug, Log, TEXT("    입력   %s"), *Input);
+		UE_LOG(LogTDDebug, Log, TEXT("    정규화 %s"), *Normalized);
+		UE_LOG(LogTDDebug, Log, TEXT("    결과   %s  %s"),
+			*Output, bMasked ? TEXT("← 걸림") : TEXT("(통과)"));
+	}
+
+	// ── 거래소 ────────────────────────────────────────────
+	// 전부 Server RPC 를 타므로 클라이언트 창에서도 그대로 통한다.
+
+	static ATDPlayerController* GetLocalTDController(UWorld* World)
+	{
+		return World ? Cast<ATDPlayerController>(World->GetFirstPlayerController()) : nullptr;
+	}
+
+	static void MarketList(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.MarketList <인벤슬롯> <가격>   가격은 묶음 전체 값이다"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerListItem(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]));
+		}
+	}
+
+	static void MarketBuy(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.MarketBuy <매물번호>   (TD.MarketSearch 로 번호 확인)"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerBuyListing(FCString::Atoi(*Args[0]));
+		}
+	}
+
+	static void MarketCancel(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.MarketCancel <매물번호>"));
+			return;
+		}
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerCancelListing(FCString::Atoi(*Args[0]));
+		}
+	}
+
+	/**
+	 * 매물을 찾는다. 결과는 서버가 Client RPC 로 돌려주므로 로그에 한 박자 늦게 찍힌다.
+	 *
+	 * 인자를 주지 않으면 전체, 주면 그 아이템만 본다.
+	 */
+	static void MarketSearch(const TArray<FString>& Args, UWorld* World)
+	{
+		const FName Filter = Args.IsValidIndex(0) ? FName(*Args[0]) : NAME_None;
+		const int32 Page = Args.IsValidIndex(1) ? FCString::Atoi(*Args[1]) : 0;
+
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerSearchListings(Filter, Page);
+		}
+	}
+
+	static void MarketMine(const TArray<FString>& Args, UWorld* World)
+	{
+		if (ATDPlayerController* Controller = GetLocalTDController(World))
+		{
+			Controller->ServerRequestMyListings();
+		}
+	}
+
+	/**
+	 * 거래소 상태를 서버 쪽에서 직접 찍는다. 검색과 달리 RPC 를 타지 않아
+	 * 매물이 실제로 어떻게 들어 있는지 그대로 보인다.
+	 */
+	static void DumpMarket(const TArray<FString>& Args, UWorld* World)
+	{
+		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		const UTDMarketSubsystem* Market = GameInstance
+			? GameInstance->GetSubsystem<UTDMarketSubsystem>()
+			: nullptr;
+
+		if (Market == nullptr || World == nullptr || World->GetNetMode() == NM_Client)
+		{
+			// 매물은 서버 메모리에만 있다. 클라이언트에는 애초에 읽을 것이 없다.
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.DumpMarket 은 서버(또는 단일 PIE)에서만 쓴다 — 매물은 서버에만 있다. "
+					 "클라이언트 창에서는 TD.MarketSearch 를 쓸 것(결과가 한 박자 늦게 찍힌다)."));
+			return;
+		}
+
+		// 페이지를 넉넉히 잡아 한 번에 본다. 검증용이라 페이징이 의미가 없다.
+		const TArray<FTDMarketListing> All = Market->Search(NAME_None, 0);
+
+		UE_LOG(LogTDDebug, Log, TEXT("거래소 매물 %d건 (첫 페이지)"), All.Num());
+
+		for (const FTDMarketListing& Entry : All)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("    [%d] %-20s x%-3d  %8d 골드   판매자 %s  강화 +%d"),
+				Entry.ListingId, *Entry.Item.ItemId.ToString(), Entry.Item.Count,
+				Entry.Price, *Entry.SellerName, Entry.Item.EnhanceLevel);
 		}
 	}
 
@@ -1411,6 +1753,66 @@ static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
 	TEXT("TD.EnhanceCurve"),
 	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDShowUIRoot(
+	TEXT("TD.ShowUIRoot"),
+	TEXT("UI 루트(WBP_Root)를 띄운다. 창을 열려면 먼저 이것이 있어야 한다. 사용법: TD.ShowUIRoot"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShowUIRoot));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDOpenSettings(
+	TEXT("TD.OpenSettings"),
+	TEXT("설정 창을 연다(토글). 사용법: TD.OpenSettings"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::OpenSettings));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSay(
+	TEXT("TD.Say"),
+	TEXT("전체 채팅을 보낸다. 사용법: TD.Say <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Say));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSayParty(
+	TEXT("TD.SayParty"),
+	TEXT("파티 채팅을 보낸다. 사용법: TD.SayParty <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SayParty));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDWhisper(
+	TEXT("TD.Whisper"),
+	TEXT("귓속말을 보낸다. 사용법: TD.Whisper <상대이름> <할 말>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Whisper));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDChatFilter(
+	TEXT("TD.ChatFilter"),
+	TEXT("금지어 필터만 돌려 본다(채팅을 보내지 않는다). 사용법: TD.ChatFilter <문장>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ChatFilterTest));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketList(
+	TEXT("TD.MarketList"),
+	TEXT("아이템을 거래소에 올린다. 사용법: TD.MarketList <인벤슬롯> <가격>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketList));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketBuy(
+	TEXT("TD.MarketBuy"),
+	TEXT("매물을 산다. 사용법: TD.MarketBuy <매물번호>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketBuy));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketCancel(
+	TEXT("TD.MarketCancel"),
+	TEXT("자기 매물을 내린다. 사용법: TD.MarketCancel <매물번호>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketCancel));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketSearch(
+	TEXT("TD.MarketSearch"),
+	TEXT("매물을 찾는다(결과는 한 박자 늦게 찍힌다). 사용법: TD.MarketSearch [ItemId] [페이지]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketSearch));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDMarketMine(
+	TEXT("TD.MarketMine"),
+	TEXT("내가 올린 매물을 본다. 사용법: TD.MarketMine"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketMine));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpMarket(
+	TEXT("TD.DumpMarket"),
+	TEXT("거래소 매물을 서버에서 직접 찍는다(서버 전용). 사용법: TD.DumpMarket"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpMarket));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
 	TEXT("TD.DumpQuick"),

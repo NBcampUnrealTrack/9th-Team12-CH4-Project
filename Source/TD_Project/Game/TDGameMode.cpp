@@ -4,6 +4,8 @@
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDCharacterBase.h"
 #include "Character/TDPlayerCharacter.h"
+#include "Chat/TDChatFilter.h"
+#include "Data/TDBannedWordRow.h"
 #include "Data/TDZoneEnvironmentRow.h"
 #include "Engine/DataTable.h"
 #include "EngineUtils.h"
@@ -15,6 +17,7 @@
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
+#include "Settings/TDChatSettings.h"
 #include "Settings/TDZoneSettings.h"
 #include "Stats/TDProgressionComponent.h"
 
@@ -492,4 +495,206 @@ bool ATDGameMode::RespawnPlayer(APlayerController* Player)
 		*PlayerState->GetPlayerName(), RespawnVitalRatio * 100.f);
 
 	return true;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  채팅
+// ══════════════════════════════════════════════════════════════
+
+const TArray<FString>& ATDGameMode::GetBannedWords() const
+{
+	if (bBannedWordsLoaded)
+	{
+		return CachedBannedWords;
+	}
+
+	bBannedWordsLoaded = true;
+
+	const UTDChatSettings* Settings = UTDChatSettings::Get();
+	UDataTable* Table = Settings ? Settings->BannedWordTable.LoadSynchronous() : nullptr;
+
+	if (Table == nullptr)
+	{
+		// 지정하지 않은 것도 선택이다. 경고만 남기고 아무것도 거르지 않는다 —
+		// 여기서 막아버리면 필터를 붙이기 전까지 채팅 자체를 못 쓴다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("채팅 금지어 테이블이 지정되지 않았다. 프로젝트 세팅 > TD > Chat 을 확인할 것."));
+		return CachedBannedWords;
+	}
+
+	Table->ForeachRow<FTDBannedWordRow>(TEXT("GetBannedWords"),
+		[this](const FName&, const FTDBannedWordRow& Row)
+		{
+			if (!Row.Word.IsEmpty())
+			{
+				CachedBannedWords.Add(Row.Word);
+			}
+		});
+
+	UE_LOG(LogTemp, Log, TEXT("채팅 금지어 %d개를 읽었다."), CachedBannedWords.Num());
+
+	return CachedBannedWords;
+}
+
+void ATDGameMode::DeliverChat(APlayerController* Target, ETDChatChannel Channel,
+	const FString& SenderName, const FString& Message) const
+{
+	if (ATDPlayerController* TDController = Cast<ATDPlayerController>(Target))
+	{
+		TDController->ClientReceiveChat(Channel, SenderName, Message);
+	}
+}
+
+APlayerController* ATDGameMode::FindPlayerControllerByName(const FString& PlayerName) const
+{
+	const AGameStateBase* State = GameState;
+	if (State == nullptr || PlayerName.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	for (APlayerState* PlayerState : State->PlayerArray)
+	{
+		if (PlayerState == nullptr)
+		{
+			continue;
+		}
+
+		// 대소문자를 구분하지 않는다. 귓속말은 손으로 이름을 치는 경우가 대부분이라
+		// 정확히 맞춰 적기를 요구하면 안 그래도 불편한 것이 더 불편해진다.
+		if (PlayerState->GetPlayerName().Equals(PlayerName, ESearchCase::IgnoreCase))
+		{
+			return PlayerState->GetPlayerController();
+		}
+	}
+
+	return nullptr;
+}
+
+ETDChatSendResult ATDGameMode::RouteChatMessage(APlayerController* Sender, ETDChatChannel Channel,
+	const FString& Message, const FString& TargetName)
+{
+	// 앞뒤 공백은 버린다. 공백만 보내는 것으로 화면을 밀어 올릴 수 있기 때문이다.
+	const FString Trimmed = Message.TrimStartAndEnd();
+	if (Trimmed.IsEmpty())
+	{
+		return ETDChatSendResult::Empty;
+	}
+
+	const UTDChatSettings* Settings = UTDChatSettings::Get();
+	if (Settings != nullptr && Trimmed.Len() > Settings->MaxMessageLength)
+	{
+		// 잘라내지 않고 거부한다. 잘리면 뒷말이 사라진 줄 모른 채 대화가 이어진다.
+		return ETDChatSendResult::TooLong;
+	}
+
+	// System 과 Loot 은 서버만 쓴다. Sender 가 있다는 것은 플레이어 요청이라는 뜻이다.
+	const bool bServerOnlyChannel = Channel == ETDChatChannel::System || Channel == ETDChatChannel::Loot;
+	if (Sender != nullptr && bServerOnlyChannel)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("채팅: %s 가 서버 전용 채널로 보내려 했다."),
+			Sender->PlayerState ? *Sender->PlayerState->GetPlayerName() : TEXT("알 수 없음"));
+		return ETDChatSendResult::ChannelNotAllowed;
+	}
+
+	// 검열은 플레이어가 쓴 것에만 건다. 서버가 만든 문장을 자기가 다시 거를 이유가 없다.
+	FString FinalMessage = Trimmed;
+	if (Sender != nullptr)
+	{
+		bool bMasked = false;
+		FinalMessage = TDChatFilter::Mask(Trimmed, GetBannedWords(), bMasked);
+
+		if (bMasked)
+		{
+			UE_LOG(LogTemp, Log, TEXT("채팅 필터: %s 의 메시지를 가렸다."),
+				Sender->PlayerState ? *Sender->PlayerState->GetPlayerName() : TEXT("알 수 없음"));
+		}
+	}
+
+	const FString SenderName = (Sender != nullptr && Sender->PlayerState != nullptr)
+		? Sender->PlayerState->GetPlayerName()
+		: FString();
+
+	switch (Channel)
+	{
+	case ETDChatChannel::All:
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			DeliverChat(It->Get(), Channel, SenderName, FinalMessage);
+		}
+		return ETDChatSendResult::Success;
+
+	case ETDChatChannel::Party:
+	{
+		const ATDPlayerState* SenderState = Sender ? Sender->GetPlayerState<ATDPlayerState>() : nullptr;
+		UTDPartyComponent* Party = SenderState ? SenderState->GetPartyComponent() : nullptr;
+
+		if (Party == nullptr || !Party->IsInParty())
+		{
+			return ETDChatSendResult::NotInParty;
+		}
+
+		for (ATDPlayerState* Member : Party->GetPartyMembers())
+		{
+			if (Member != nullptr)
+			{
+				DeliverChat(Member->GetPlayerController(), Channel, SenderName, FinalMessage);
+			}
+		}
+		return ETDChatSendResult::Success;
+	}
+
+	case ETDChatChannel::Whisper:
+	{
+		APlayerController* Target = FindPlayerControllerByName(TargetName);
+		if (Target == nullptr)
+		{
+			return ETDChatSendResult::TargetNotFound;
+		}
+
+		DeliverChat(Target, Channel, SenderName, FinalMessage);
+
+		// 보낸 사람도 자기 화면에서 확인해야 한다. 자기에게 귓속말한 경우
+		// 두 번 뜨지 않도록 대상과 같으면 건너뛴다.
+		if (Sender != Target)
+		{
+			DeliverChat(Sender, Channel, SenderName, FinalMessage);
+		}
+		return ETDChatSendResult::Success;
+	}
+
+	case ETDChatChannel::System:
+	case ETDChatChannel::Loot:
+		// 여기까지 온 것은 서버가 부른 경우다. 대상을 정하는 것은 부른 쪽의 몫이라
+		// SendSystemMessage / BroadcastSystemMessage 를 쓴다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("채팅: 서버 전용 채널은 SendSystemMessage 를 쓸 것."));
+		return ETDChatSendResult::ChannelNotAllowed;
+	}
+
+	return ETDChatSendResult::Success;
+}
+
+void ATDGameMode::SendSystemMessage(APlayerController* Target, ETDChatChannel Channel, const FString& Message)
+{
+	if (Target == nullptr || Message.IsEmpty())
+	{
+		return;
+	}
+
+	// 보낸 사람 이름이 비어 있다. UI 는 이 채널에서 이름을 그리지 않으면 된다.
+	DeliverChat(Target, Channel, FString(), Message);
+}
+
+void ATDGameMode::BroadcastSystemMessage(const FString& Message)
+{
+	if (Message.IsEmpty())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		DeliverChat(It->Get(), ETDChatChannel::System, FString(), Message);
+	}
 }

@@ -4,6 +4,9 @@
 #include "Character/TDCharacterBase.h"
 #include "TDEnemyBase.generated.h"
 
+/** 적 발견 반응. 발견 모션·경계음이 구독한다. 전 머신에서 불린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnMonsterSensed);
+
 class UAbilitySystemComponent;
 class UDataTable;
 class UTDAttributeSet;
@@ -44,12 +47,18 @@ public:
 	
 	/** 처치 보상 지급. 죽인 쪽의 성장 컴포넌트에 경험치를 넣는다. 서버 전용. */
 	void GrantRewards(ATDCharacterBase* Killer);
+	
+	UPROPERTY(BlueprintAssignable, Category = "TD|Monster")
+	FTDOnMonsterSensed OnSensed;
 
 	UFUNCTION(BlueprintPure, Category = "TD|Monster")
 	FName GetMonsterId() const
 	{
 		return MonsterId;
 	}
+	/** "발견!" 방송. AI 컨트롤러가 부른다. */
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastOnSense();
 	
 protected:
 	virtual void BeginPlay() override;

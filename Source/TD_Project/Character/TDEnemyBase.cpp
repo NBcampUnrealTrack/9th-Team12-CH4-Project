@@ -280,3 +280,8 @@ void ATDEnemyBase::GrantRewards(
 		}
 	}
 }
+
+void ATDEnemyBase::MulticastOnSense_Implementation()
+{
+	OnSensed.Broadcast();
+}

@@ -7,17 +7,52 @@
 #include "Core/TDGameInstance.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/GameInstance.h"
 #include "Items/TDInventoryComponent.h"
+#include "Market/TDMarketSubsystem.h"
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
+#include "Settings/TDChatSettings.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
+#include "World/TDZoneEnvironmentComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDDialogueRow.h"
 #include "Engine/DataTable.h"
 #include "Quest/TDQuestComponent.h"
 #include "World/TDNPCBase.h"
+
+ATDPlayerController::ATDPlayerController()
+{
+	// 로컬 컨트롤러에서만 실제로 동작한다. 서버에 있는 남의 컨트롤러에서는
+	// 컴포넌트가 스스로 Tick 을 끈다.
+	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
+		TEXT("ZoneEnvironmentComponent"));
+}
+
+void ATDPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	// 새 Pawn 은 BP 기본 카메라 값을 갖고 있다. 존이 바뀐 것이 아니라
+	// 알림도 오지 않으므로 여기서 직접 맞춘다.
+	if (ZoneEnvironmentComponent != nullptr)
+	{
+		ZoneEnvironmentComponent->ReapplyCurrentZone();
+	}
+}
+
+void ATDPlayerController::AcknowledgePossession(APawn* InPawn)
+{
+	Super::AcknowledgePossession(InPawn);
+
+	// 클라이언트 경로. 카메라를 실제로 만지는 쪽은 대부분 여기다.
+	if (ZoneEnvironmentComponent != nullptr)
+	{
+		ZoneEnvironmentComponent->ReapplyCurrentZone();
+	}
+}
 
 void ATDPlayerController::TDConnect(const FString& Address)
 {
@@ -666,4 +701,162 @@ void ATDPlayerController::ClientQuestActionResult_Implementation(
 		TEXT("퀘스트 처리 결과: Quest='%s', Result=%d"),
 		*QuestId.ToString(),
 		static_cast<int32>(Result));
+}
+
+// ── 채팅 ──────────────────────────────────────────────────
+
+void ATDPlayerController::ServerSendChat_Implementation(ETDChatChannel Channel,
+	const FString& Message, const FString& TargetName)
+{
+	ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
+	if (GameMode == nullptr)
+	{
+		return;
+	}
+
+	// 도배 검사를 여기서 하는 이유는 "마지막으로 보낸 시각" 이 이 플레이어의 상태라서다.
+	// GameMode 가 들고 있으면 접속자마다 목록을 관리해야 하고, 나갈 때 지우는 것도
+	// 잊으면 안 된다. 컨트롤러가 사라지면 이 값도 함께 사라진다.
+	const UTDChatSettings* Settings = UTDChatSettings::Get();
+	const float Cooldown = Settings ? Settings->SendCooldownSeconds : 0.f;
+
+	if (Cooldown > 0.f)
+	{
+		// 서버 시각으로만 잰다. 클라이언트가 보낸 값을 믿으면 그대로 조작된다.
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastChatSendTime < Cooldown)
+		{
+			ClientChatSendFailed(ETDChatSendResult::TooFast);
+			return;
+		}
+	}
+
+	const ETDChatSendResult Result = GameMode->RouteChatMessage(this, Channel, Message, TargetName);
+
+	if (Result != ETDChatSendResult::Success)
+	{
+		ClientChatSendFailed(Result);
+		return;
+	}
+
+	// 성공한 뒤에 시각을 갱신한다. 거부된 요청까지 쿨다운에 넣으면
+	// 오타 한 번에 다음 말까지 막힌다.
+	LastChatSendTime = FPlatformTime::Seconds();
+}
+
+void ATDPlayerController::ClientReceiveChat_Implementation(ETDChatChannel Channel,
+	const FString& SenderName, const FString& Message)
+{
+	OnChatReceived.Broadcast(Channel, SenderName, Message);
+
+	// UI 가 붙기 전까지는 로그로 확인한다.
+	UE_LOG(LogTemp, Log, TEXT("[채팅/%s] %s%s"),
+		*UEnum::GetDisplayValueAsText(Channel).ToString(),
+		SenderName.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("%s: "), *SenderName),
+		*Message);
+}
+
+void ATDPlayerController::ClientChatSendFailed_Implementation(ETDChatSendResult Reason)
+{
+	// 문구는 만들지 않는다. UI 가 이 델리게이트를 받아 자기 형식으로 표시한다.
+	OnChatSendFailed.Broadcast(Reason);
+
+	UE_LOG(LogTemp, Log, TEXT("채팅 거부됨: %s"),
+		*UEnum::GetDisplayValueAsText(Reason).ToString());
+}
+
+// ── 거래소 ────────────────────────────────────────────────
+// 실제 처리는 UTDMarketSubsystem 이 한다. 여기는 요청을 넘기고 결과를 돌려주는 통로다.
+
+namespace
+{
+	/** 서버에서만 유효하다. 클라이언트에도 서브시스템은 있지만 매물 목록이 비어 있다. */
+	UTDMarketSubsystem* GetMarket(const APlayerController* Controller)
+	{
+		const UGameInstance* GameInstance = Controller ? Controller->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UTDMarketSubsystem>() : nullptr;
+	}
+}
+
+void ATDPlayerController::ServerListItem_Implementation(int32 InventorySlot, int32 Price)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, 0);
+		return;
+	}
+
+	int32 NewListingId = 0;
+	const ETDMarketResult Result = Market->ListItem(TDPlayerState, InventorySlot, Price, NewListingId);
+
+	ClientMarketResult(Result, NewListingId);
+}
+
+void ATDPlayerController::ServerBuyListing_Implementation(int32 ListingId)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, ListingId);
+		return;
+	}
+
+	// 요청한 번호를 그대로 돌려준다. UI 가 어느 줄에 대한 결과인지 알아야 한다.
+	ClientMarketResult(Market->BuyListing(TDPlayerState, ListingId), ListingId);
+}
+
+void ATDPlayerController::ServerCancelListing_Implementation(int32 ListingId)
+{
+	UTDMarketSubsystem* Market = GetMarket(this);
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		ClientMarketResult(ETDMarketResult::InternalError, ListingId);
+		return;
+	}
+
+	ClientMarketResult(Market->CancelListing(TDPlayerState, ListingId), ListingId);
+}
+
+void ATDPlayerController::ServerSearchListings_Implementation(FName ItemIdFilter, int32 Page)
+{
+	if (const UTDMarketSubsystem* Market = GetMarket(this))
+	{
+		ClientMarketSearchResult(Market->Search(ItemIdFilter, Page));
+	}
+}
+
+void ATDPlayerController::ServerRequestMyListings_Implementation()
+{
+	const UTDMarketSubsystem* Market = GetMarket(this);
+	const ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	if (Market == nullptr || TDPlayerState == nullptr)
+	{
+		return;
+	}
+
+	ClientMarketSearchResult(Market->GetListingsBySeller(TDPlayerState->GetPlayerName()));
+}
+
+void ATDPlayerController::ClientMarketResult_Implementation(ETDMarketResult Result, int32 ListingId)
+{
+	OnMarketResult.Broadcast(Result, ListingId);
+
+	UE_LOG(LogTemp, Log, TEXT("거래소 결과: %s (매물 %d)"),
+		*UEnum::GetDisplayValueAsText(Result).ToString(), ListingId);
+}
+
+void ATDPlayerController::ClientMarketSearchResult_Implementation(
+	const TArray<FTDMarketListing>& Listings)
+{
+	OnMarketSearchResult.Broadcast(Listings);
+
+	UE_LOG(LogTemp, Log, TEXT("거래소 검색 결과 %d건"), Listings.Num());
 }

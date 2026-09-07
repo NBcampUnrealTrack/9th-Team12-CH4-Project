@@ -26,4 +26,17 @@ public:
 	/** WindowLayer에 생성할 위젯 클래스. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
 	TSoftClassPtr<UTDWindowBaseWidget> InventoryWindowClass;
+
+	/** Nav의 캐릭터 버튼으로 열 캐릭터 정보 창. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> CharacterWindowClass;
+
+	/**
+	 * 설정 창(그래픽·사운드·화면·단축키).
+	 *
+	 * Nav의 시스템 버튼과 ESC 메뉴가 같은 창을 연다. 둘을 따로 만들면 한쪽만
+	 * 고쳤을 때 화면이 갈라진다.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> SystemWindowClass;
 };

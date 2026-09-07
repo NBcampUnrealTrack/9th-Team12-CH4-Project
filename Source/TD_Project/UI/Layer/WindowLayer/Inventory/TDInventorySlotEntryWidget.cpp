@@ -2,7 +2,50 @@
 #include "TDInventorySlotEntryWidget.h"
 
 #include "TDInventorySlotListItem.h"
+#include "Core/TDGameplayTags.h"
+#include "Data/TDItemRow.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "InputCoreTypes.h"
+#include "Items/TDInventoryComponent.h"
+#include "UI/Common/ItemSlot/TDItemDragDropOperation.h"
 #include "UI/Common/ItemSlot/TDItemSlotVisualWidget.h"
+
+UTDInventoryComponent* UTDInventorySlotEntryWidget::GetDraggableInventory() const
+{
+	if (!IsValid(SlotListItem) || !SlotListItem->bHasItem || SlotListItem->bIsPreviewItem) return nullptr;
+	const APlayerController* Controller = GetOwningPlayer();
+	const APlayerState* State = Controller ? Controller->PlayerState.Get() : nullptr;
+	UTDInventoryComponent* Inventory = State ? State->FindComponentByClass<UTDInventoryComponent>() : nullptr;
+	const FTDItemInstance* Item = Inventory ? Inventory->FindBySlot(SlotListItem->SlotIndex) : nullptr;
+	if (!Item || !Item->IsValid() || Item->ItemId != SlotListItem->ItemInstance.ItemId) return nullptr;
+	const FTDItemRow* Definition = Inventory->FindItemDefinition(Item->ItemId);
+	return Definition && Definition->ItemType == TDTags::Item_Type_Consumable.GetTag() ? Inventory : nullptr;
+}
+
+FReply UTDInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && GetDraggableInventory())
+	{
+		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+	}
+	return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+}
+
+void UTDInventorySlotEntryWidget::NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation)
+{
+	UTDInventoryComponent* Inventory = GetDraggableInventory();
+	if (!Inventory)
+	{
+		Super::NativeOnDragDetected(Geometry, Event, Operation);
+		return;
+	}
+	UTDItemDragDropOperation* Drag = NewObject<UTDItemDragDropOperation>(this);
+	Drag->SourceInventory = Inventory;
+	Drag->ItemId = SlotListItem->ItemInstance.ItemId;
+	Drag->SetDragIcon(SlotListItem->Icon.LoadSynchronous());
+	Operation = Drag;
+}
 
 void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {

@@ -19,6 +19,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
 	bool bHasItem = false;
 
+	/** 테스트 테이블에서 만든 항목은 실제 아이템으로 드래그할 수 없다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
+	bool bIsPreviewItem = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
 	FTDItemInstance ItemInstance;
 

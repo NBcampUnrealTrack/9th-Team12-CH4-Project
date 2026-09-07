@@ -4,7 +4,10 @@
 #include "Data/TDClassGrowthRow.h"
 #include "Data/TDLevelExpRow.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
+#include "Game/TDGameMode.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "Stats/TDStatComponent.h"
 
@@ -94,6 +97,7 @@ bool UTDProgressionComponent::SetLevel(int32 NewLevel)
 	Exp = GetRequiredExpForLevel(ClampedLevel);
 
 	ApplyLevelChange(ClampedLevel);
+	OnProgressionChanged.Broadcast();
 
 	return true;
 }
@@ -127,8 +131,25 @@ void UTDProgressionComponent::AddExp(int32 Amount)
 
 	Exp += Amount;
 
-	// 레벨은 저장하지 않는 파생값이다. 경험치가 늘 때마다 다시 구한다.
+		// 레벨은 저장하지 않는 파생값이다. 경험치가 늘 때마다 다시 구한다.
 	ApplyLevelChange(CalculateLevelFromExp(Exp));
+
+	// 경험치바처럼 값을 그리는 UI 가 구독한다.
+	OnProgressionChanged.Broadcast();
+
+	// 획득 알림은 이 플레이어에게만 간다. 위 델리게이트와 하는 일이 다르다 —
+	// 그쪽은 화면의 숫자를 갱신하고, 이쪽은 채팅창에 한 줄을 남긴다.
+	const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
+	APlayerController* Controller = OwnerState ? OwnerState->GetPlayerController() : nullptr;
+
+	if (Controller != nullptr)
+	{
+		if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
+		{
+			GameMode->SendSystemMessage(Controller, ETDChatChannel::Loot,
+				FString::Printf(TEXT("경험치 %d 획득"), Amount));
+		}
+	}
 }
 
 int32 UTDProgressionComponent::CalculateLevelFromExp(int32 TotalExp) const
@@ -371,4 +392,16 @@ void UTDProgressionComponent::ReadSaveData(const FTDPlayerSaveData& In)
 	}
 
 	RefreshStatModifiers();
+	OnProgressionChanged.Broadcast();
+}
+
+void UTDProgressionComponent::OnRep_Level(int32 PreviousLevel)
+{
+	OnLevelUp.Broadcast(Level, PreviousLevel);
+	OnProgressionChanged.Broadcast();
+}
+
+void UTDProgressionComponent::OnRep_Exp()
+{
+	OnProgressionChanged.Broadcast();
 }

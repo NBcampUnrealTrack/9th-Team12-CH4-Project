@@ -15,6 +15,7 @@ class UTDStatComponent;
  * 한 번에 여러 레벨이 오를 수 있으므로(보스 처치·퀘스트 보상) 이전 레벨도 함께 넘긴다.
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnLevelUp, int32, NewLevel, int32, PreviousLevel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnProgressionChanged);
 
 /**
  * 캐릭터의 성장을 담당하는 컴포넌트. 레벨, 경험치, 직업, 스킬 레벨을 소유한다.
@@ -67,6 +68,10 @@ public:
 	/** 레벨이 올랐을 때. 서버·클라 양쪽에서 불린다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Progression")
 	FTDOnLevelUp OnLevelUp;
+
+	/** 레벨이 그대로인 경험치 획득도 UI에 알린다. 서버와 복제 수신 양쪽에서 호출. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Progression")
+	FTDOnProgressionChanged OnProgressionChanged;
 
 	// ── 조회 ──────────────────────────────────────────────
 
@@ -170,11 +175,17 @@ private:
 	// UI 가 레벨·경험치·잔여 스킬포인트를 표시하고, 남의 레벨도 보여야 하므로
 	// 소유자 전용이 아니라 전원에게 보낸다.
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_Level)
 	int32 Level = 1;
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_Exp)
 	int32 Exp = 0;
+
+	UFUNCTION()
+	void OnRep_Level(int32 PreviousLevel);
+
+	UFUNCTION()
+	void OnRep_Exp();
 
 	/** 비어 있으면 Default 성장만 적용된다. */
 	UPROPERTY(Replicated)

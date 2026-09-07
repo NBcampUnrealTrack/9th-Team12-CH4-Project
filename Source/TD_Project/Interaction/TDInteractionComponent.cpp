@@ -5,6 +5,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Interaction/TDInteractable.h"
+#include "GameFramework/PlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 
 UTDInteractionComponent::UTDInteractionComponent()
 {
@@ -146,4 +148,21 @@ void UTDInteractionComponent::ServerRequestInteract_Implementation()
 	}
 
 	ITDInteractable::Execute_Interact(Target, Player);
+	
+	
+	APlayerController* Controller =
+	Cast<APlayerController>(
+		Player->GetController());
+
+	const UTDInteractionFlowComponent* Flow =
+		Controller
+			? Controller->FindComponentByClass<
+				UTDInteractionFlowComponent>()
+			: nullptr;
+
+	if (Flow != nullptr
+		&& Flow->IsGameplayLocked())
+	{
+		return;
+	}
 }

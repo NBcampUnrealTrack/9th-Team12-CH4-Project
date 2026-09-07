@@ -11,6 +11,8 @@
 #include "GameFramework/Pawn.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDStatComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	const FGameplayTagContainer& ContextTags)
@@ -37,6 +39,22 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		return NoDamage;
 	}
 
+	// 플레이어가 대화창이나 컷씬 등으로 게임플레이가 잠겨있는 동안에는, 몬스터나 다른 캐릭터의 공격이 들어와도 데미지를 받지 않는다
+	if (APlayerController* TargetController =
+	Cast<APlayerController>(
+		TargetChar->GetController()))
+	{
+		const UTDInteractionFlowComponent* Flow =
+			TargetController->FindComponentByClass<
+				UTDInteractionFlowComponent>();
+
+		if (Flow != nullptr
+			&& Flow->IsGameplayLocked())
+		{
+			return NoDamage;
+		}
+	}
+	
 	// 안전지대에서는 전투가 일어나지 않는다(DT_ZoneEnvironment.bIsSafeZone).
 	//
 	// **맞는 쪽 기준**이다. 때리는 쪽을 보면 안전지대 밖에서 마을 안으로 원거리
@@ -96,7 +114,22 @@ void UTDCombatStatics::ApplyRawDamage(AActor* Target, float Amount)
 	{
 		return;
 	}
+	// 플레이어가 대화/컷씬 등으로 게임플레이가 잠긴 동안엔 노 데미지
+	if (APlayerController* TargetController =
+	Cast<APlayerController>(
+		TargetChar->GetController()))
+	{
+		const UTDInteractionFlowComponent* Flow =
+			TargetController->FindComponentByClass<
+				UTDInteractionFlowComponent>();
 
+		if (Flow != nullptr
+			&& Flow->IsGameplayLocked())
+		{
+			return;
+		}
+	}
+	
 	UAbilitySystemComponent* TargetASC = TargetChar->GetAbilitySystemComponent();
 	if (TargetASC == nullptr)
 	{

@@ -3,6 +3,7 @@
 #include "Character/TDPlayerCharacter.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
+#include "Data/TDItemRow.h"
 #include "Data/TDTreasureChestRow.h"
 #include "Items/TDInventoryComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -10,14 +11,13 @@
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
 #include "Quest/TDPersonalWorldStateComponent.h"
-#include "TimerManager.h"
+#include "Quest/TDQuestComponent.h"
+#include "Stats/TDProgressionComponent.h"
+#include "World/TDKoreanDailyResetSubsystem.h"
 
 ATDTreasureChest::ATDTreasureChest()
 {
 	PrimaryActorTick.bCanEverTick = false;
-
-	// 맵에 고정 배치한다.
-	// 위치와 상태를 계속 복제할 필요가 없다.
 	bReplicates = false;
 
 	SceneRoot =
@@ -33,10 +33,6 @@ ATDTreasureChest::ATDTreasureChest()
 	SpriteComponent->SetupAttachment(SceneRoot);
 	SpriteComponent->SetCollisionEnabled(
 		ECollisionEnabled::NoCollision);
-
-	SpriteComponent->SetGenerateOverlapEvents(false);
-
-	// 2.5D 스프라이트가 Actor 회전을 따라 종이처럼 돌아가지 않게 한다.
 	SpriteComponent->SetUsingAbsoluteRotation(true);
 
 	InteractionSphere =
@@ -45,57 +41,35 @@ ATDTreasureChest::ATDTreasureChest()
 
 	InteractionSphere->SetupAttachment(SceneRoot);
 	InteractionSphere->SetSphereRadius(150.0f);
-
 	InteractionSphere->SetCollisionObjectType(
 		ECC_WorldDynamic);
-
 	InteractionSphere->SetCollisionEnabled(
 		ECollisionEnabled::QueryOnly);
-
 	InteractionSphere->SetCollisionResponseToAllChannels(
 		ECR_Ignore);
-
 	InteractionSphere->SetCollisionResponseToChannel(
 		ECC_Pawn,
 		ECR_Overlap);
-
-	InteractionSphere->SetGenerateOverlapEvents(true);
 }
 
 void ATDTreasureChest::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (ChestDefinition.DataTable == nullptr
-		|| ChestDefinition.RowName.IsNone())
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("상자 '%s': ChestDefinition이 지정되지 않았다."),
-			*GetName());
-	}
-	else if (GetDefinitionRow() == nullptr)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("상자 '%s': DT_TreasureChest에 Row '%s'가 없다."),
-			*GetName(),
-			*ChestDefinition.RowName.ToString());
-	}
-
-	// 전용 서버에는 화면이 없으므로 로컬 표시 상태를 갱신하지 않는다.
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	TryBindToLocalPersonalState();
+	TryBindToLocalState();
 
 	if (LocalPersonalState == nullptr)
 	{
-		// 레벨 Actor의 BeginPlay가 PlayerState 복제보다 먼저 올 수 있다.
 		GetWorldTimerManager().SetTimer(
 			BindRetryTimerHandle,
 			this,
-			&ATDTreasureChest::TryBindToLocalPersonalState,
+			&ATDTreasureChest::
+				TryBindToLocalState,
 			0.25f,
 			true);
 	}
@@ -112,9 +86,18 @@ void ATDTreasureChest::EndPlay(
 
 	if (LocalPersonalState != nullptr)
 	{
-		LocalPersonalState->OnPersonalWorldStateChanged.RemoveDynamic(
-			this,
-			&ATDTreasureChest::HandlePersonalWorldStateChanged);
+		LocalPersonalState
+			->OnPersonalWorldStateChanged
+			.RemoveDynamic(
+				this,
+				&ATDTreasureChest::HandlePersonalStateChanged);
+	}
+
+	if (DailyResetSubsystem != nullptr)
+	{
+		DailyResetSubsystem
+			->OnKoreanDayChanged
+			.RemoveAll(this);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -129,8 +112,9 @@ ATDTreasureChest::GetDefinitionRow() const
 		return nullptr;
 	}
 
-	return ChestDefinition.GetRow<FTDTreasureChestRow>(
-		TEXT("ATDTreasureChest"));
+	return ChestDefinition.GetRow<
+		FTDTreasureChestRow>(
+			TEXT("ATDTreasureChest"));
 }
 
 bool ATDTreasureChest::CanInteract_Implementation(
@@ -144,47 +128,242 @@ bool ATDTreasureChest::CanInteract_Implementation(
 	const FTDTreasureChestRow* Row =
 		GetDefinitionRow();
 
-	if (Row == nullptr
-		|| Row->RewardItemId.IsNone()
-		|| Row->RewardCount <= 0)
-	{
-		return false;
-	}
-
 	const ATDPlayerState* PlayerState =
 		Player->GetPlayerState<ATDPlayerState>();
 
-	const UTDPersonalWorldStateComponent* PersonalState =
+	const UTDPersonalWorldStateComponent* Personal =
 		PlayerState
-			? PlayerState->GetPersonalWorldStateComponent()
+			? PlayerState
+				->GetPersonalWorldStateComponent()
 			: nullptr;
 
-	if (PersonalState == nullptr)
+	if (Row == nullptr
+		|| Personal == nullptr
+		|| !Personal->MatchesCondition(
+			Row->Condition))
 	{
 		return false;
 	}
 
-	const FName ChestId = GetChestId();
+	return Personal->CanClaimChest(
+		GetChestId(),
+		Row->ResetType);
+}
 
-	if (ChestId.IsNone()
-		|| PersonalState->HasClaimedChest(ChestId))
+void ATDTreasureChest::RollRandomRewards(
+	const FTDTreasureChestRow& Definition,
+	TArray<FTDChestItemReward>& OutRewards) const
+{
+	if (!Definition.bUseRandomRewards)
 	{
-		return false;
+		return;
 	}
 
-	return PersonalState->MatchesCondition(
-		Row->Condition);
+	const int32 SafeMin =
+		FMath::Clamp(
+			Definition.MinRollCount,
+			0,
+			2);
+
+	const int32 SafeMax =
+		FMath::Clamp(
+			FMath::Max(
+				SafeMin,
+				Definition.MaxRollCount),
+			0,
+			2);
+
+	const int32 RollCount =
+		FMath::RandRange(
+			SafeMin,
+			SafeMax);
+
+	float TotalWeight =
+		FMath::Max(
+			0.0f,
+			Definition.MissWeight);
+
+	for (const FTDChestRandomReward& Reward :
+		Definition.RandomRewards)
+	{
+		if (!Reward.ItemId.IsNone())
+		{
+			TotalWeight +=
+				FMath::Max(
+					0.0f,
+					Reward.Weight);
+		}
+	}
+
+	for (int32 RollIndex = 0;
+		RollIndex < RollCount;
+		++RollIndex)
+	{
+		if (TotalWeight <= 0.0f)
+		{
+			continue;
+		}
+
+		float Pick =
+			FMath::FRandRange(
+				0.0f,
+				TotalWeight);
+
+		const float MissWeight =
+			FMath::Max(
+				0.0f,
+				Definition.MissWeight);
+
+		if (Pick < MissWeight)
+		{
+			continue;
+		}
+
+		Pick -= MissWeight;
+
+		for (const FTDChestRandomReward& Reward :
+			Definition.RandomRewards)
+		{
+			const float Weight =
+				FMath::Max(
+					0.0f,
+					Reward.Weight);
+
+			if (Reward.ItemId.IsNone()
+				|| Weight <= 0.0f)
+			{
+				continue;
+			}
+
+			if (Pick > Weight)
+			{
+				Pick -= Weight;
+				continue;
+			}
+
+			FTDChestItemReward& Added =
+				OutRewards.AddDefaulted_GetRef();
+
+			Added.ItemId = Reward.ItemId;
+
+			const int32 MinCount =
+				FMath::Max(
+					1,
+					Reward.MinCount);
+
+			const int32 MaxCount =
+				FMath::Max(
+					MinCount,
+					Reward.MaxCount);
+
+			Added.Count =
+				FMath::RandRange(
+					MinCount,
+					MaxCount);
+
+			break;
+		}
+	}
+}
+
+bool ATDTreasureChest::CanFitAllItemRewards(
+	const TArray<FTDChestItemReward>& Rewards,
+	UTDInventoryComponent* Inventory) const
+{
+	if (Inventory == nullptr)
+	{
+		return Rewards.IsEmpty();
+	}
+
+	TArray<FTDItemInstance> Simulated =
+		Inventory->GetItems();
+
+	for (const FTDChestItemReward& Reward :
+		Rewards)
+	{
+		if (Reward.ItemId.IsNone()
+			|| Reward.Count <= 0)
+		{
+			return false;
+		}
+
+		const FTDItemRow* Definition =
+			Inventory->FindItemDefinition(
+				Reward.ItemId);
+
+		if (Definition == nullptr)
+		{
+			return false;
+		}
+
+		const int32 MaxStack =
+			Definition->bStackable
+				? FMath::Max(
+					1,
+					Definition->MaxStackSize)
+				: 1;
+
+		int32 Remaining = Reward.Count;
+
+		if (Definition->bStackable)
+		{
+			for (FTDItemInstance& Item :
+				Simulated)
+			{
+				if (Item.ItemId != Reward.ItemId
+					|| Item.Count >= MaxStack)
+				{
+					continue;
+				}
+
+				const int32 Added =
+					FMath::Min(
+						Remaining,
+						MaxStack - Item.Count);
+
+				Item.Count += Added;
+				Remaining -= Added;
+
+				if (Remaining <= 0)
+				{
+					break;
+				}
+			}
+		}
+
+		while (Remaining > 0)
+		{
+			if (Simulated.Num()
+				>= Inventory->GetSlotCapacity())
+			{
+				return false;
+			}
+
+			FTDItemInstance NewItem;
+			NewItem.ItemId = Reward.ItemId;
+			NewItem.Count =
+				FMath::Min(
+					Remaining,
+					MaxStack);
+
+			Remaining -= NewItem.Count;
+			Simulated.Add(NewItem);
+		}
+	}
+
+	return true;
 }
 
 void ATDTreasureChest::Interact_Implementation(
 	ATDPlayerCharacter* Player)
 {
-	if (!HasAuthority() || !IsValid(Player))
+	if (!HasAuthority()
+		|| !IsValid(Player))
 	{
 		return;
 	}
 
-	ATDPlayerController* PlayerController =
+	ATDPlayerController* Controller =
 		Cast<ATDPlayerController>(
 			Player->GetController());
 
@@ -196,98 +375,172 @@ void ATDTreasureChest::Interact_Implementation(
 
 	const FName ChestId = GetChestId();
 
-	if (PlayerController == nullptr
-		|| PlayerState == nullptr)
+	if (Controller == nullptr
+		|| PlayerState == nullptr
+		|| Row == nullptr
+		|| ChestId.IsNone())
 	{
+		if (Controller != nullptr)
+		{
+			Controller->ClientInteractionFailed(
+				ChestId,
+				ETDInteractionFailureReason::
+					InvalidDefinition);
+		}
+
 		return;
 	}
 
-	if (Row == nullptr
-		|| ChestId.IsNone()
-		|| Row->RewardItemId.IsNone()
-		|| Row->RewardCount <= 0)
-	{
-		PlayerController->ClientInteractionFailed(
-			ChestId,
-			ETDInteractionFailureReason::InvalidDefinition);
-
-		return;
-	}
-
-	UTDPersonalWorldStateComponent* PersonalState =
-		PlayerState->GetPersonalWorldStateComponent();
+	UTDPersonalWorldStateComponent* Personal =
+		PlayerState
+			->GetPersonalWorldStateComponent();
 
 	UTDInventoryComponent* Inventory =
 		PlayerState->GetInventoryComponent();
 
-	if (PersonalState == nullptr
-		|| Inventory == nullptr)
+	UTDProgressionComponent* Progression =
+		PlayerState->GetProgressionComponent();
+
+	UTDQuestComponent* Quest =
+		PlayerState->GetQuestComponent();
+
+	if (Personal == nullptr
+		|| Inventory == nullptr
+		|| Quest == nullptr
+		|| (Row->FixedExp > 0
+			&& Progression == nullptr))
 	{
-		PlayerController->ClientInteractionFailed(
+		Controller->ClientInteractionFailed(
 			ChestId,
-			ETDInteractionFailureReason::InvalidDefinition);
+			ETDInteractionFailureReason::
+				InvalidDefinition);
 
 		return;
 	}
 
-	// 서버가 실제 실행 직전에 다시 확인한다.
-	if (PersonalState->HasClaimedChest(ChestId))
+	if (!Personal->CanClaimChest(
+		ChestId,
+		Row->ResetType))
 	{
-		PlayerController->ClientInteractionFailed(
+		Controller->ClientInteractionFailed(
 			ChestId,
-			ETDInteractionFailureReason::AlreadyClaimed);
+			ETDInteractionFailureReason::
+				AlreadyClaimed);
 
 		return;
 	}
 
-	if (!PersonalState->MatchesCondition(Row->Condition))
+	if (!Personal->MatchesCondition(
+		Row->Condition))
 	{
-		PlayerController->ClientInteractionFailed(
+		Controller->ClientInteractionFailed(
 			ChestId,
-			ETDInteractionFailureReason::QuestConditionNotMet);
+			ETDInteractionFailureReason::
+				QuestConditionNotMet);
 
 		return;
 	}
 
-	// AddItem은 내부에서 전체 수량이 들어갈 수 있는지 먼저 확인한다.
-	// 실패하면 아이템을 일부만 넣지 않으며 상자도 획득 처리하지 않는다.
-	if (!Inventory->AddItem(
-			Row->RewardItemId,
-			Row->RewardCount))
+	/**
+	 * 확률 상자는 부분 스택과 관계없이 실제 빈 슬롯 두 칸을 요구한다.
+	 */
+	if (Row->bUseRandomRewards)
 	{
-		PlayerController->ClientInteractionFailed(
+		const int32 EmptySlots =
+			Inventory->GetSlotCapacity()
+			- Inventory->GetUsedSlotCount();
+
+		if (EmptySlots < 2)
+		{
+			Controller->ClientInteractionFailed(
+				ChestId,
+				ETDInteractionFailureReason::
+					InventoryFull);
+
+			return;
+		}
+	}
+
+	TArray<FTDChestItemReward> FinalRewards =
+		Row->FixedItemRewards;
+
+	RollRandomRewards(
+		*Row,
+		FinalRewards);
+
+	if (!CanFitAllItemRewards(
+		FinalRewards,
+		Inventory))
+	{
+		Controller->ClientInteractionFailed(
 			ChestId,
-			ETDInteractionFailureReason::InventoryFull);
+			ETDInteractionFailureReason::
+				InventoryFull);
 
 		return;
 	}
 
-	// 아이템 지급 성공 후에만 상자를 획득 완료로 기록한다.
-	if (!PersonalState->MarkChestClaimed(ChestId))
+	/**
+	 * 사전 계산이 끝난 뒤 실제 지급한다.
+	 * 서버 함수 한 번이 실행되는 중에는 다른 상호작용 함수가 끼어들지 않는다.
+	 */
+	for (const FTDChestItemReward& Reward :
+		FinalRewards)
 	{
-		// 같은 서버 함수 안에서는 중간에 다른 요청이 끼어들지 않으므로
-		// 정상 상황에서는 여기에 도달하지 않는다.
+		if (!Inventory->AddItem(
+			Reward.ItemId,
+			Reward.Count))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("상자 보상 사전 계산 후 지급 실패: Chest='%s', Item='%s'"),
+				*ChestId.ToString(),
+				*Reward.ItemId.ToString());
+
+			Controller->ClientInteractionFailed(
+				ChestId,
+				ETDInteractionFailureReason::
+					InvalidDefinition);
+
+			return;
+		}
+	}
+
+	if (Row->FixedGold > 0)
+	{
+		Inventory->AddGold(Row->FixedGold);
+	}
+
+	if (Row->FixedExp > 0)
+	{
+		Progression->AddExp(Row->FixedExp);
+	}
+
+	if (!Personal->MarkChestClaimedWithReset(
+		ChestId,
+		Row->ResetType))
+	{
 		UE_LOG(LogTemp, Error,
-			TEXT("상자 '%s': 아이템 지급 후 획득 상태 기록에 실패했다."),
+			TEXT("상자 보상 지급 후 기록 실패: '%s'"),
 			*ChestId.ToString());
 
 		return;
 	}
 
-	// 이 PlayerController의 소유 클라이언트에만 전달한다.
-	PlayerController->ClientChestClaimed(
-		ChestId,
-		FMath::Max(0.0f, Row->DisappearDelay));
+	/**
+	 * 꽝이어도 상자가 정상적으로 열렸으므로
+	 * 상자 열기 퀘스트는 진행된다.
+	 */
+	Quest->ReportChestOpened(ChestId);
 
-	UE_LOG(LogTemp, Log,
-		TEXT("상자 획득: Player='%s', Chest='%s', Item='%s', Count=%d"),
-		*PlayerState->GetPlayerName(),
-		*ChestId.ToString(),
-		*Row->RewardItemId.ToString(),
-		Row->RewardCount);
+	Controller->ClientChestClaimed(
+		ChestId,
+		FMath::Max(
+			0.0f,
+			Row->DisappearDelay));
 }
 
-FText ATDTreasureChest::GetInteractionText_Implementation(
+FText ATDTreasureChest::
+GetInteractionText_Implementation(
 	ATDPlayerCharacter* Player) const
 {
 	return NSLOCTEXT(
@@ -296,72 +549,106 @@ FText ATDTreasureChest::GetInteractionText_Implementation(
 		"상자 열기");
 }
 
-void ATDTreasureChest::TryBindToLocalPersonalState()
+void ATDTreasureChest::TryBindToLocalState()
 {
-	if (GetNetMode() == NM_DedicatedServer
-		|| LocalPersonalState != nullptr)
+	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	APlayerController* LocalController =
+	APlayerController* Controller =
 		UGameplayStatics::GetPlayerController(
 			this,
 			0);
 
-	ATDPlayerState* LocalPlayerState =
-		LocalController
-			? LocalController->GetPlayerState<ATDPlayerState>()
+	ATDPlayerState* PlayerState =
+		Controller
+			? Controller
+				->GetPlayerState<ATDPlayerState>()
 			: nullptr;
 
-	if (LocalPlayerState == nullptr)
+	if (PlayerState == nullptr)
 	{
 		return;
 	}
-
-	LocalPersonalState =
-		LocalPlayerState->GetPersonalWorldStateComponent();
 
 	if (LocalPersonalState == nullptr)
 	{
-		return;
+		LocalPersonalState =
+			PlayerState->GetPersonalWorldStateComponent();
+
+		if (LocalPersonalState != nullptr)
+		{
+			LocalPersonalState
+				->OnPersonalWorldStateChanged
+				.AddUniqueDynamic(
+					this,
+					&ATDTreasureChest::HandlePersonalStateChanged);
+		}
 	}
 
-	LocalPersonalState->OnPersonalWorldStateChanged.AddUniqueDynamic(
-		this,
-		&ATDTreasureChest::HandlePersonalWorldStateChanged);
+	if (DailyResetSubsystem == nullptr)
+	{
+		DailyResetSubsystem =
+			GetWorld()->GetSubsystem<
+				UTDKoreanDailyResetSubsystem>();
 
+		if (DailyResetSubsystem != nullptr)
+		{
+			DailyResetSubsystem
+				->OnKoreanDayChanged
+				.AddUObject(
+					this,
+					&ATDTreasureChest::
+						HandleKoreanDayChanged);
+		}
+	}
+
+	if (LocalPersonalState != nullptr)
+	{
+		GetWorldTimerManager().ClearTimer(
+			BindRetryTimerHandle);
+
+		RefreshLocalPresentation();
+	}
+}
+
+void ATDTreasureChest::
+HandlePersonalStateChanged()
+{
+	RefreshLocalPresentation();
+}
+
+void ATDTreasureChest::HandleKoreanDayChanged()
+{
+	bPlayingClaimPresentation = false;
 	GetWorldTimerManager().ClearTimer(
-		BindRetryTimerHandle);
+		LocalHideTimerHandle);
 
-	// 저장 데이터를 이미 받은 상태라면 즉시 맞는 모습으로 바꾼다.
 	RefreshLocalPresentation();
 }
 
-void ATDTreasureChest::HandlePersonalWorldStateChanged()
+void ATDTreasureChest::
+RefreshLocalPresentation()
 {
-	RefreshLocalPresentation();
-}
-
-void ATDTreasureChest::RefreshLocalPresentation()
-{
-	if (GetNetMode() == NM_DedicatedServer
-		|| LocalPersonalState == nullptr)
+	if (LocalPersonalState == nullptr
+		|| bPlayingClaimPresentation)
 	{
 		return;
 	}
 
-	// 막 획득한 상자는 5초 연출이 끝날 때까지 OnRep 때문에 즉시 숨기지 않는다.
-	if (bPlayingClaimPresentation)
-	{
-		return;
-	}
+	const FTDTreasureChestRow* Row =
+		GetDefinitionRow();
 
-	const bool bClaimed =
-		LocalPersonalState->HasClaimedChest(
-			GetChestId());
+	const bool bCanClaim =
+		Row != nullptr
+		&& LocalPersonalState->CanClaimChest(
+			GetChestId(),
+			Row->ResetType)
+		&& LocalPersonalState->MatchesCondition(
+			Row->Condition);
 
-	SetLocalPresentationHidden(bClaimed);
+	SetLocalPresentationHidden(!bCanClaim);
 }
 
 void ATDTreasureChest::PlayClaimedPresentation(
@@ -373,11 +660,8 @@ void ATDTreasureChest::PlayClaimedPresentation(
 	}
 
 	bPlayingClaimPresentation = true;
-
-	// OnRep가 먼저 도착해 잠시 숨겨졌더라도 성공 RPC가 오면 다시 보여준다.
 	SetLocalPresentationHidden(false);
 
-	// 열린 플립북, 사운드, 이펙트는 BP에서 처리한다.
 	BP_OnChestClaimed(DisappearDelay);
 
 	GetWorldTimerManager().ClearTimer(
@@ -395,38 +679,30 @@ void ATDTreasureChest::PlayClaimedPresentation(
 	GetWorldTimerManager().SetTimer(
 		LocalHideTimerHandle,
 		this,
-		&ATDTreasureChest::FinishClaimedPresentation,
+		&ATDTreasureChest::
+			FinishClaimedPresentation,
 		SafeDelay,
 		false);
 }
 
-void ATDTreasureChest::FinishClaimedPresentation()
+void ATDTreasureChest::
+FinishClaimedPresentation()
 {
 	bPlayingClaimPresentation = false;
 	SetLocalPresentationHidden(true);
 }
 
-void ATDTreasureChest::SetLocalPresentationHidden(bool bInHidden)
+void ATDTreasureChest::SetLocalPresentationHidden(
+	bool bShouldHide)
 {
-	if (SpriteComponent != nullptr)
-	{
-		SpriteComponent->SetVisibility(
-		   !bInHidden,
-		   true);
+	SpriteComponent->SetVisibility(
+		!bShouldHide,
+		true);
 
-		SpriteComponent->SetComponentTickEnabled(
-		   !bInHidden); 
-	}
-
-	// 전용 서버의 Collision은 항상 유지한다.
-	// 상자를 획득했는지는 서버의 PersonalState가 판정한다.
-	//
-	// 순수 클라이언트에서는 F 안내 검색에서 제외되도록 로컬 Collision만 끈다.
-	if (!HasAuthority()
-		&& InteractionSphere != nullptr)
+	if (!HasAuthority())
 	{
 		InteractionSphere->SetCollisionEnabled(
-			bInHidden 
+			bShouldHide
 				? ECollisionEnabled::NoCollision
 				: ECollisionEnabled::QueryOnly);
 	}

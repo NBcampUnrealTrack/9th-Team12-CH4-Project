@@ -51,6 +51,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Monster")
 	FTDOnMonsterSensed OnSensed;
 
+	UFUNCTION(BlueprintPure, Category = "TD|Monster")
+	FName GetMonsterId() const
+	{
+		return MonsterId;
+	}
 	/** "발견!" 방송. AI 컨트롤러가 부른다. */
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnSense();

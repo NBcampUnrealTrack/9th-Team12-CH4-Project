@@ -141,11 +141,6 @@ void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	{
 		EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Attack);
 	}
-	
-	if (AttackAction != nullptr)
-	{
-		EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::Attack);
-	}
 
 	if (InteractAction != nullptr)
 	{

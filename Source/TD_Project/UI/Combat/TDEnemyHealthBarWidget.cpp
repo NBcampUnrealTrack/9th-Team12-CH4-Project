@@ -1,4 +1,4 @@
-﻿#include "TDEnemyHealthBarWidget.h"
+#include "TDEnemyHealthBarWidget.h"
 
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -110,10 +110,10 @@ void UTDEnemyHealthBarWidget::SetHealth(float CurrentHealth, float MaxHealth, bo
 	if (bHasHealthSample)
 	{
 		const float HealthDelta = SafeCurrentHealth - LastCurrentHealth;
-		if (!FMath::IsNearlyZero(HealthDelta))
-		{
-			ShowHealthDelta(HealthDelta, bIsCritical);
-		}
+		// if (!FMath::IsNearlyZero(HealthDelta))
+		// {
+			// ShowHealthDelta(HealthDelta, bIsCritical);
+		// }
 	}
 
 	LastCurrentHealth = SafeCurrentHealth;

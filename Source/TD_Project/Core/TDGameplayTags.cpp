@@ -108,4 +108,101 @@ namespace TDTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Equipment, "Source.Equipment",
 		"장착 중인 장신구와 세트 효과에서 온 모디파이어.");
+	
+	
+	
+	// ── 퀘스트 ────────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Main,
+		"Quest.Type.Main",
+		"메인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Sub,
+		"Quest.Type.Sub",
+		"서브 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Active,
+		"Quest.State.Active",
+		"진행 중인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_ReadyToTurnIn,
+		"Quest.State.ReadyToTurnIn",
+		"목표를 달성하여 완료 보고할 수 있는 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Completed,
+		"Quest.State.Completed",
+		"보상까지 받은 완료 퀘스트");
+
+	// ── 대화 작업 ─────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_AcceptQuest,
+		"Dialogue.Action.AcceptQuest",
+		"대화 진행 시 퀘스트 수락");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_TurnInQuest,
+		"Dialogue.Action.TurnInQuest",
+		"대화 진행 시 퀘스트 완료 및 보상 지급");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_ReportQuestEvent,
+		"Dialogue.Action.ReportQuestEvent",
+		"대화 진행 시 퀘스트 목표 진행");
+	
+	
+	// ── 퀘스트 진행 단계 ──────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Accepted,
+		"Quest.Main.Prologue01.Accepted",
+		"메인 퀘스트 Prologue01을 수락하여 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Ready,
+		"Quest.Main.Prologue01.Ready",
+		"메인 퀘스트 Prologue01의 목표를 달성하여 완료 보고 가능한 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Completed,
+		"Quest.Main.Prologue01.Completed",
+		"메인 퀘스트 Prologue01의 보상까지 받은 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Accepted,
+		"Quest.Sub.HelpVillage01.Accepted",
+		"서브 퀘스트 HelpVillage01을 수락하여 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Ready,
+		"Quest.Sub.HelpVillage01.Ready",
+		"서브 퀘스트 HelpVillage01의 목표를 달성하여 완료 보고 가능한 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Completed,
+		"Quest.Sub.HelpVillage01.Completed",
+		"서브 퀘스트 HelpVillage01의 보상까지 받은 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_Treasure01_Accepted,
+		"Quest.Sub.Treasure01.Accepted",
+		"개인 보물상자 테스트용 퀘스트를 수락한 상태");
+
+	// ── 퀘스트 이벤트 ─────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_HanSuhyun,
+		"Quest.Event.Talk.HanSuhyun",
+		"한수현 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_JangGoeun,
+		"Quest.Event.Talk.JangGoeun",
+		"장고은 NPC와 필요한 대화를 완료한 이벤트");
+	
 }

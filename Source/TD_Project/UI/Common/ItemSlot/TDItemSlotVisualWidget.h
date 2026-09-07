@@ -28,6 +28,10 @@ struct TD_PROJECT_API FTDItemSlotVisualData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot", meta = (ClampMin = "0", UIMin = "0"))
 	int32 Count = 0;
 
+	/** 퀵슬롯처럼 0개와 1개도 표시해야 할 때 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot")
+	bool bAlwaysShowCount = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot")
 	FGameplayTag Rarity;
 };

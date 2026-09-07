@@ -6,6 +6,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UTDInteractionComponent;
 struct FInputActionValue;
 
 /**
@@ -88,6 +89,32 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
 	TObjectPtr<UInputAction> AttackAction;
 
+	
+	/**
+	 * 퀵슬롯 1~6. 배열 인덱스가 곧 슬롯 번호다.
+	 *
+	 * 슬롯마다 액션을 따로 두는 이유는 **키를 각각 바꿀 수 있어야** 하기 때문이다.
+	 * 액션 하나에 여러 키를 매핑하면 어느 키가 눌렸는지 구분할 수 없다.
+	 *
+	 * 비어 있는 칸은 그 슬롯만 조용히 빠지고 나머지는 동작한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
+	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
+
+	/**
+	 * 스킬 1~3. 퀵슬롯과 나눠 둔 이유는 성격이 달라서다 —
+	 * 퀵슬롯은 무엇을 넣을지 플레이어가 정하지만, 스킬은 직업이 정한다.
+	 *
+	 * 스킬 시스템(S10)이 아직 없어 지금은 눌러도 로그만 남는다.
+	 * IA 와 바인딩을 먼저 열어두면 그때 핸들러 안만 채우면 된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
+	TArray<TObjectPtr<UInputAction>> SkillActions;
+
+	//상호작용 F
+	UPROPERTY(EditDefaultsOnly, Category="TD|Input|Actions")
+	TObjectPtr<UInputAction> InteractAction;
+	
 	// ── 핸들러 ────────────────────────────────────────────
 
 	/**
@@ -102,6 +129,17 @@ protected:
 	/** 서버에 공격을 요청한다. 검증·쿨타임·히트박스는 전부 서버 몫이다. */
 	void Attack();
 
+	/**
+	 * 퀵슬롯 사용. 슬롯 번호를 **바인딩 시점에 payload 로 넘겨** 핸들러 하나로 처리한다.
+	 * 슬롯마다 함수를 만들면 6개가 똑같은 내용으로 늘어선다.
+	 */
+	void UseQuickSlot(int32 SlotIndex);
+
+	/** 스킬 사용. S10 에서 어빌리티 발동으로 채운다. */
+	void UseSkill(int32 SkillIndex);
+
+	// 상호작용
+	void Interact();
 	// ══════════════════════════════════════════════════════════════════════
 
 private:
@@ -117,4 +155,16 @@ private:
 
 	/** 자동 부활 타이머. 서버에서만 돈다. */
 	FTimerHandle AutoRespawnTimerHandle;
+	
+	
+	/**  상호작용
+	 * NPC, 상자, 아이템 등 F키 상호작용을 처리한다.
+	 *
+	 * 검색과 Server RPC는 이 컴포넌트에 모으고,
+	 * 캐릭터는 입력만 전달한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+		Category = "TD|Interaction",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTDInteractionComponent> InteractionComponent;
 };

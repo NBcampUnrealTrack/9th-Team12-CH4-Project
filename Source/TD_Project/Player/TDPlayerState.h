@@ -12,8 +12,11 @@ class UTDAttributeSet;
 class UTDInventoryComponent;
 class UTDItemUseComponent;
 class UTDPartyComponent;
+class UTDQuickSlotComponent;
 class UTDProgressionComponent;
 class UTDStatComponent;
+class UTDPersonalWorldStateComponent;
+class UTDQuestComponent;
 
 /** 전투력이 바뀌었을 때. 본인과 다른 플레이어 양쪽에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnCombatPowerChanged, int32, NewCombatPower);
@@ -81,6 +84,25 @@ public:
 
 	UTDPartyComponent* GetPartyComponent() const { return PartyComponent; }
 
+	UTDQuickSlotComponent* GetQuickSlotComponent() const { return QuickSlotComponent; }
+
+	//여기 맞나?
+	UFUNCTION(BlueprintPure, Category = "TD|Quest")
+	UTDPersonalWorldStateComponent*
+	GetPersonalWorldStateComponent() const
+	{
+		return PersonalWorldStateComponent;
+	}
+	
+	UFUNCTION(BlueprintPure, Category = "TD|Quest")
+	UTDQuestComponent* GetQuestComponent() const
+	{
+		return QuestComponent;
+	}
+	
+	
+	
+	
 	// ── 전투력 ────────────────────────────────────────────
 
 	/**
@@ -309,4 +331,28 @@ private:
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Party")
 	TObjectPtr<UTDPartyComponent> PartyComponent;
+
+	/**
+	 * 퀵슬롯 배치. 캐릭터별 저장 대상이다 —
+	 * 전사의 1번과 법사의 1번이 같을 이유가 없다.
+	 *
+	 * 어느 키로 쓰는지는 여기가 아니라 Enhanced Input 이 로컬에 저장한다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|QuickSlot")
+	TObjectPtr<UTDQuickSlotComponent> QuickSlotComponent;
+	
+	
+	/**
+	 * 플레이어별 퀘스트 진행도와 획득한 상자 목록.
+	 *
+	 * 캐릭터가 죽어도 유지되어야 하므로 PlayerState가 소유한다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Quest")
+	TObjectPtr<UTDPersonalWorldStateComponent>
+		PersonalWorldStateComponent;
+	
+	
+	UPROPERTY(VisibleAnywhere, Category = "TD|Quest")
+	TObjectPtr<UTDQuestComponent> QuestComponent;
+	
 };

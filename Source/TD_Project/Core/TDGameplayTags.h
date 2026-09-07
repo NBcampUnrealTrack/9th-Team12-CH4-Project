@@ -133,4 +133,56 @@ namespace TDTags
 	 * 세트 단계가 바뀌어 다른 아이템의 효과까지 달라지므로, 어차피 전체를 다시 계산해야 한다.
 	 */
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Equipment);
+	
+	
+	
+	
+	// ── 퀘스트 ────────────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Type_Main);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Type_Sub);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_Active);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_ReadyToTurnIn);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_State_Completed);
+
+	// ── 대화 작업 ─────────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_AcceptQuest);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_TurnInQuest);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dialogue_Action_ReportQuestEvent);
+	
+	
+	
+	// ── 퀘스트 진행 단계 ──────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Main_Prologue01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_HelpVillage01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_Treasure01_Accepted);
+
+	// ── 퀘스트 이벤트 ─────────────────────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_HanSuhyun);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_JangGoeun);
+	
 }

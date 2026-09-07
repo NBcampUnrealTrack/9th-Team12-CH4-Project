@@ -174,3 +174,8 @@ void ATDEnemyBase::GrantRewards(ATDCharacterBase* Killer)
 		Progression->AddExp(ExpReward);   // 레벨업 판정은 AddExp 안에서 이뤄진다
 	}
 }
+
+void ATDEnemyBase::MulticastOnSense_Implementation()
+{
+	OnSensed.Broadcast();
+}

@@ -10,6 +10,10 @@
 UTDCombatComponent::UTDCombatComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	
+	// Multicast RPC(공격·피격 방송)가 클라이언트까지 가려면 컴포넌트 자신도 복제 대상이어야 한다.
+	// 이게 없으면 리슨 서버 화면에서만 연출이 보이고 클라 창에서는 조용히 증발한다.
+	SetIsReplicatedByDefault(true);
 }
 
 void UTDCombatComponent::ServerRequestAttack_Implementation()

@@ -45,8 +45,14 @@ class TD_PROJECT_API UTDGameUserSettings : public UGameUserSettings
 public:
 	UTDGameUserSettings();
 
-	/** 어디서든 이걸로 가져온다. 엔진이 만들어 둔 단일 인스턴스다. */
-	UFUNCTION(BlueprintPure, Category = "TD|Settings")
+	/**
+	 * 어디서든 이걸로 가져온다. 엔진이 만들어 둔 단일 인스턴스다.
+	 *
+	 * DisplayName 을 붙인 이유는 블루프린트 검색 때문이다. 함수 이름이 Get 이라
+	 * 노드 이름도 "Get" 이 되는데, 그 단어로는 수백 개가 걸려 찾을 수 없다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings",
+		meta = (DisplayName = "Get TD Game User Settings"))
 	static UTDGameUserSettings* Get();
 
 	// ── 오디오 ────────────────────────────────────────────
@@ -107,6 +113,55 @@ public:
 	/** 목록에 없는 값이 들어와도 받는다 — 사용자가 직접 입력하는 칸을 열 수도 있어서다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Settings|Video")
 	void SetFrameRateLimitPreset(int32 InLimit);
+
+	/**
+	 * 이 모니터가 지원하는 해상도 목록. 드롭다운에 그대로 채운다.
+	 *
+	 * 엔진의 GetSupportedFullscreenResolutions 는 블루프린트에 열려 있지 않아 감싼다.
+	 * 큰 것부터 내려오도록 정렬한다 — 대개 위쪽에서 고른다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	static TArray<FIntPoint> GetSupportedResolutions();
+
+	/**
+	 * 위 목록을 "1920 x 1080" 형태로 만든 것. **콤보박스에 그대로 넣는다.**
+	 *
+	 * 블루프린트에서 FIntPoint 를 문자열로 조립하려면 노드가 서너 개 필요하고,
+	 * 이름이 겹치는 다른 Append 를 잡기도 쉬워 여기서 만들어 준다.
+	 *
+	 * GetSupportedResolutions 와 **순서가 같다.** 콤보박스에서 고른 인덱스로
+	 * 그쪽 배열을 조회하면 실제 해상도가 나온다 — 문자열을 다시 숫자로 파싱하면
+	 * 표기를 바꾸는 순간 깨진다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	static TArray<FString> GetSupportedResolutionLabels();
+
+	/**
+	 * 프레임 제한 라벨. 0 은 "무제한" 으로 바꿔 준다.
+	 *
+	 * GetFrameRateLimitOptions 와 순서가 같다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	static TArray<FString> GetFrameRateLimitLabels();
+
+	/**
+	 * 화질 단계 이름. 그림자·텍스처·안티앨리어싱·시야거리가 같은 목록을 쓴다.
+	 *
+	 * 배열 인덱스가 곧 SetShadowQuality 등에 넣을 값이다(0~3).
+	 * 문자열을 BP 에 하드코딩하지 않는 이유는 현지화 때문이다 — 그러면 나중에
+	 * 위젯을 뒤져 가며 고쳐야 한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	static TArray<FText> GetQualityPresetNames();
+
+	/**
+	 * 저장된 값으로 되돌린다. **"취소" 버튼용이다.**
+	 *
+	 * ini 에서 다시 읽으므로 적용하지 않은 변경은 버려진다. 볼륨처럼 즉시
+	 * 반영되던 것도 원래 값으로 돌아온다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TD|Settings")
+	void RevertToSaved();
 
 	// ── UI ────────────────────────────────────────────────
 

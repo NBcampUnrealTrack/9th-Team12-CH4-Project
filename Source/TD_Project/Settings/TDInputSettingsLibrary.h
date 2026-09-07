@@ -71,7 +71,9 @@ public:
 	 * 목록이 비어 있으면 IA 에셋에 Player Mappable Key Settings 가 없거나
 	 * bEnableUserSettings 가 꺼진 것이다. 둘 다 조용히 실패하므로 경고를 남긴다.
 	 */
-	UFUNCTION(BlueprintPure, Category = "TD|Input", meta = (WorldContext = "Player"))
+	// WorldContext 메타를 붙이지 않는다. 그것은 "컴파일러가 알아서 채우니 핀을 숨겨라"
+	// 라는 뜻이라, 실제로 넘겨야 하는 인자에 붙이면 **핀이 사라져 연결할 수 없게 된다.**
+	UFUNCTION(BlueprintPure, Category = "TD|Input")
 	static TArray<FTDKeyMappingRow> GetKeyMappings(APlayerController* Player);
 
 	/**

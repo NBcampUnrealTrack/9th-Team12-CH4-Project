@@ -72,6 +72,7 @@ void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
 	{
 	case ETDNavMenuType::Inventory:
 	case ETDNavMenuType::Character:
+	case ETDNavMenuType::System:
 		ToggleWindow(MenuType);
 		break;
 
@@ -93,8 +94,27 @@ bool UTDUIManagerSubsystem::IsMenuOpen(ETDNavMenuType MenuType) const
 
 void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 {
-	const TCHAR* MenuName = MenuType == ETDNavMenuType::Character ? TEXT("캐릭터 정보") : TEXT("인벤토리");
-	const TCHAR* SettingName = MenuType == ETDNavMenuType::Character ? TEXT("Character Window Class") : TEXT("Inventory Window Class");
+	// 삼항으로 두면 메뉴가 늘 때마다 "인벤토리" 로 잘못 찍힌다. 경고 문구가 틀리면
+	// 원인을 엉뚱한 곳에서 찾게 되므로 switch 로 바꾼다.
+	const TCHAR* MenuName = TEXT("인벤토리");
+	const TCHAR* SettingName = TEXT("Inventory Window Class");
+
+	switch (MenuType)
+	{
+	case ETDNavMenuType::Character:
+		MenuName = TEXT("캐릭터 정보");
+		SettingName = TEXT("Character Window Class");
+		break;
+
+	case ETDNavMenuType::System:
+		MenuName = TEXT("설정");
+		SettingName = TEXT("System Window Class");
+		break;
+
+	default:
+		break;
+	}
+
 	if (TWeakObjectPtr<UTDWindowBaseWidget>* FoundWindow = OpenWindows.Find(MenuType))
 	{
 		if (UTDWindowBaseWidget* OpenWindow = FoundWindow->Get())
@@ -234,6 +254,13 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
 		{
 			return UISettings->CharacterWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	case ETDNavMenuType::System:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>())
+		{
+			return UISettings->SystemWindowClass.LoadSynchronous();
 		}
 		return nullptr;
 

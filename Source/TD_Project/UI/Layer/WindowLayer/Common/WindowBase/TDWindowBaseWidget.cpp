@@ -2,6 +2,9 @@
 
 #include "TDWindowBaseWidget.h"
 
+#include "Engine/LocalPlayer.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
+
 #include "UI/Layer/WindowLayer/Common/WindowFrame/TDWindowFrameWidget.h"
 
 void UTDWindowBaseWidget::NativePreConstruct()
@@ -44,6 +47,21 @@ void UTDWindowBaseWidget::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+}
+
+FReply UTDWindowBaseWidget::NativeOnPreviewMouseButtonDown(
+    const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+    {
+        if (UTDUIManagerSubsystem* UIManager = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+        {
+            UIManager->BringWindowToFront(this);
+        }
+    }
+
+    // 입력은 소비하지 않아 자식 버튼 클릭과 제목 표시줄 드래그가 계속 동작한다.
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 FReply UTDWindowBaseWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

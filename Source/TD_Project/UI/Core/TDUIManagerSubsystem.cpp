@@ -92,6 +92,41 @@ bool UTDUIManagerSubsystem::IsMenuOpen(ETDNavMenuType MenuType) const
 		&& Window->GetVisibility() != ESlateVisibility::Collapsed;
 }
 
+void UTDUIManagerSubsystem::BringWindowToFront(UTDWindowBaseWidget* Window)
+{
+    UTDUIRootWidget* Root = RootWidget.Get();
+    UCanvasPanel* Layer = Root ? Root->GetWindowLayer() : nullptr;
+    UCanvasPanelSlot* SelectedSlot = IsValid(Window) ? Cast<UCanvasPanelSlot>(Window->Slot) : nullptr;
+    if (!Layer || !SelectedSlot || Window->GetParent() != Layer)
+    {
+        return;
+    }
+
+    TArray<UCanvasPanelSlot*> OtherSlots;
+    for (int32 Index = 0; Index < Layer->GetChildrenCount(); ++Index)
+    {
+        UTDWindowBaseWidget* Child = Cast<UTDWindowBaseWidget>(Layer->GetChildAt(Index));
+        if (Child && Child != Window)
+        {
+            if (UCanvasPanelSlot* ChildSlot = Cast<UCanvasPanelSlot>(Child->Slot))
+            {
+                OtherSlots.Add(ChildSlot);
+            }
+        }
+    }
+
+    // 같은 ZOrder에서는 기존 자식 순서를 유지하고, 값이 계속 커지지 않도록 정리한다.
+    OtherSlots.StableSort([](const UCanvasPanelSlot& A, const UCanvasPanelSlot& B)
+    {
+        return A.GetZOrder() < B.GetZOrder();
+    });
+    for (int32 Index = 0; Index < OtherSlots.Num(); ++Index)
+    {
+        OtherSlots[Index]->SetZOrder(Index);
+    }
+    SelectedSlot->SetZOrder(OtherSlots.Num());
+}
+
 void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 {
 	// 삼항으로 두면 메뉴가 늘 때마다 "인벤토리" 로 잘못 찍힌다. 경고 문구가 틀리면
@@ -141,6 +176,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 			RestoreWindowPosition(MenuType, Window);
 			Window->SetVisibility(ESlateVisibility::Visible);
 			OpenWindows.Add(MenuType, Window);
+			BringWindowToFront(Window);
 			OnMenuWindowStateChanged.Broadcast(MenuType, true);
 			return;
 		}
@@ -188,6 +224,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 		this,
 		&ThisClass::HandleWindowClosed);
 	OpenWindows.Add(MenuType, NewWindow);
+	BringWindowToFront(NewWindow);
 	OnMenuWindowStateChanged.Broadcast(MenuType, true);
 }
 

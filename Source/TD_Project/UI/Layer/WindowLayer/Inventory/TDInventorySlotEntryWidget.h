@@ -20,6 +20,10 @@ public:
 	UTDInventorySlotListItem* GetSlotListItem() const { return SlotListItem; }
 
 protected:
+	virtual void NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeDestruct() override;
+	void RefreshItemTooltip();
+
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation) override;
 	UTDInventoryComponent* GetDraggableInventory() const;

@@ -25,6 +25,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TD|Typography")
 	void SetTypographyTheme(UTDTypographyThemeDA* InTheme);
 
+	/** 희귀도/양수/음수처럼 데이터에 따라 정해지는 색상을 스타일 재적용 후에도 유지한다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Typography")
+	void SetTypographyColorOverride(FLinearColor InColor);
+
 	UFUNCTION(BlueprintPure, Category = "TD|Typography")
 	ETDTextStyleRole GetTextStyleRole() const { return TextStyleRole; }
 

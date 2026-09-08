@@ -2,6 +2,9 @@
 
 #include "TDWindowBaseWidget.h"
 
+#include "Engine/LocalPlayer.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
+
 #include "UI/Layer/WindowLayer/Common/WindowFrame/TDWindowFrameWidget.h"
 
 void UTDWindowBaseWidget::NativePreConstruct()
@@ -44,6 +47,29 @@ void UTDWindowBaseWidget::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+}
+
+FReply UTDWindowBaseWidget::NativeOnPreviewMouseButtonDown(
+    const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+    {
+        if (UTDUIManagerSubsystem* UIManager = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+        {
+            UIManager->BringWindowToFront(this);
+        }
+    }
+
+    // 입력은 소비하지 않아 자식 버튼 클릭과 제목 표시줄 드래그가 계속 동작한다.
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UTDWindowBaseWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// 자식 스크롤박스가 처리한 휠은 여기까지 올라오지 않는다.
+	// 창까지 전달된 휠만 소비해서 게임 화면의 카메라 줌으로 넘어가지 않게 한다.
+	FReply Reply = Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	return Reply.IsEventHandled() ? Reply : FReply::Handled();
 }
 
 void UTDWindowBaseWidget::SetWindowTitle(const FText& InTitle)

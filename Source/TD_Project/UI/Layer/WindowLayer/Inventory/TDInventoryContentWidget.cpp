@@ -1,6 +1,10 @@
 #include "TDInventoryContentWidget.h"
 
 #include "TDInventorySlotListItem.h"
+#include "TDInventoryActionPolicy.h"
+#include "Core/TDGameplayTags.h"
+#include "Items/TDItemUseComponent.h"
+#include "Stats/TDProgressionComponent.h"
 #include "Components/TileView.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
@@ -12,6 +16,96 @@
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
 #include "UObject/ConstructorHelpers.h"
+
+bool UTDInventoryContentWidget::RequestItemAction(UTDInventorySlotListItem* Item)
+{
+	if (IsDesignTime() || InventoryOverrideTable || !IsValid(Item)
+		|| Item->GetTypedOuter<UTDInventoryContentWidget>() != this
+		|| Item->bIsPreviewItem || !Item->bHasItem) return false;
+
+	APlayerController* Controller = GetOwningPlayer();
+	APlayerState* State = Controller ? Controller->PlayerState.Get() : nullptr;
+	if (!Controller || !Controller->IsLocalController() || !State) return false;
+	BindInventoryComponent();
+	UpdatePendingItemAction();
+	const double Now = FPlatformTime::Seconds();
+	// 수량/장착 복제가 반영되기 전에 다음 요청을 보내지 않는다. 빠른 더블클릭도 억제.
+	if (bItemActionPending || Now - LastItemActionAt < 0.2) return false;
+	UTDItemUseComponent* ItemUse = State->FindComponentByClass<UTDItemUseComponent>();
+	if (!IsValid(InventoryComponent) || !ItemUse) return false;
+
+	const FTDItemInstance* Source = InventoryComponent->FindBySlot(Item->SlotIndex);
+	// 스크롤/복제로 재사용된 Entry가 이전 물건을 가리키는 경우 요청하지 않는다.
+	if (!Source || !Source->IsValid() || !TDInventoryAction::SameItem(Source, Item->ItemInstance))
+		return false;
+	const FTDItemRow* Definition = InventoryComponent->FindItemDefinition(Source->ItemId);
+	if (!Definition) return false;
+	const bool bEquip = Definition->ItemType == TDTags::Item_Type_Accessory.GetTag();
+	const bool bUse = Definition->ItemType == TDTags::Item_Type_Consumable.GetTag();
+	if (!bEquip && !bUse) return false;
+
+	const UTDProgressionComponent* Progression = State->FindComponentByClass<UTDProgressionComponent>();
+	if (Definition->RequiredLevel > (Progression ? Progression->GetLevel() : 0))
+	{
+		UE_LOG(LogTemp, Log, TEXT("인벤토리: 요구 레벨이 부족하여 우클릭 요청을 보내지 않았습니다."));
+		return false;
+	}
+	int32 EquipSlot = INDEX_NONE;
+	if (bEquip)
+	{
+		EquipSlot = TDInventoryAction::FindEquipSlot(ItemUse->GetEquippedItems(), UTDItemUseComponent::EquipSlotCount);
+		if (EquipSlot == INDEX_NONE) return false;
+		// 기존 서버와 동일한 중복 제한. 다른 칸에 같은 종류가 있으면 자동 교체 대상으로 바꾸지 않는다.
+		for (const FTDItemInstance& Equipped : ItemUse->GetEquippedItems())
+		{
+			if (Equipped.ItemId == Source->ItemId && Equipped.SlotIndex != EquipSlot)
+			{
+				UE_LOG(LogTemp, Log, TEXT("인벤토리: 같은 아이템은 중복 장착할 수 없습니다."));
+				return false;
+			}
+		}
+	}
+
+	// Listen Server에서는 RPC가 즉시 실행될 수 있으므로 호출 전에 상태를 보관한다.
+	PendingSourceItem = *Source;
+	PendingEquipSlot = EquipSlot;
+	PendingInventory = InventoryComponent.Get();
+	PendingItemUse = ItemUse;
+	ItemActionStartedAt = Now;
+	LastItemActionAt = Now;
+	bItemActionPending = true;
+	if (bEquip) ItemUse->ServerEquipItem(Item->SlotIndex, EquipSlot);
+	else ItemUse->ServerUseItem(Item->SlotIndex);
+	return true;
+}
+
+void UTDInventoryContentWidget::UpdatePendingItemAction()
+{
+	if (!bItemActionPending) return;
+	if (!PendingInventory.IsValid() || !PendingItemUse.IsValid()
+		|| PendingInventory.Get() != InventoryComponent.Get())
+	{
+		bItemActionPending = false;
+		return;
+	}
+	const FTDItemInstance* Current = PendingInventory->FindBySlot(PendingSourceItem.SlotIndex);
+	const bool bInventoryUpdated = !TDInventoryAction::SameItem(Current, PendingSourceItem);
+	// 두 FastArray는 서로 다른 시점에 도착할 수 있다. 장착 목록도 확인한 뒤 잠금을 푼다.
+	const bool bEquipmentUpdated = PendingEquipSlot == INDEX_NONE
+		|| TDInventoryAction::SameItem(PendingItemUse->GetEquipped(PendingEquipSlot), PendingSourceItem);
+	if (bInventoryUpdated && bEquipmentUpdated)
+	{
+		bItemActionPending = false;
+		return;
+	}
+	// 기존 RPC에는 실패 응답이 없다. 거절/지연을 성공으로 간주하지 않고 잠금만 해제하며 재전송하지 않는다.
+	if (FPlatformTime::Seconds() - ItemActionStartedAt >= 3.0)
+	{
+		bItemActionPending = false;
+		UE_LOG(LogTemp, Log, TEXT("인벤토리: 사용/장착 결과를 확인하지 못해 클릭 대기를 해제했습니다."));
+	}
+}
+
 
 UTDInventoryContentWidget::UTDInventoryContentWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -246,6 +340,7 @@ void UTDInventoryContentWidget::CheckInventorySource()
 {
 	UTDInventoryComponent* PreviousInventory = InventoryComponent;
 	BindInventoryComponent();
+	UpdatePendingItemAction();
 	// PlayerState의 늦은 도착과 칸 수만 복제되는 확장도 반영한다.
 	if (PreviousInventory != InventoryComponent ||
 		(!InventoryOverrideTable && IsValid(InventoryComponent) && SlotListItems.Num() != InventoryComponent->GetSlotCapacity()))
@@ -298,6 +393,7 @@ void UTDInventoryContentWidget::BuildInventoryFromTable(UDataTable* SourceTable)
 		if (ItemIds.IsValidIndex(SlotIndex))
 		{
 			SlotListItem->bIsPreviewItem = true;
+			SlotListItem->TooltipDefinitionTable = SourceTable;
 			const FName ItemId = ItemIds[SlotIndex];
 			const FTDItemRow* Definition = SourceTable->FindRow<FTDItemRow>(
 				ItemId, TEXT("UTDInventoryContentWidget::BuildInventoryFromTable"), false);

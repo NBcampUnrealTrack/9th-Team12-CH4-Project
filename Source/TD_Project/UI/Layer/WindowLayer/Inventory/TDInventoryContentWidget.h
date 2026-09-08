@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Items/TDItemTypes.h"
 #include "TDInventoryContentWidget.generated.h"
 
 class UTDInventoryComponent;
+class UTDItemUseComponent;
 class UTDInventorySlotListItem;
 class UDataTable;
 class UTileView;
@@ -20,6 +22,13 @@ class TD_PROJECT_API UTDInventoryContentWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** 우클릭 진입점. 기존 서버 RPC만 호출하며 로컬 인벤토리/장착 데이터는 바꾸지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Inventory")
+	bool RequestItemAction(UTDInventorySlotListItem* Item);
+
+	UFUNCTION(BlueprintPure, Category = "TD|Inventory")
+	bool IsItemActionPending() const { return bItemActionPending; }
+
 	UTDInventoryContentWidget(const FObjectInitializer& ObjectInitializer);
 
 	/** 현재 컴포넌트 상태를 읽어 0..SlotCapacity-1 슬롯을 다시 만든다. */
@@ -84,6 +93,16 @@ protected:
 	int32 PreviewSlotCapacity = 40;
 
 private:
+	void UpdatePendingItemAction();
+	// TileView Entry가 재사용돼도 잠금은 인벤토리 전체에서 공유한다.
+	bool bItemActionPending = false;
+	double ItemActionStartedAt = 0.0;
+	double LastItemActionAt = -100.0;
+	int32 PendingEquipSlot = INDEX_NONE;
+	FTDItemInstance PendingSourceItem;
+	TWeakObjectPtr<UTDInventoryComponent> PendingInventory;
+	TWeakObjectPtr<UTDItemUseComponent> PendingItemUse;
+
 	void BindInventoryComponent();
 	void BuildPreviewInventory();
 	void BuildInventoryFromTable(UDataTable* SourceTable);

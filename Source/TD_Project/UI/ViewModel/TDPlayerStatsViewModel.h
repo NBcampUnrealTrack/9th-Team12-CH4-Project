@@ -73,6 +73,30 @@ public:
  float CriticalChance = 0.f;
 
  UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float CriticalDamage = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float ArmorPenetration = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float BossDamage = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float DamageReduction = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float HealthRegen = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float ManaRegen = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float MoveSpeed = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ float CooldownRecoveryRate = 0.f;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
  int32 CombatPower = 0;
 
  UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
@@ -96,4 +120,3 @@ private:
  UFUNCTION()
  void HandleCombatPowerChanged(int32 NewValue);
 };
-

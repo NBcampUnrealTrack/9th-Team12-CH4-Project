@@ -125,6 +125,14 @@ void UTDPlayerStatsViewModel::RefreshCombatStats()
  UE_MVVM_SET_PROPERTY_VALUE(MagicalAttack, PS ? PS->GetReplicatedStat(TDTags::Stat_Offense_Damage_Magical) : 0.f);
  UE_MVVM_SET_PROPERTY_VALUE(Defense, PS ? PS->GetReplicatedStat(TDTags::Stat_Defense_Armor) : 0.f);
  UE_MVVM_SET_PROPERTY_VALUE(CriticalChance, PS ? PS->GetReplicatedStat(TDTags::Stat_Offense_CritChance) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(CriticalDamage, PS ? PS->GetReplicatedStat(TDTags::Stat_Offense_CritDamage) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(ArmorPenetration, PS ? PS->GetReplicatedStat(TDTags::Stat_Offense_ArmorPenetration) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(BossDamage, PS ? PS->GetReplicatedStat(TDTags::Stat_Offense_BossDamage) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(DamageReduction, PS ? PS->GetReplicatedStat(TDTags::Stat_Defense_DamageReduction) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(HealthRegen, PS ? PS->GetReplicatedStat(TDTags::Stat_Resource_Health_Regen) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(ManaRegen, PS ? PS->GetReplicatedStat(TDTags::Stat_Resource_Mana_Regen) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(MoveSpeed, PS ? PS->GetReplicatedStat(TDTags::Stat_Utility_MoveSpeed) : 0.f);
+ UE_MVVM_SET_PROPERTY_VALUE(CooldownRecoveryRate, PS ? PS->GetReplicatedStat(TDTags::Stat_Utility_CooldownRecoveryRate) : 0.f);
  UE_MVVM_SET_PROPERTY_VALUE(CombatPower, PS ? PS->GetCombatPower() : 0);
 }
 

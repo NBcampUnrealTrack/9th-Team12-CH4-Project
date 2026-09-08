@@ -13,14 +13,13 @@
 #include "Data/TDItemStatRow.h"
 #include "Data/TDItemUseEffectRow.h"
 #include "Data/TDStatRow.h"
-#include "Engine/Font.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Items/TDInventoryComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
-#include "Styling/CoreStyle.h"
+#include "UI/Common/Typography/TDTextBlock.h"
 #include "UI/Settings/TDUISettings.h"
 
 #define LOCTEXT_NAMESPACE "TDTooltip"
@@ -77,6 +76,14 @@ namespace
 		}
 		Color = FLinearColor(0.85f, 0.9f, 0.96f);
 		return Tag == TDTags::Item_Rarity_Common ? LOCTEXT("Common", "일반") : FText::GetEmpty();
+	}
+
+	void SetTooltipTextColor(UTextBlock* Widget, const FLinearColor& Color)
+	{
+		if (UTDTextBlock* TDText = Cast<UTDTextBlock>(Widget))
+			TDText->SetTypographyColorOverride(Color);
+		else if (Widget)
+			Widget->SetColorAndOpacity(Color);
 	}
 
 	void ShowText(UTextBlock* Widget, const FText& Text)
@@ -239,10 +246,10 @@ void UTDItemTooltipWidget::RefreshContent()
 	if (UWidget* Divider = WidgetTree->FindWidget(TEXT("HeaderDivider")))
 		Divider->SetVisibility(bTextOnly && Data.Title.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	ShowText(TooltipTitle, Data.Title);
-	if (TooltipTitle) TooltipTitle->SetColorAndOpacity(Data.TitleColor);
+	SetTooltipTextColor(TooltipTitle, Data.TitleColor);
 	ShowText(TooltipSubtitle, Data.Subtitle);
 	ShowText(TooltipRequirement, Data.Requirement);
-	if (TooltipRequirement) TooltipRequirement->SetColorAndOpacity(
+	SetTooltipTextColor(TooltipRequirement,
 		Data.bRequirementUnmet ? FLinearColor(1.f, 0.35f, 0.35f) : BodyColor);
 	ShowText(TooltipDescription, Data.Description);
 	ShowText(TooltipFooter, Data.Footer);
@@ -255,9 +262,6 @@ void UTDItemTooltipWidget::RefreshContent()
 	if (!TooltipLines) return;
 	TooltipLines->ClearChildren();
 	TooltipLines->SetVisibility(Data.Lines.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	const UFont* Font = RowFont.LoadSynchronous();
-	const FSlateFontInfo FontInfo = Font ? FSlateFontInfo(Font, RowFontSize)
-		: FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), RowFontSize);
 	for (const FTDTooltipLine& Line : Data.Lines)
 	{
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -272,18 +276,20 @@ void UTDItemTooltipWidget::RefreshContent()
 			IconSize->SetContent(Icon);
 			Row->AddChildToHorizontalBox(IconSize)->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
 		}
-		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>();
+		UTDTextBlock* Label = WidgetTree->ConstructWidget<UTDTextBlock>();
+		Label->SetTextStyleRole(RowTextStyleRole);
+		Label->SetCustomStyleName(RowCustomStyleName);
 		Label->SetText(Line.Label);
-		Label->SetFont(FontInfo);
-		Label->SetColorAndOpacity(BodyColor);
+		Label->SetTypographyColorOverride(BodyColor);
 		Label->SetAutoWrapText(true);
 		UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(Label);
 		LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		LabelSlot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-		UTextBlock* Value = WidgetTree->ConstructWidget<UTextBlock>();
+		UTDTextBlock* Value = WidgetTree->ConstructWidget<UTDTextBlock>();
+		Value->SetTextStyleRole(RowTextStyleRole);
+		Value->SetCustomStyleName(RowCustomStyleName);
 		Value->SetText(Line.Value);
-		Value->SetFont(FontInfo);
-		Value->SetColorAndOpacity(Line.ValueColor);
+		Value->SetTypographyColorOverride(Line.ValueColor);
 		Row->AddChildToHorizontalBox(Value);
 	}
 }

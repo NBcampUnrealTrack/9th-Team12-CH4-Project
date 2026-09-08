@@ -2,10 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Common/Typography/TDTypographyThemeDA.h"
 #include "TDItemTooltipWidget.generated.h"
 
 class UDataTable;
-class UFont;
 class UImage;
 class UTextBlock;
 class UVerticalBox;
@@ -99,12 +99,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTextBlock> TooltipFooter;
 
-	/** 반복 생성되는 능력치 행의 폰트. 제목/본문은 WBP 디자이너에서 편집한다. */
+	/** 동적 행도 TD Text의 테마/역할을 따른다. 폰트는 DA_Font의 CTS에서 편집한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TD|Tooltip")
-	TSoftObjectPtr<UFont> RowFont = TSoftObjectPtr<UFont>(
-		FSoftObjectPath(TEXT("/Game/UI/Src/font/Assets/MaruBuri-Regular_Font.MaruBuri-Regular_Font")));
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TD|Tooltip", meta = (ClampMin = "8"))
-	int32 RowFontSize = 16;
+	ETDTextStyleRole RowTextStyleRole = ETDTextStyleRole::Body;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TD|Tooltip")
+	FName RowCustomStyleName = NAME_None;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TD|Tooltip")
 	FLinearColor BodyColor = FLinearColor(0.85f, 0.9f, 0.96f);
 

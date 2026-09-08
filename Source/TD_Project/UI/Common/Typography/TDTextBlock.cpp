@@ -2,6 +2,33 @@
 
 #include "UI/Settings/TDUISettings.h"
 
+void UTDTextBlock::SetCustomStyleName(FName InStyleName)
+{
+    if (CustomStyleName != InStyleName)
+    {
+        CustomStyleName = InStyleName;
+        SynchronizeProperties();
+    }
+}
+
+TArray<FString> UTDTextBlock::GetCustomStyleNames()
+{
+    TArray<FString> Names;
+    if (const UTDTypographyThemeDA* Theme = ResolveTypographyTheme())
+    {
+        for (const auto& Entry : Theme->CustomStyles)
+        {
+            if (!Entry.Key.IsNone())
+            {
+                Names.Add(Entry.Key.ToString());
+            }
+        }
+    }
+    Names.Sort();
+    Names.Insert(TEXT("None"), 0);
+    return Names;
+}
+
 void UTDTextBlock::SetTextStyleRole(ETDTextStyleRole InStyleRole)
 {
 	if (TextStyleRole == InStyleRole)
@@ -86,6 +113,14 @@ TSubclassOf<UCommonTextStyle> UTDTextBlock::ResolveTextStyle()
 {
 	if (const UTDTypographyThemeDA* Theme = ResolveTypographyTheme())
 	{
+		if (!CustomStyleName.IsNone())
+		{
+			const TSubclassOf<UCommonTextStyle>* CustomStyle = Theme->CustomStyles.Find(CustomStyleName);
+			if (CustomStyle && *CustomStyle)
+			{
+				return *CustomStyle;
+			}
+		}
 		return Theme->GetStyle(TextStyleRole);
 	}
 

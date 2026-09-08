@@ -16,6 +16,9 @@ class TD_PROJECT_API UTDTextBlock : public UCommonTextBlock
 	GENERATED_BODY()
 
 public:
+ UFUNCTION(BlueprintCallable, Category = "TD|Typography")
+ void SetCustomStyleName(FName InStyleName);
+
 	UFUNCTION(BlueprintCallable, Category = "TD|Typography")
 	void SetTextStyleRole(ETDTextStyleRole InStyleRole);
 
@@ -26,6 +29,11 @@ public:
 	ETDTextStyleRole GetTextStyleRole() const { return TextStyleRole; }
 
 protected:
+ /** None이면 기존 TextStyleRole 사용. 등록되지 않은 이름도 기존 역할로 대체한다. */
+ UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Typography",
+     meta = (GetOptions = "GetCustomStyleNames"))
+ FName CustomStyleName = NAME_None;
+
 	virtual void SynchronizeProperties() override;
 
 	/** HTML의 H1/Body 또는 Tailwind의 text-*처럼 선택하는 의미 기반 스타일. */
@@ -61,6 +69,9 @@ protected:
 #endif
 
 private:
+ UFUNCTION()
+ TArray<FString> GetCustomStyleNames();
+
 	UTDTypographyThemeDA* ResolveTypographyTheme();
 	TSubclassOf<UCommonTextStyle> ResolveTextStyle();
 	void ApplyInstanceOverrides();

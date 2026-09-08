@@ -31,6 +31,10 @@ class TD_PROJECT_API UTDTypographyThemeDA : public UDataAsset
 	GENERATED_BODY()
 
 public:
+ /** 자유롭게 추가하는 이름별 스타일. 기존 역할 설정은 그대로 유지한다. */
+ UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Custom Styles")
+ TMap<FName, TSubclassOf<UCommonTextStyle>> CustomStyles;
+
 	UFUNCTION(BlueprintPure, Category = "TD|Typography")
 	TSubclassOf<UCommonTextStyle> GetStyle(ETDTextStyleRole Role) const;
 

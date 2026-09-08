@@ -4,8 +4,53 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 
 #define LOCTEXT_NAMESPACE "TDEnemyHealthBarWidget"
+
+void UTDEnemyHealthBarWidget::SetTargetActor(AActor* InTargetActor)
+{
+	if (!bCapturedBaseRenderScale)
+	{
+		BaseRenderScale = GetRenderTransform().Scale;
+		bCapturedBaseRenderScale = true;
+	}
+	TargetActor = InTargetActor;
+	UpdateDistanceScale();
+}
+
+void UTDEnemyHealthBarWidget::UpdateDistanceScale()
+{
+	if (IsDesignTime() || !bCapturedBaseRenderScale)
+	{
+		return;
+	}
+
+	float Scale = 1.f;
+	APlayerController* Player = GetOwningPlayer();
+	if (!Player)
+	{
+		// 클라이언트당 로컬 플레이어 한 명인 경우의 기본 경로.
+		Player = UGameplayStatics::GetPlayerController(this, 0);
+	}
+	if (bEnableDistanceScaling && TargetActor.IsValid()
+		&& Player && Player->IsLocalController() && Player->PlayerCameraManager)
+	{
+		const float Distance = FVector::Distance(
+			Player->PlayerCameraManager->GetCameraLocation(), TargetActor->GetActorLocation());
+		const float SafeMin = FMath::Max(0.01f, MinDistanceScale);
+		const float SafeMax = FMath::Max(SafeMin, MaxDistanceScale);
+		Scale = FMath::Clamp(FMath::Max(1.f, ReferenceDistance)
+			/ FMath::Max(1.f, Distance), SafeMin, SafeMax);
+	}
+	const FVector2D NewScale = BaseRenderScale * Scale;
+	if (!GetRenderTransform().Scale.Equals(NewScale))
+	{
+		SetRenderScale(NewScale);
+	}
+}
 
 void UTDEnemyHealthBarWidget::NativeConstruct()
 {
@@ -50,6 +95,7 @@ void UTDEnemyHealthBarWidget::NativeDestruct()
 void UTDEnemyHealthBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdateDistanceScale();
 
 	for (int32 Index = ActiveFeedbackEntries.Num() - 1; Index >= 0; --Index)
 	{

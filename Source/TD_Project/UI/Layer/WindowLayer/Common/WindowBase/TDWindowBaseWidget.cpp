@@ -46,6 +46,14 @@ void UTDWindowBaseWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+FReply UTDWindowBaseWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// 자식 스크롤박스가 처리한 휠은 여기까지 올라오지 않는다.
+	// 창까지 전달된 휠만 소비해서 게임 화면의 카메라 줌으로 넘어가지 않게 한다.
+	FReply Reply = Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	return Reply.IsEventHandled() ? Reply : FReply::Handled();
+}
+
 void UTDWindowBaseWidget::SetWindowTitle(const FText& InTitle)
 {
 	WindowTitle = InTitle;

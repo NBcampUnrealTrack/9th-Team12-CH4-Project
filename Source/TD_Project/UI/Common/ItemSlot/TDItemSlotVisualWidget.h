@@ -45,6 +45,10 @@ class TD_PROJECT_API UTDItemSlotVisualWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** 퀵슬롯의 정의 ID. 인벤토리는 바깥쪽 Entry에 툴팁을 붙인다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
+	void SetItemTooltipSource(FName ItemId, FText Hint);
+
 	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
 	void SetSlotVisualData(const FTDItemSlotVisualData& InData);
 
@@ -70,6 +74,7 @@ public:
 	bool IsSlotHovered() const { return bSlotHovered; }
 
 protected:
+	virtual void NativeDestruct() override;
 	virtual void NativePreConstruct() override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
@@ -105,6 +110,10 @@ protected:
 	void BP_OnSlotVisualStateChanged(const FTDItemSlotVisualData& InData, bool bIsSelected, bool bInSlotEnabled);
 
 private:
+	FName TooltipItemId;
+	FText TooltipHint;
+	void RefreshItemTooltip();
+
 	void RefreshVisual();
 	void RefreshInteractionVisual();
 };

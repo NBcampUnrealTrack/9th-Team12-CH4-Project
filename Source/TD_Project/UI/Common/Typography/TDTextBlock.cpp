@@ -51,6 +51,13 @@ void UTDTextBlock::SetTypographyTheme(UTDTypographyThemeDA* InTheme)
 	SynchronizeProperties();
 }
 
+void UTDTextBlock::SetTypographyColorOverride(FLinearColor InColor)
+{
+	bOverrideColor = true;
+	ColorOverride = InColor;
+	ApplyInstanceOverrides();
+}
+
 void UTDTextBlock::SynchronizeProperties()
 {
 	// UCommonTextBlock::SetStyle()이 이 함수를 다시 부르므로 중첩 호출에서는

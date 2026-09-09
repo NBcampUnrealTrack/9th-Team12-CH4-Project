@@ -34,6 +34,9 @@ ATDEnemyBase::ATDEnemyBase()
 	// 기본값(Disabled)으로 두면 배치한 몬스터가 아무것도 하지 않아 AI 담당이 매번 BP 에서 켜야 한다.
 	// AIControllerClass 는 여기서 지정하지 않는다 — C++ 에서 블루프린트를 참조하면 경로가 코드에 박힌다.
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	
+	// 피격 경직. GetHit 몽타주 길이에 맞춰 BP 클래스 디폴트에서 조절한다.
+	HitStaggerDuration = 0.35f;
 }
 
 UTDStatComponent* ATDEnemyBase::GetStatComponent() const

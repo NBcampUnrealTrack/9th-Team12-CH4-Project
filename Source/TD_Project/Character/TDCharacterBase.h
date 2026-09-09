@@ -26,6 +26,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterDeath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnCharacterRespawn);
 
 /**
+ * 피격 알림(타깃 측). 피격 모션·경직 연출·피격 SFX 가 구독한다. 전 머신에서 불린다.
+ * 공격자 측 OnHit(CombatComponent)과 짝이다 — 그쪽은 "내가 때렸다", 이쪽은 "내가 맞았다".
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FTDOnCharacterDamaged,
+	AActor*, Attacker, float, Damage, bool, bCritical);
+
+/** 서버 전용 피격 알림. AI(어그로)처럼 C++ 만 듣는 구독자용 — 네트워크를 타지 않는다. */
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FTDOnCharacterDamagedServer,
+	AActor* /*Attacker*/, float /*Damage*/, bool /*bCritical*/);
+
+/**
  * 플레이어와 몬스터의 공통 베이스.
  *
  * 스탯 컴포넌트를 직접 소유하지 않는다. 부착 위치가 자식마다 다르기 때문이다 —
@@ -72,6 +83,24 @@ public:
 	virtual FGenericTeamId GetGenericTeamId() const override { return TeamId; }
 	virtual void SetGenericTeamId(const FGenericTeamId& NewTeamId) override;
 
+	// ── 피격 ──────────────────────────────────────────────
+
+	/**
+	 * 서버가 데미지 적용 직후 부른다(CombatStatics::ApplyDamage). 죽인 타격에는 불리지 않는다.
+	 * 경직을 걸고, 서버 구독자(AI)에게 알리고, 전 머신에 피격 연출을 방송한다.
+	 */
+	void ReceiveHit(AActor* Attacker, float Damage, bool bCritical);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
+	FTDOnCharacterDamaged OnDamaged;
+
+	/** C++ 전용(비-다이나믹). AI 컨트롤러가 OnPossess 에서 AddUObject 로 구독한다. */
+	FTDOnCharacterDamagedServer OnDamagedServer;
+
+	/** 경직 중인가. 경직 중엔 공격 불가(CanAttack). 서버 값이다 — 클라에선 항상 false. */
+	UFUNCTION(BlueprintPure, Category = "TD|Combat")
+	bool IsStaggered() const;
+	
 	// ── 사망 ──────────────────────────────────────────────
 
 	/**
@@ -146,6 +175,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Team")
 	FGenericTeamId TeamId;
+	
+	/** 피격 시 경직 시간(초). 0 이면 경직 없음. 플레이어는 0, 몬스터는 생성자/BP 에서 지정. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0"))
+	float HitStaggerDuration = 0.f;
+
+	/** "맞았다" 방송. 서버가 ReceiveHit 에서 쏘고 전원이 OnDamaged 로 받는다. 반복 연출이라 Unreliable. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastOnDamaged(AActor* Attacker, float Damage, bool bCritical);
 
 private:
 	/** 중복 구독을 막기 위한 표시. 플레이어는 PlayerState 복제 시점이 일정하지 않아 여러 번 시도된다. */
@@ -163,6 +200,9 @@ private:
 	 */
 	UPROPERTY(ReplicatedUsing = OnRep_IsDead)
 	bool bIsDead = false;
+	
+	/** 경직이 끝나는 서버 월드시간. 판정(공격 금지·AI 정지)은 서버 일이라 복제하지 않는다. */
+	float StaggerEndTime = -1.f;
 	
 	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Combat")

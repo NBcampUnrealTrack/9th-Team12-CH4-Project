@@ -54,6 +54,39 @@ UTDSkillComponent::UTDSkillComponent()
 	SetIsReplicatedByDefault(true);
 }
 
+void UTDSkillComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 경직이 평타를 끊는 것과 같은 규칙으로 시전도 끊는다.
+	// OnDamagedServer 는 서버에서만 발화하므로 권한 검사를 따로 하지 않아도 된다.
+	if (ATDCharacterBase* Owner = GetOwnerCharacter())
+	{
+		DamagedHandle = Owner->OnDamagedServer.AddUObject(this, &UTDSkillComponent::HandleDamaged);
+	}
+}
+
+void UTDSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ATDCharacterBase* Owner = GetOwnerCharacter())
+	{
+		Owner->OnDamagedServer.Remove(DamagedHandle);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UTDSkillComponent::HandleDamaged(AActor* Attacker, float Damage, bool bCritical)
+{
+	// 경직이 걸리지 않는 타격(HitStaggerDuration 이 0)은 시전을 끊지 않는다.
+	// 스치기만 해도 캐스팅이 날아가면 전투가 답답해진다.
+	const ATDCharacterBase* Owner = GetOwnerCharacter();
+	if (Owner != nullptr && Owner->IsStaggered())
+	{
+		CancelCast();
+	}
+}
+
 // ── 조회 ──────────────────────────────────────────────────
 
 ATDCharacterBase* UTDSkillComponent::GetOwnerCharacter() const
@@ -170,6 +203,13 @@ bool UTDSkillComponent::CanStartCast(FName SkillId, const FTDSkillRow& Row) cons
 	}
 
 	if (Owner->IsDead())
+	{
+		return false;
+	}
+
+	// 경직 중엔 시전을 시작할 수 없다. 평타(CanAttack)와 같은 규칙이다 —
+	// 한쪽만 막으면 맞았을 때 평타는 멈추고 스킬만 나가는 상태가 된다.
+	if (Owner->IsStaggered())
 	{
 		return false;
 	}
@@ -302,15 +342,20 @@ void UTDSkillComponent::FireOnce()
 
 TArray<AActor*> UTDSkillComponent::GatherTargets(const FTDSkillRow& Row) const
 {
-	AActor* Owner = GetOwner();
+	ATDCharacterBase* Owner = GetOwnerCharacter();
 
 	if (Row.ShapeTag == TDTags::Skill_Shape_ForwardBox)
 	{
+		// 방향은 평타와 같은 출처를 쓴다 — 스프라이트가 보는 쪽이다.
+		// 여기서 액터 회전을 쓰면 평타와 스킬이 서로 다른 곳을 때린다.
+		const UTDCombatComponent* Combat = Owner ? Owner->GetCombatComponent() : nullptr;
+		const FVector Facing = Combat ? Combat->GetFacingDirection() : FVector::ZeroVector;
+
 		// 시트에는 전체 크기를 적고 여기서 절반으로 바꾼다. 상자 중심을 앞으로 Range/2 밀면
 		// 몸에서 정확히 Range 만큼 뻗은 상자가 된다.
 		const FVector HalfExtent(Row.Range * 0.5f, Row.Width * 0.5f, SkillBoxHalfHeight);
 		return UTDCombatStatics::GatherTargetsInBox(
-			Owner, HalfExtent, Row.Range * 0.5f, bDrawDebugShape);
+			Owner, Facing, HalfExtent, Row.Range * 0.5f, bDrawDebugShape);
 	}
 
 	if (Row.ShapeTag == TDTags::Skill_Shape_SelfRadius)
@@ -490,7 +535,18 @@ void UTDSkillComponent::ServerSetCastFacing_Implementation(FRotator Facing)
 
 	// Yaw 만 쓴다. 2.5D 라 위아래로 겨냥할 일이 없고, Pitch 를 그대로 받으면
 	// 스프라이트가 누워 버린다.
-	Owner->SetActorRotation(FRotator(0.f, Facing.Yaw, 0.f));
+	const FRotator FlatFacing(0.f, Facing.Yaw, 0.f);
+	Owner->SetActorRotation(FlatFacing);
+
+	// 판정 방향까지 함께 돌린다.
+	//
+	// 히트박스는 액터 회전이 아니라 UTDCombatComponent 의 "마지막 이동 방향" 을 쓰는데,
+	// 그 값은 속도에서 나온다. 제자리 회전은 속도가 0 이라 갱신되지 않으므로,
+	// 여기서 직접 넣지 않으면 화면에서는 돌았는데 광선은 처음 방향으로 계속 나간다.
+	if (UTDCombatComponent* Combat = GetOwnerCharacter() ? GetOwnerCharacter()->GetCombatComponent() : nullptr)
+	{
+		Combat->SetFacingDirection(FlatFacing.Vector());
+	}
 }
 
 // ── 전 머신 동기화 ────────────────────────────────────────

@@ -129,37 +129,16 @@ TArray<AActor*> UTDCombatComponent::GatherTargets() const
 {
 	// 규칙 본체는 UTDCombatStatics 로 옮겼다. 스킬이 같은 판정을 써야 하는데
 	// 여기 두면 복사본이 하나 더 생긴다.
+	//
+	// 방향은 액터 회전이 아니라 마지막 이동 방향이다 — 스프라이트 방향
+	// (ABP SetDirectionality ← Velocity)과 같은 출처라 눈에 보이는 쪽과 일치한다.
 	return UTDCombatStatics::GatherTargetsInBox(
-		GetOwner(), HitBoxExtent, HitBoxForwardOffset, bDrawDebugHitBox);
+		GetOwner(), FacingDirection, HitBoxExtent, HitBoxForwardOffset, bDrawDebugHitBox);
 }
 
 void UTDCombatComponent::NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
 {
 	if (GetOwnerRole() == ROLE_Authority)
-	TArray<AActor*> Targets;
-
-	const ATDCharacterBase* Owner = Cast<ATDCharacterBase>(GetOwner());
-	if (Owner == nullptr)
-	{
-		return Targets;
-	}
-
-	// 전방 박스. 액터 회전이 아니라 "마지막 이동 방향"을 쓴다 —
-	// 스프라이트 방향(ABP SetDirectionality ← Velocity)과 같은 출처라 눈에 보이는 쪽과 일치한다.
-	const FQuat BoxRotation = FRotationMatrix::MakeFromX(FacingDirection).ToQuat();
-	const FVector Center = Owner->GetActorLocation() + FacingDirection * HitBoxForwardOffset;
-	const FCollisionShape Box = FCollisionShape::MakeBox(HitBoxExtent);
-
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(Owner);
-
-	TArray<FOverlapResult> Overlaps;
-	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, BoxRotation,
-		FCollisionObjectQueryParams(ECC_Pawn), Box, Params);
-
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebugHitBox)
 	{
 		MulticastOnHit(Target, Damage, bCritical, HitLocation);
 	}

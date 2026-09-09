@@ -217,7 +217,15 @@ void ATDPlayerCharacter::Move(const FInputActionValue& Value)
 
 		SetActorRotation(Facing);
 
-		// 판정 방향은 서버가 자기 액터의 회전으로 정한다. 여기서 알리지 않으면
+		// 히트박스 방향도 함께 돌린다. 그쪽은 마지막 이동 방향을 쓰는데(UTDCombatComponent)
+		// 그 값은 속도에서 나오므로 제자리 회전으로는 갱신되지 않는다.
+		// 이 줄이 없으면 디버그 상자가 처음 방향에 그대로 서 있다.
+		if (UTDCombatComponent* Combat = GetCombatComponent())
+		{
+			Combat->SetFacingDirection(Direction);
+		}
+
+		// 서버에도 알린다. 판정은 서버가 자기 값으로 하므로 여기서만 돌리면
 		// 화면에서는 돌았는데 광선은 처음 방향으로 계속 나간다.
 		SkillComponent->ServerSetCastFacing(Facing);
 		return;

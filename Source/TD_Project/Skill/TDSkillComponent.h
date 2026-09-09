@@ -45,6 +45,9 @@ class TD_PROJECT_API UTDSkillComponent : public UActorComponent
 public:
 	UTDSkillComponent();
 
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -152,6 +155,17 @@ protected:
 private:
 	ATDCharacterBase* GetOwnerCharacter() const;
 	UTDProgressionComponent* GetProgression() const;
+
+	/**
+	 * 맞았을 때. 경직이 걸렸으면 시전을 끊는다.
+	 *
+	 * ATDCharacterBase::ReceiveHit 이 평타 스윙을 CancelAttack 으로 끊는 것과 짝이다.
+	 * 그쪽을 고쳐 시전까지 끊게 하지 않고 여기서 구독하는 이유는, 스킬을 모르는
+	 * 베이스 클래스가 스킬 컴포넌트를 알아야 하는 상황을 만들지 않기 위해서다.
+	 */
+	void HandleDamaged(AActor* Attacker, float Damage, bool bCritical);
+
+	FDelegateHandle DamagedHandle;
 
 	/** 지금 시전 중인 스킬의 행. 시전 중이 아니면 nullptr. */
 	const FTDSkillRow* GetCastingRow() const;

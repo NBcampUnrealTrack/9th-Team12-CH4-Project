@@ -38,10 +38,14 @@ public:
 	/**
 	 * 캐릭터 앞쪽 상자 안의 적.
 	 *
+	 * @param Direction      상자가 뻗는 방향. **액터 회전이 아니라 부르는 쪽이 정한다** —
+	 *                       스프라이트는 마지막 이동 방향을 따라가므로(UTDCombatComponent::
+	 *                       GetFacingDirection) 액터 회전으로 판정하면 화면과 어긋난다.
+	 *                       0 벡터면 액터 정면으로 떨어진다
 	 * @param HalfExtent     상자 절반 크기. 전체 크기가 아니다
-	 * @param ForwardOffset  몸 중심에서 상자 중심까지의 전방 거리
+	 * @param ForwardOffset  몸 중심에서 상자 중심까지의 거리
 	 */
-	static TArray<AActor*> GatherTargetsInBox(const AActor* Attacker,
+	static TArray<AActor*> GatherTargetsInBox(const AActor* Attacker, FVector Direction,
 		FVector HalfExtent, float ForwardOffset, bool bDrawDebug = false);
 
 	/** 캐릭터를 중심으로 한 구 안의 적. 앞뒤를 가리지 않는다. */

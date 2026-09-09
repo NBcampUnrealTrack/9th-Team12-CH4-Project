@@ -3,15 +3,42 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
+#include "UI/Common/Tooltip/TDItemTooltipWidget.h"
+
+void UTDItemSlotVisualWidget::SetItemTooltipSource(FName ItemId, FText Hint)
+{
+	TooltipItemId = ItemId;
+	TooltipHint = Hint;
+	if (ItemId.IsNone()) UTDItemTooltipWidget::ClearItemTooltip(this);
+	RefreshItemTooltip();
+}
+
+void UTDItemSlotVisualWidget::RefreshItemTooltip()
+{
+	if (!TooltipItemId.IsNone())
+		UTDItemTooltipWidget::AttachItem(this, SlotVisualData.bHasItem ? TooltipItemId : NAME_None,
+			SlotVisualData.Count, TooltipHint);
+}
+
+void UTDItemSlotVisualWidget::NativeDestruct()
+{
+	UTDItemTooltipWidget::ClearItemTooltip(this);
+	bSlotHovered = false;
+	Super::NativeDestruct();
+}
 
 void UTDItemSlotVisualWidget::SetSlotVisualData(const FTDItemSlotVisualData& InData)
 {
 	SlotVisualData = InData;
 	RefreshVisual();
+	RefreshItemTooltip();
 }
 
 void UTDItemSlotVisualWidget::ClearSlotVisual()
 {
+	TooltipItemId = NAME_None;
+	TooltipHint = FText::GetEmpty();
+	UTDItemTooltipWidget::ClearItemTooltip(this);
 	SlotVisualData = FTDItemSlotVisualData();
 	RefreshVisual();
 }
@@ -61,6 +88,7 @@ void UTDItemSlotVisualWidget::NativeOnMouseEnter(const FGeometry& InGeometry, co
 	}
 
 	bSlotHovered = true;
+	RefreshItemTooltip();
 	RefreshInteractionVisual();
 }
 

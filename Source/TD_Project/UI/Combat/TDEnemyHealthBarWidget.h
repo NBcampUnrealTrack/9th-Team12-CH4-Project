@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -26,19 +26,39 @@ class TD_PROJECT_API UTDEnemyHealthBarWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Screen 체력바가 따라가는 몬스터. 지정하지 않으면 테스트 위젯 크기를 유지한다. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar|Distance")
+	void SetTargetActor(AActor* InTargetActor);
+
 	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
 	void SetHealth(float CurrentHealth, float MaxHealth, bool bIsCritical = false);
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
-	void SetHealthPercent(float InHealthPercent);
+	void ShowHealthDelta(float HealthDelta, bool bIsCritical);
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
 	void SetMonsterName(const FText& InMonsterName);
 
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Health Bar")
+		void SetHealthPercent(float InHealthPercent);
 	UFUNCTION(BlueprintPure, Category = "Enemy Health Bar")
 	float GetTargetHealthPercent() const { return TargetHealthPercent; }
 
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy Health Bar|Distance")
+	bool bEnableDistanceScaling = true;
+
+	/** 카메라에서 이 거리(cm)일 때 배율 1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy Health Bar|Distance", meta = (ClampMin = "1.0"))
+	float ReferenceDistance = 1000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy Health Bar|Distance", meta = (ClampMin = "0.01"))
+	float MinDistanceScale = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy Health Bar|Distance", meta = (ClampMin = "0.01"))
+	float MaxDistanceScale = 1.f;
+
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -89,7 +109,14 @@ protected:
 	float DamageLagPercent = 1.0f;
 
 private:
-	void ShowHealthDelta(float HealthDelta, bool bIsCritical);
+	void UpdateDistanceScale();
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> TargetActor;
+
+	FVector2D BaseRenderScale = FVector2D(1.f, 1.f);
+	bool bCapturedBaseRenderScale = false;
+
 	void RemoveFeedbackAt(int32 Index);
 
 	float DamageDelayRemaining = 0.0f;

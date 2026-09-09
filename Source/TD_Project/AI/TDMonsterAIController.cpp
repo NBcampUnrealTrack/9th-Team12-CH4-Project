@@ -8,6 +8,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
+#include "Components/CapsuleComponent.h"
 
 void ATDMonsterAIController::OnPossess(APawn* InPawn)
 {
@@ -26,6 +27,7 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 
 	SetGenericTeamId(PossessedCharacter->GetGenericTeamId());
 	PossessedCharacter->OnDeath.AddDynamic(this, &ATDMonsterAIController::HandlePawnDeath);
+	PossessedCharacter->OnDamagedServer.AddUObject(this, &ATDMonsterAIController::HandlePawnDamaged);
 
 	// 배회의 기준점. 스포너가 놓아준 자리가 곧 집이다.
 	HomeLocation = InPawn->GetActorLocation();
@@ -38,6 +40,11 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 
 void ATDMonsterAIController::OnUnPossess()
 {
+	if (ATDCharacterBase* PossessedCharacter = Cast<ATDCharacterBase>(GetPawn()))
+	{
+		PossessedCharacter->OnDamagedServer.RemoveAll(this);
+	}
+	
 	GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
 	Super::OnUnPossess();
 }
@@ -47,6 +54,36 @@ void ATDMonsterAIController::HandlePawnDeath()
 	GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
 	StopMovement();
 	ClearFocus(EAIFocusPriority::Gameplay);
+}
+
+void ATDMonsterAIController::HandlePawnDamaged(AActor* Attacker, float /*Damage*/, bool /*bCritical*/)
+{
+	ATDCharacterBase* Self = Cast<ATDCharacterBase>(GetPawn());
+	if (Self == nullptr || Self->IsDead())
+	{
+		return;
+	}
+
+	// 경직: 가던 길을 멈춘다. 다시 걷는 건 경직이 풀린 뒤 Think 가 알아서 한다.
+	if (Self->IsStaggered())
+	{
+		StopMovement();
+	}
+
+	// 어그로: 때린 쪽이 유효한 적이면 곧장 전투. 발견(Sense) 연출은 건너뛴다 —
+	// 맞고 나서 "어?" 하는 건 이상하다. 이미 전투 중이면 마지막으로 때린 쪽으로 대상을 바꾼다.
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr || AttackerChar->IsDead() ||
+		AttackerChar->GetGenericTeamId() == Self->GetGenericTeamId())
+	{
+		return;
+	}
+
+	AggroTarget = AttackerChar;
+	if (State != ETDMonsterAIState::Combat)
+	{
+		EnterCombat();
+	}
 }
 
 // ── 상태 진입 ─────────────────────────────────────────────
@@ -108,6 +145,12 @@ void ATDMonsterAIController::Think()
 	{
 		return;
 	}
+	
+	// 경직 중엔 판단도 멈춘다. 이동 정지는 HandlePawnDamaged 가 이미 했다.
+	if (Self->IsStaggered())
+	{
+		return;
+	}
 
 	const float Now = GetWorld()->GetTimeSeconds();
 
@@ -157,7 +200,6 @@ void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
 {
 	ATDCharacterBase* Target = AggroTarget.Get();
 
-	// 대상 상실 — 죽었거나, 사라졌거나, 너무 멀어졌다.
 	if (Target == nullptr || Target->IsDead() ||
 		FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation()) > LoseAggroRadius)
 	{
@@ -165,21 +207,28 @@ void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
 		return;
 	}
 
-	const float Distance = FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation());
+	// 캡슐 표면 사이의 거리(XY). 중심 거리를 쓰면 몸집이 큰 쪽이 사거리 손해를 보고,
+	// MoveToActor 의 도착 판정(반지름 포함)과 자가 달라 "도착했는데 사거리 밖"인 틈이 생긴다.
+	const float SelfRadius = Self->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float TargetRadius = Target->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float EdgeDistance = FVector::Dist2D(Self->GetActorLocation(), Target->GetActorLocation())
+		- SelfRadius - TargetRadius;
 
 	SetFocus(Target, EAIFocusPriority::Gameplay);
 
-	if (Distance <= AttackRange)
+	if (EdgeDistance <= AttackRange)
 	{
 		StopMovement();
 
 		if (UTDCombatComponent* Combat = Self->GetCombatComponent())
 		{
+			Combat->SetFacingDirection(Target->GetActorLocation() - Self->GetActorLocation());
 			Combat->ServerRequestAttack();
 		}
 	}
 	else
 	{
+		// 도착 반경도 표면 기준(반지름 자동 포함)이라 위 판정과 같은 자다.
 		MoveToActor(Target, AttackRange * 0.7f);
 	}
 }

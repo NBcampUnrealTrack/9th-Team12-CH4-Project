@@ -122,7 +122,8 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Field01);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Field02);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Field03);
-
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Field04);
+	
 	// 보스방은 여러 개다. 상위 태그로 "보스 구역인가"를 한 번에 물어볼 수 있다.
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Boss);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Zone_Region1_Boss_Room01);
@@ -241,4 +242,35 @@ namespace TDTags
 
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
 		Quest_Event_Talk_HongJongwoo);
+	
+	
+	// ── 테스트 서브 퀘스트 진행 단계 ───────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Completed);
+	
+	// 서아영 점심 메뉴 테스트 퀘스트
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Completed);
 }

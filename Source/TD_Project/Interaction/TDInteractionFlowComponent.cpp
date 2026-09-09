@@ -319,6 +319,21 @@ void UTDInteractionFlowComponent::FinishChapter()
 void UTDInteractionFlowComponent::SetGameplayLocked(
 	bool bLocked)
 {
+	/**
+	 * SetIgnoreMoveInput과 SetIgnoreLookInput은
+	 * 단순한 bool 설정이 아니라 호출 횟수가 누적된다.
+	 *
+	 * 대화가 끝나기 전에 챕터가 시작되는 경우처럼
+	 * 이미 잠긴 상태에서 다시 true를 호출하면
+	 * 잠금이 두 번 쌓이고 한 번만 해제되는 문제가 발생한다.
+	 *
+	 * 따라서 실제 상태가 변경될 때만 잠금/해제를 처리한다.
+	 */
+	if (bGameplayLocked == bLocked)
+	{
+		return;
+	}
+
 	bGameplayLocked = bLocked;
 
 	APlayerController* Controller =
@@ -668,10 +683,10 @@ ValidateDialogueRequest(
 				Controller->GetPawn());
 }
 
-bool UTDInteractionFlowComponent::
-ApplyDialogueAction(
+bool UTDInteractionFlowComponent::ApplyDialogueAction(
 	const FTDDialogueAction& Action)
 {
+	// 액션이 없는 일반 대사는 그대로 다음 줄로 진행한다.
 	if (!Action.ActionType.IsValid())
 	{
 		return true;
@@ -680,32 +695,34 @@ ApplyDialogueAction(
 	UTDQuestComponent* Quest =
 		GetQuestComponent();
 
-	if (Quest == nullptr)
+	// 퀘스트 액션에는 반드시 대상 QuestId가 있어야 한다.
+	// QuestId가 비었다고 전체 퀘스트에 이벤트를 보내지 않는다.
+	if (Quest == nullptr
+		|| !IsValid(ActiveDialogueSource)
+		|| Action.QuestId.IsNone())
 	{
 		ClientFlowQuestActionResult(
 			Action.QuestId,
-			ETDQuestActionResult::
-				InvalidDefinition);
+			ETDQuestActionResult::InvalidDefinition);
 
 		return false;
 	}
 
 	const ETDQuestTargetType SourceType =
-		ITDDialogueSource::
-			Execute_GetDialogueQuestTargetType(
-				ActiveDialogueSource);
+		ITDDialogueSource::Execute_GetDialogueQuestTargetType(
+			ActiveDialogueSource);
 
 	const FName SourceId =
-		ITDDialogueSource::
-			Execute_GetDialogueSourceId(
-				ActiveDialogueSource);
+		ITDDialogueSource::Execute_GetDialogueSourceId(
+			ActiveDialogueSource);
 
 	ETDQuestActionResult Result =
-		ETDQuestActionResult::Success;
+		ETDQuestActionResult::InvalidDefinition;
 
 	if (Action.ActionType ==
 		TDTags::Dialogue_Action_AcceptQuest.GetTag())
 	{
+		// 서브/일일 퀘스트 수락.
 		Result = Quest->AcceptQuestAtTarget(
 			Action.QuestId,
 			SourceType,
@@ -714,61 +731,88 @@ ApplyDialogueAction(
 	else if (Action.ActionType ==
 		TDTags::Dialogue_Action_TurnInQuest.GetTag())
 	{
+		// 이미 목표를 달성한 퀘스트의 완료 보고.
 		Result = Quest->TurnInQuestAtTarget(
 			Action.QuestId,
 			SourceType,
 			SourceId);
 	}
 	else if (Action.ActionType ==
-		TDTags::
-			Dialogue_Action_CompleteDialogueQuest
-				.GetTag())
+		TDTags::Dialogue_Action_CompleteDialogueQuest.GetTag())
 	{
-		/**
-		 * 대화 자체가 목표인 퀘스트 전용 처리.
-		 *
-		 * 첫 번째로 대화 이벤트 목표를 달성시키고,
-		 * 같은 서버 입력 안에서 즉시 완료와 보상 지급까지 처리한다.
-		 *
-		 * ReadyToTurnIn 상태가 한 프레임 동안 유지되지 않기 때문에
-		 * NPC 머리 위 마커가 대화 중간에 ?로 바뀌어 보이지 않는다.
-		 */
-		Quest->ReportQuestEvent(
-			Action.EventTag,
-			FMath::Max(
-				1,
-				Action.EventAmount));
+		// 대화 목표 달성과 완료 보고를 함께 처리하는 액션.
+		const FTDQuestRow* Definition =
+			Quest->GetQuestDefinition(Action.QuestId);
 
-		Result = Quest->TurnInQuestAtTarget(
-			Action.QuestId,
-			SourceType,
-			SourceId);
+		// 이 액션은 현재 대화 대상에게 직접 완료 보고하는 방식이다.
+		// 자동 완료 설정과 함께 사용하지 않는다.
+		if (Definition == nullptr
+			|| Definition->bAutoCompleteWithoutTurnIn)
+		{
+			Result =
+				ETDQuestActionResult::InvalidDefinition;
+		}
+		else if (Definition->TurnInTargetType != SourceType
+			|| Definition->TurnInTargetId != SourceId)
+		{
+			// 잘못된 NPC/물건이라면 진행도를 올리기 전에 거절한다.
+			Result =
+				ETDQuestActionResult::WrongTurnInTarget;
+		}
+		else
+		{
+			// 중요:
+			// 현재 대화의 QuestId에 해당하는 퀘스트만 진행시킨다.
+			Result = Quest->ReportQuestEventForQuest(
+				Action.QuestId,
+				Action.EventTag,
+				FMath::Max(1, Action.EventAmount));
+
+			if (Result == ETDQuestActionResult::Success)
+			{
+				Result = Quest->TurnInQuestAtTarget(
+					Action.QuestId,
+					SourceType,
+					SourceId);
+			}
+		}
 	}
 	else if (Action.ActionType ==
-		TDTags::
-			Dialogue_Action_ReportQuestEvent.GetTag())
+		TDTags::Dialogue_Action_ReportQuestEvent.GetTag())
 	{
-		Quest->ReportQuestEvent(
+		// 중간 목적지 대화:
+		// 지정한 퀘스트의 목표만 진행시키고,
+		// 여기서 완료 보고나 보상 지급은 하지 않는다.
+		Result = Quest->ReportQuestEventForQuest(
+			Action.QuestId,
 			Action.EventTag,
-			FMath::Max(
-				1,
-				Action.EventAmount));
+			FMath::Max(1, Action.EventAmount));
 
-		return true;
+		if (Result == ETDQuestActionResult::Success)
+		{
+			// 기존과 동일하게 중간 대화 진행 성공에는
+			// 별도의 퀘스트 수락/보상 결과 알림을 보내지 않는다.
+			return true;
+		}
 	}
-	else
+
+	if (Result != ETDQuestActionResult::Success)
 	{
-		Result =
-			ETDQuestActionResult::
-				InvalidDefinition;
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("대화 액션 실패: Row='%s', Quest='%s', Action='%s', Result=%d"),
+			*ActiveDialogueRow.ToString(),
+			*Action.QuestId.ToString(),
+			*Action.ActionType.ToString(),
+			static_cast<int32>(Result));
 	}
 
 	ClientFlowQuestActionResult(
 		Action.QuestId,
 		Result);
 
-	return Result ==
-		ETDQuestActionResult::Success;
+	return Result == ETDQuestActionResult::Success;
 }
 
 void UTDInteractionFlowComponent::

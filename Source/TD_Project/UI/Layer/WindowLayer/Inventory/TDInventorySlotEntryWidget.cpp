@@ -2,6 +2,7 @@
 #include "TDInventorySlotEntryWidget.h"
 
 #include "TDInventorySlotListItem.h"
+#include "TDInventoryContentWidget.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDItemRow.h"
 #include "GameFramework/PlayerController.h"
@@ -10,6 +11,28 @@
 #include "Items/TDInventoryComponent.h"
 #include "UI/Common/ItemSlot/TDItemDragDropOperation.h"
 #include "UI/Common/ItemSlot/TDItemSlotVisualWidget.h"
+#include "UI/Common/Tooltip/TDItemTooltipWidget.h"
+
+void UTDInventorySlotEntryWidget::RefreshItemTooltip()
+{
+	const bool bHasItem = IsValid(SlotListItem) && SlotListItem->bHasItem;
+	UTDItemTooltipWidget::AttachItem(this,
+		bHasItem ? SlotListItem->ItemInstance.ItemId : NAME_None,
+		bHasItem ? SlotListItem->ItemInstance.Count : 0, FText::GetEmpty(),
+		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr);
+}
+
+void UTDInventorySlotEntryWidget::NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	Super::NativeOnMouseEnter(Geometry, Event);
+	RefreshItemTooltip();
+}
+
+void UTDInventorySlotEntryWidget::NativeDestruct()
+{
+	UTDItemTooltipWidget::ClearItemTooltip(this);
+	Super::NativeDestruct();
+}
 
 UTDInventoryComponent* UTDInventorySlotEntryWidget::GetDraggableInventory() const
 {
@@ -25,6 +48,14 @@ UTDInventoryComponent* UTDInventorySlotEntryWidget::GetDraggableInventory() cons
 
 FReply UTDInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (Event.GetEffectingButton() == EKeys::RightMouseButton && IsValid(SlotListItem))
+	{
+		if (UTDInventoryContentWidget* Content = SlotListItem->GetTypedOuter<UTDInventoryContentWidget>())
+		{
+			Content->RequestItemAction(SlotListItem);
+			return FReply::Handled();
+		}
+	}
 	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && GetDraggableInventory())
 	{
 		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
@@ -41,6 +72,7 @@ void UTDInventorySlotEntryWidget::NativeOnDragDetected(const FGeometry& Geometry
 		return;
 	}
 	UTDItemDragDropOperation* Drag = NewObject<UTDItemDragDropOperation>(this);
+	UTDItemTooltipWidget::ClearItemTooltip(this);
 	Drag->SourceInventory = Inventory;
 	Drag->ItemId = SlotListItem->ItemInstance.ItemId;
 	Drag->SetDragIcon(SlotListItem->Icon.LoadSynchronous());
@@ -73,10 +105,12 @@ void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObj
 	}
 
 	BP_OnSlotListItemSet(SlotListItem);
+	RefreshItemTooltip();
 }
 
 void UTDInventorySlotEntryWidget::NativeOnEntryReleased()
 {
+	UTDItemTooltipWidget::ClearItemTooltip(this);
 	if (SlotVisualWidget)
 	{
 		SlotVisualWidget->ClearSlotVisual();

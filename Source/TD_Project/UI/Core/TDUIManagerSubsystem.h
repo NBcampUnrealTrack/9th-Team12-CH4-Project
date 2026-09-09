@@ -38,6 +38,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|UI")
 	FTDOnMenuWindowStateChanged OnMenuWindowStateChanged;
 
+    /** WindowLayer 안에서 해당 창을 가장 앞으로 배치한다. */
+    void BringWindowToFront(UTDWindowBaseWidget* Window);
+
 private:
 	struct FWindowPlacement
 	{

@@ -108,9 +108,8 @@ void UTDQuickSlotWidget::RefreshSlots()
 		Data.bAlwaysShowCount = true;
 		Visual->SetSlotVisualData(Data);
 		Visual->SetRenderOpacity(Data.Count > 0 ? 1.f : 0.45f);
-		Visual->SetToolTipText(FText::Format(
-			NSLOCTEXT("TDQuickSlot", "Item", "{0} · {1}개\n좌클릭: 사용 / 우클릭: 등록 해제"),
-			Data.DisplayName, FText::AsNumber(Data.Count)));
+		Visual->SetItemTooltipSource(SlotData.Id,
+			NSLOCTEXT("TDQuickSlot", "TooltipHint", "좌클릭: 사용 / 우클릭: 등록 해제"));
 	}
 }
 

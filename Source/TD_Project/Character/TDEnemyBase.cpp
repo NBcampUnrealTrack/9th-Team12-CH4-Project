@@ -9,6 +9,9 @@
 #include "GameFramework/CharacterMovementComponent.h"      
 #include "Stats/TDProgressionComponent.h"                   
 #include "Stats/TDStatComponent.h"
+#include "Components/WidgetComponent.h"
+#include "UI/Combat/TDEnemyHealthBarWidget.h"
+#include "Net/UnrealNetwork.h"
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Quest/TDQuestComponent.h"
@@ -31,6 +34,9 @@ ATDEnemyBase::ATDEnemyBase()
 	// 기본값(Disabled)으로 두면 배치한 몬스터가 아무것도 하지 않아 AI 담당이 매번 BP 에서 켜야 한다.
 	// AIControllerClass 는 여기서 지정하지 않는다 — C++ 에서 블루프린트를 참조하면 경로가 코드에 박힌다.
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	
+	// 피격 경직. GetHit 몽타주 길이에 맞춰 BP 클래스 디폴트에서 조절한다.
+	HitStaggerDuration = 0.35f;
 }
 
 UTDStatComponent* ATDEnemyBase::GetStatComponent() const
@@ -57,6 +63,8 @@ void ATDEnemyBase::BeginPlay()
 	// 레벨에 배치된 몬스터는 에디터에서 지정한 MonsterId/Level 로 시작한다.
 	// 스포너가 만드는 몬스터는 InitializeFromDefinition 이 먼저 불려 값이 이미 채워져 있다.
 	ApplyDefinition();
+	
+	SetupHealthBar();
 }
 
 void ATDEnemyBase::UpdateVitalAttributes()
@@ -175,6 +183,7 @@ void ATDEnemyBase::HandleDeath()
 	{
 		SetLifeSpan(CorpseLifetime);
 	}
+	
 }
 
 void ATDEnemyBase::GrantRewards(
@@ -306,4 +315,66 @@ void ATDEnemyBase::GrantRewards(
 void ATDEnemyBase::MulticastOnSense_Implementation()
 {
 	OnSensed.Broadcast();
+}
+
+void ATDEnemyBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ATDEnemyBase, MonsterId);
+}
+
+void ATDEnemyBase::SetupHealthBar()
+{
+	// 데디 서버는 화면이 없다. UI 연결은 그리는 머신(클라·리슨 서버)에서만.
+	if (IsRunningDedicatedServer())
+	{
+		return;
+	}
+
+	UWidgetComponent* WidgetComp = FindComponentByClass<UWidgetComponent>();
+	if (WidgetComp == nullptr)
+	{
+		return;   // 위젯 컴포넌트가 없는 몬스터는 체력바 없이 동작한다 — 오류 아님
+	}
+
+	// BeginPlay 시점엔 위젯이 아직 안 만들어졌을 수 있다. 명시적으로 만들게 한다.
+	WidgetComp->InitWidget();
+
+	HealthBarWidget = Cast<UTDEnemyHealthBarWidget>(WidgetComp->GetUserWidgetObject());
+	if (HealthBarWidget == nullptr || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 트리거 연결: 체력·최대체력 복제가 도착할 때마다 위젯을 갱신한다.
+	// 선우님 원칙 그대로 — 서버가 계산, 복제가 전달, 클라가 표시. RPC 없음.
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		UTDAttributeSet::GetHealthAttribute()).AddUObject(this, &ATDEnemyBase::HandleVitalChangedForUI);
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		UTDAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ATDEnemyBase::HandleVitalChangedForUI);
+
+	// 초기값. 복제가 아직 안 왔으면 임시값(1/1)이 잠깐 보이지만, 첫 복제가 델리게이트로 바로 고쳐준다.
+	HandleVitalChangedForUI(FOnAttributeChangeData());
+
+	if (MonsterTable != nullptr && !MonsterId.IsNone())
+	{
+		if (const FTDMonsterRow* Row = MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("HealthBar")))
+		{
+			HealthBarWidget->SetMonsterName(Row->DisplayName);
+		}
+	}
+}
+
+void ATDEnemyBase::HandleVitalChangedForUI(const FOnAttributeChangeData& Data)
+{
+	if (HealthBarWidget == nullptr || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 크리 여부는 어트리뷰트에 없어 일단 false — 크리 강조는 선우님과 협의 후(OnHit 편승안).
+	HealthBarWidget->SetHealth(
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
+		false);
 }

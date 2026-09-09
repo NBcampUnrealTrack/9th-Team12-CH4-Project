@@ -120,6 +120,11 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 			DeadEnemy->GrantRewards(AttackerChar);
 		}
 	}
+	else if (Result.FinalDamage > 0.f)
+	{
+		// 살아남았으면 "맞았다" — 경직·어그로·피격 연출은 대상 쪽 일이다.
+		TargetChar->ReceiveHit(AttackerChar, Result.FinalDamage, Result.bCritical);
+	}
 	
 	return Result;
 }

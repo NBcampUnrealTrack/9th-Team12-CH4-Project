@@ -5,6 +5,7 @@
 #include "TDInventorySlotListItem.generated.h"
 
 class UTexture2D;
+class UDataTable;
 
 
 UCLASS(BlueprintType)
@@ -13,6 +14,10 @@ class TD_PROJECT_API UTDInventorySlotListItem : public UObject
 	GENERATED_BODY()
 
 public:
+	/** 미리보기 테이블이 기본 아이템 테이블과 다를 때 이름/설명도 같은 원본을 사용한다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> TooltipDefinitionTable;
+
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
 	int32 SlotIndex = INDEX_NONE;
 

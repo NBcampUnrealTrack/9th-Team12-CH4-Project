@@ -43,7 +43,7 @@ protected:
 	float LoseAggroRadius = 1400.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0"))
-	float AttackRange = 150.f;
+	float AttackRange = 100.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0.05"))
 	float ThinkInterval = 0.25f;
@@ -97,4 +97,7 @@ private:
 	TWeakObjectPtr<ATDCharacterBase> AggroTarget;
 
 	FTimerHandle ThinkTimerHandle;
+	
+	/** 맞았다. 어그로를 끌고, 경직 동안 멈춘다. 서버 전용(OnDamagedServer 구독). */
+	void HandlePawnDamaged(AActor* Attacker, float Damage, bool bCritical);
 };

@@ -11,6 +11,10 @@ class UAbilitySystemComponent;
 class UDataTable;
 class UTDAttributeSet;
 class UTDStatComponent;
+class UWidgetComponent;
+class UTDEnemyHealthBarWidget;
+struct FOnAttributeChangeData;
+
 
 /**
  * 몬스터의 베이스 클래스.
@@ -60,6 +64,9 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnSense();
 	
+	//  MonsterId 복제
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	
 protected:
 	virtual void BeginPlay() override;
 
@@ -78,12 +85,15 @@ protected:
 	TObjectPtr<UDataTable> MonsterTable;
 
 	/** 조회할 행 이름. */
-	UPROPERTY(EditAnywhere, Category = "TD|Monster")
+	UPROPERTY(EditAnywhere, Replicated, Category = "TD|Monster")
 	FName MonsterId;
 
 	/** FScalableFloat 커브를 읽을 레벨. */
 	UPROPERTY(EditAnywhere, Category = "TD|Monster", meta = (ClampMin = "1"))
 	int32 Level = 1;
+	
+	/** 체력바 위젯을 찾아 어트리뷰트 변경 델리게이트에 연결한다. 렌더링하는 머신에서만. */
+	void SetupHealthBar();
 
 private:
 	/** 스탯 계산 결과를 어트리뷰트에 기록한다. 플레이어의 PlayerState 가 하는 일과 같다. */
@@ -112,4 +122,11 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTDAttributeSet> AttributeSet;
+	
+	void HandleVitalChangedForUI(const FOnAttributeChangeData& Data);
+
+	UPROPERTY()
+	TObjectPtr<UTDEnemyHealthBarWidget> HealthBarWidget;
+	
+
 };

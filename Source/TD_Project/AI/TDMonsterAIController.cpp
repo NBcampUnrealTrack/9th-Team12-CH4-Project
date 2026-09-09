@@ -26,6 +26,7 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 
 	SetGenericTeamId(PossessedCharacter->GetGenericTeamId());
 	PossessedCharacter->OnDeath.AddDynamic(this, &ATDMonsterAIController::HandlePawnDeath);
+	PossessedCharacter->OnDamagedServer.AddUObject(this, &ATDMonsterAIController::HandlePawnDamaged);
 
 	// 배회의 기준점. 스포너가 놓아준 자리가 곧 집이다.
 	HomeLocation = InPawn->GetActorLocation();
@@ -38,6 +39,11 @@ void ATDMonsterAIController::OnPossess(APawn* InPawn)
 
 void ATDMonsterAIController::OnUnPossess()
 {
+	if (ATDCharacterBase* PossessedCharacter = Cast<ATDCharacterBase>(GetPawn()))
+	{
+		PossessedCharacter->OnDamagedServer.RemoveAll(this);
+	}
+	
 	GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
 	Super::OnUnPossess();
 }
@@ -47,6 +53,36 @@ void ATDMonsterAIController::HandlePawnDeath()
 	GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
 	StopMovement();
 	ClearFocus(EAIFocusPriority::Gameplay);
+}
+
+void ATDMonsterAIController::HandlePawnDamaged(AActor* Attacker, float /*Damage*/, bool /*bCritical*/)
+{
+	ATDCharacterBase* Self = Cast<ATDCharacterBase>(GetPawn());
+	if (Self == nullptr || Self->IsDead())
+	{
+		return;
+	}
+
+	// 경직: 가던 길을 멈춘다. 다시 걷는 건 경직이 풀린 뒤 Think 가 알아서 한다.
+	if (Self->IsStaggered())
+	{
+		StopMovement();
+	}
+
+	// 어그로: 때린 쪽이 유효한 적이면 곧장 전투. 발견(Sense) 연출은 건너뛴다 —
+	// 맞고 나서 "어?" 하는 건 이상하다. 이미 전투 중이면 마지막으로 때린 쪽으로 대상을 바꾼다.
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr || AttackerChar->IsDead() ||
+		AttackerChar->GetGenericTeamId() == Self->GetGenericTeamId())
+	{
+		return;
+	}
+
+	AggroTarget = AttackerChar;
+	if (State != ETDMonsterAIState::Combat)
+	{
+		EnterCombat();
+	}
 }
 
 // ── 상태 진입 ─────────────────────────────────────────────
@@ -105,6 +141,12 @@ void ATDMonsterAIController::Think()
 {
 	ATDCharacterBase* Self = Cast<ATDCharacterBase>(GetPawn());
 	if (Self == nullptr || Self->IsDead())
+	{
+		return;
+	}
+	
+	// 경직 중엔 판단도 멈춘다. 이동 정지는 HandlePawnDamaged 가 이미 했다.
+	if (Self->IsStaggered())
 	{
 		return;
 	}
@@ -175,6 +217,9 @@ void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
 
 		if (UTDCombatComponent* Combat = Self->GetCombatComponent())
 		{
+			// 대상 쪽을 보고 친다. 서 있으면 속도가 0 이라 마지막 이동 방향이 남는데, 그게 대상 반대일 수 있다.
+			Combat->SetFacingDirection(Target->GetActorLocation() - Self->GetActorLocation());
+			
 			Combat->ServerRequestAttack();
 		}
 	}

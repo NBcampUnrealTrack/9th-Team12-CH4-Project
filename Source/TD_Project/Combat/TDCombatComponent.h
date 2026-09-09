@@ -38,6 +38,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnAttackStarted OnAttackStarted;
 	
+	/** 히트박스가 향할 방향(XY 단위벡터). 마지막 이동 방향이며, AI 는 공격 직전 명시한다. */
+	UFUNCTION(BlueprintPure, Category = "TD|Combat")
+	FVector GetFacingDirection() const { return FacingDirection; }
+
+	/** 방향을 직접 지정한다. 0 벡터(제자리)는 무시 — 마지막 방향이 유지된다. */
+	void SetFacingDirection(const FVector& Direction);
+
+	/** 예약된 타격 판정을 취소한다. 경직이 스윙을 끊을 때 쓴다. 서버 전용. */
+	void CancelAttack();
+	
 protected:
 	/** 기본 쿨타임(초). 쿨다운회복률 스탯으로 나눠져 실제 쿨타임이 된다. 추후 직업·스킬 테이블로 이관. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0.1"))
@@ -74,10 +84,19 @@ protected:
 
 	/** 전방 박스 안의 유효 대상(적팀·생존자)을 모은다. 서버 전용. */
 	TArray<AActor*> GatherTargets() const;
+	
+	virtual void BeginPlay() override;
+
+	/** 이동이 갱신될 때마다 불린다. 속도가 있으면 그 방향을 기억한다 — ABP 의 SetDirectionality 와 같은 규칙. */
+	UFUNCTION()
+	void HandleMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
 
 private:
 	/** 마지막 공격 시각(서버 월드시간). 복제하지 않는다 — 판정은 서버만 하므로. */
 	float LastAttackTime = -1000.f;
 	
 	FTimerHandle HitTimerHandle;
+	
+	/** 마지막 이동 방향. 서 있어도 유지된다. BeginPlay 에서 액터 정면으로 초기화. */
+	FVector FacingDirection = FVector::ForwardVector;
 };

@@ -146,3 +146,36 @@ float ATDCharacterBase::GetStat(FGameplayTag Stat, float DefaultValue) const
 	const UTDStatComponent* StatComponent = GetStatComponent();
 	return StatComponent ? StatComponent->GetStat(Stat) : DefaultValue;
 }
+
+void ATDCharacterBase::ReceiveHit(AActor* Attacker, float Damage, bool bCritical)
+{
+	if (!HasAuthority() || bIsDead)
+	{
+		return;
+	}
+
+	if (HitStaggerDuration > 0.f)
+	{
+		StaggerEndTime = GetWorld()->GetTimeSeconds() + HitStaggerDuration;
+
+		// 휘두르던 중이면 그 스윙은 무효다. "맞으면 멈춘다"의 핵심이 여기다.
+		if (CombatComponent != nullptr)
+		{
+			CombatComponent->CancelAttack();
+		}
+	}
+
+	// 서버 구독자(AI 어그로) 먼저, 그다음 전 머신 연출. 서로 기다리지 않는다.
+	OnDamagedServer.Broadcast(Attacker, Damage, bCritical);
+	MulticastOnDamaged(Attacker, Damage, bCritical);
+}
+
+void ATDCharacterBase::MulticastOnDamaged_Implementation(AActor* Attacker, float Damage, bool bCritical)
+{
+	OnDamaged.Broadcast(Attacker, Damage, bCritical);
+}
+
+bool ATDCharacterBase::IsStaggered() const
+{
+	return GetWorld() != nullptr && GetWorld()->GetTimeSeconds() < StaggerEndTime;
+}

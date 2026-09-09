@@ -97,4 +97,7 @@ private:
 	TWeakObjectPtr<ATDCharacterBase> AggroTarget;
 
 	FTimerHandle ThinkTimerHandle;
+	
+	/** 맞았다. 어그로를 끌고, 경직 동안 멈춘다. 서버 전용(OnDamagedServer 구독). */
+	void HandlePawnDamaged(AActor* Attacker, float Damage, bool bCritical);
 };

@@ -334,6 +334,10 @@ void ATDEnemyBase::SetupHealthBar()
 	// 초기값. 복제가 아직 안 왔으면 임시값(1/1)이 잠깐 보이지만, 첫 복제가 델리게이트로 바로 고쳐준다.
 	HandleVitalChangedForUI(FOnAttributeChangeData());
 
+	// 거리 스케일링(선우님 위젯). 따라다닐 액터를 알려줘야 카메라 거리 계산이 시작된다.
+	// 위젯은 자기가 누구 머리 위에 있는지 모른다 — 알려주는 건 소유자인 몬스터 몫.
+	HealthBarWidget->SetTargetActor(this);
+	
 	if (MonsterTable != nullptr && !MonsterId.IsNone())
 	{
 		if (const FTDMonsterRow* Row = MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("HealthBar")))

@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Data/TDSkillEffectRow.h"
+#include "Data/TDSkillRow.h"
 #include "Save/TDPlayerSaveData.h"
 #include "Stats/TDStatTypes.h"
 #include "TDProgressionComponent.generated.h"
@@ -96,6 +98,81 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Progression")
 	int32 GetSkillLevel(FName SkillId) const;
 
+	// ── 스킬 ──────────────────────────────────────────────
+	//
+	// 스킬 테이블의 조회 창구가 여기다. 액티브를 담당할 컴포넌트도 자기 테이블을 따로 들지 않고
+	// 이쪽을 거친다 — 퀵슬롯이 UTDInventoryComponent::FindItemDefinition 을 거치는 것과 같다.
+	// 같은 테이블 참조를 두 컴포넌트가 들면 한쪽만 지정해 놓고 왜 안 되는지 찾게 된다.
+
+	/** DT_Skill 조회. 없으면 nullptr. */
+	const FTDSkillRow* FindSkillRow(FName SkillId) const;
+
+	/** 위와 같지만 블루프린트용. @return 행을 찾았으면 true. */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	bool GetSkillInfo(FName SkillId, FTDSkillRow& OutRow) const;
+
+	/**
+	 * 지금 직업이 쓰는 스킬 목록. 스킬창이 무엇을 그릴지 정하는 근거다.
+	 *
+	 * 정렬하지 않고 테이블 순서 그대로 돌려준다. 액티브를 Q·W·E 로 늘어놓을지
+	 * 패시브와 한 목록에 섞을지는 화면이 정할 일이고, 그 판단에 필요한
+	 * SkillType 과 SlotIndex 는 행에 들어 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	TArray<FName> GetClassSkills() const;
+
+	/**
+	 * Q·W·E 자리(1~3)에 놓인 내 직업의 액티브. 없으면 NAME_None.
+	 *
+	 * 키 입력은 "몇 번을 눌렀다" 만 아는데, 그 자리에 어느 스킬이 있는지는 직업이 정한다.
+	 * 그 대응을 여기서 한 번만 풀어 둔다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	FName GetSkillForSlot(int32 SlotIndex) const;
+
+	/**
+	 * 그 스킬을 썼을 때 일어나는 일들. 액티브만 해당한다.
+	 *
+	 * 한 스킬이 효과를 여럿 가질 수 있어 배열이다("피해를 주면서 나를 회복").
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	TArray<FTDSkillEffectRow> GetSkillEffects(FName SkillId) const;
+
+	/**
+	 * 지금 이 스킬을 한 단계 올릴 수 있는가.
+	 *
+	 * UI 가 버튼을 회색으로 만들 때도 이 함수를 쓴다. 조건을 화면 쪽에 한 벌 더 적으면
+	 * 규칙이 바뀔 때 한쪽만 고쳐져 "눌리는데 서버가 거부하는" 버튼이 생긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	bool CanUpgradeSkill(FName SkillId) const;
+
+	/**
+	 * 스킬을 한 단계 올린다. 스킬창 버튼이 부른다.
+	 *
+	 * 클라이언트는 "무엇을 올리겠다"만 보내고 조건은 서버가 자기 데이터로 다시 판단한다 —
+	 * 화면이 낡았거나 위조된 요청은 조용히 무시된다(D56 과 같은 원칙).
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Skill")
+	void ServerUpgradeSkill(FName SkillId);
+
+#if !UE_BUILD_SHIPPING
+	/**
+	 * 개발용. 지금 직업의 스킬을 전부 지정 레벨로 맞춘다. 서버 전용.
+	 *
+	 * **캐릭터 레벨 조건과 잔여 포인트를 무시한다.** 액티브는 찍지 않으면 나가지 않아서,
+	 * 테스트할 때마다 TD.SetLevel 로 레벨을 올리고 TD.SkillUp 을 여러 번 치게 되기 때문이다.
+	 * 규칙을 우회하므로 UFUNCTION 이 아니고 Shipping 에서는 아예 사라진다.
+	 *
+	 * MaxLevel 과 "내 직업 스킬인가" 는 그대로 지킨다 — 그것까지 무시하면
+	 * 테스트가 실제로 가능한 상태를 벗어난다.
+	 *
+	 * @param SkillLevel  맞출 레벨. 0 을 넣으면 전부 초기화된다.
+	 * @return 실제로 값이 바뀐 스킬 수.
+	 */
+	int32 DebugLearnAllSkills(int32 SkillLevel = 1);
+#endif
+
 	// ── 경험치 표시용 ─────────────────────────────────────
 	// 누적값을 그대로 보여주면 "15,800" 처럼 의미를 알기 어려우므로,
 	// UI 가 쓰기 좋은 형태로 바꿔주는 것까지 여기서 담당한다.
@@ -143,6 +220,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Progression")
 	TObjectPtr<UDataTable> LevelExpTable;
 
+	/** DT_Skill. 스킬의 정적 정의. 지정하지 않으면 스킬을 찍을 수 없다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Progression")
+	TObjectPtr<UDataTable> SkillTable;
+
+	/** DT_SkillPassive. 패시브가 올려주는 스탯. 지정하지 않으면 패시브를 찍어도 수치가 그대로다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Progression")
+	TObjectPtr<UDataTable> SkillPassiveTable;
+
+	/** DT_SkillEffect. 액티브를 썼을 때 일어나는 일. 지정하지 않으면 스킬이 나가도 아무 일이 없다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Progression")
+	TObjectPtr<UDataTable> SkillEffectTable;
+
 private:
 	/**
 	 * 누적 경험치로부터 레벨을 구한다. 테이블이 없으면 현재 레벨을 그대로 돌려준다.
@@ -165,6 +254,18 @@ private:
 	 * 일부만 고치는 것보다 묶음을 새로 만들어 갈아끼우는 편이 단순하다.
 	 */
 	void RefreshStatModifiers();
+
+	/**
+	 * 찍어 둔 패시브를 모디파이어로 바꿔 Source.Skill 로 다시 등록한다.
+	 *
+	 * 성장(Source.Progression)과 나눠 둔 이유는 바뀌는 시점이 다르기 때문이다.
+	 * 성장은 레벨이 오를 때, 패시브는 스킬을 찍을 때 달라진다. 하나로 묶으면
+	 * 레벨업 때마다 패시브 테이블까지 훑게 된다.
+	 *
+	 * 스킬별로 소스를 나누지 않고 통째로 갈아 끼운다 — 장비를 Source.Equipment
+	 * 하나로 묶은 것과 같은 판단이다.
+	 */
+	void RefreshSkillModifiers();
 
 	UTDStatComponent* FindStatComponent() const;
 
@@ -192,9 +293,16 @@ private:
 	FName ClassId;
 
 	/** 잔여 스킬포인트를 계산하려면 클라이언트도 이 목록이 필요하다. */
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_SkillLevels)
 	TArray<FTDSkillLevel> SkillLevels;
+
+	/** 스킬창이 다시 그려질 신호다. 서버에서는 불리지 않으므로 그쪽은 직접 알린다. */
+	UFUNCTION()
+	void OnRep_SkillLevels();
 
 	/** RefreshStatModifiers 가 등록한 소스. 갱신할 때 이 핸들로 이전 것을 걷어낸다. */
 	FTDStatSourceHandle StatSourceHandle;
+
+	/** RefreshSkillModifiers 가 등록한 소스. 위와 같은 역할이고 대상만 다르다. */
+	FTDStatSourceHandle SkillStatSourceHandle;
 };

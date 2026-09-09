@@ -3,11 +3,10 @@
 #include "Character/TDCharacterBase.h"
 #include "Combat/TDCombatStatics.h"
 #include "Core/TDGameplayTags.h"
-#include "DrawDebugHelpers.h"
-#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Interaction/TDInteractionFlowComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Skill/TDSkillComponent.h"
 #include "GameFramework/Character.h"
 
 UTDCombatComponent::UTDCombatComponent()
@@ -109,8 +108,16 @@ bool UTDCombatComponent::CanAttack() const
 	{
 		return false;
 	}
-	
-	
+
+	// 시전 중에는 평타가 나가지 않는다. 막지 않으면 정신집중으로 계속 때리면서
+	// 평타까지 섞어 넣을 수 있다.
+	const UTDSkillComponent* Skills = Owner->FindComponentByClass<UTDSkillComponent>();
+	if (Skills != nullptr && Skills->IsCasting())
+	{
+		return false;
+	}
+
+
 	// 쿨다운회복률: 실제 쿨타임 = 기본 ÷ (1 + 회복률). 시전 시점에 1회 계산한다.
 	const float RecoveryRate = FMath::Max(0.f, Owner->GetStat(TDTags::Stat_Utility_CooldownRecoveryRate));
 	const float ActualCooldown = AttackCooldown / (1.f + RecoveryRate);
@@ -120,6 +127,15 @@ bool UTDCombatComponent::CanAttack() const
 
 TArray<AActor*> UTDCombatComponent::GatherTargets() const
 {
+	// 규칙 본체는 UTDCombatStatics 로 옮겼다. 스킬이 같은 판정을 써야 하는데
+	// 여기 두면 복사본이 하나 더 생긴다.
+	return UTDCombatStatics::GatherTargetsInBox(
+		GetOwner(), HitBoxExtent, HitBoxForwardOffset, bDrawDebugHitBox);
+}
+
+void UTDCombatComponent::NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
+{
+	if (GetOwnerRole() == ROLE_Authority)
 	TArray<AActor*> Targets;
 
 	const ATDCharacterBase* Owner = Cast<ATDCharacterBase>(GetOwner());
@@ -145,32 +161,8 @@ TArray<AActor*> UTDCombatComponent::GatherTargets() const
 #if ENABLE_DRAW_DEBUG
 	if (bDrawDebugHitBox)
 	{
-		DrawDebugBox(GetWorld(), Center, HitBoxExtent, Owner->GetActorQuat(),
-			FColor::Red, false, 0.5f);
+		MulticastOnHit(Target, Damage, bCritical, HitLocation);
 	}
-#endif
-
-	// 한 번의 공격에 같은 대상이 두 번 잡히지 않도록 걸러 담는다.
-	TSet<AActor*> Seen;
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		ATDCharacterBase* Candidate = Cast<ATDCharacterBase>(Overlap.GetActor());
-		if (Candidate == nullptr || Candidate->IsDead() || Seen.Contains(Candidate))
-		{
-			continue;
-		}
-
-		// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
-		if (Candidate->GetGenericTeamId() == Owner->GetGenericTeamId())
-		{
-			continue;
-		}
-
-		Seen.Add(Candidate);
-		Targets.Add(Candidate);
-	}
-
-	return Targets;
 }
 
 void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical, FVector HitLocation)

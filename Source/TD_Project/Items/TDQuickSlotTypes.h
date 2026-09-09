@@ -3,13 +3,17 @@
 #include "CoreMinimal.h"
 #include "TDQuickSlotTypes.generated.h"
 
-/** 퀵슬롯에 무엇이 들어 있는가. */
+/**
+ * 퀵슬롯에 무엇이 들어 있는가.
+ *
+ * 스킬은 여기 들어오지 않는다. 액티브 3개는 직업이 정해 Q·W·E 에 고정 배치되므로
+ * 플레이어가 퀵슬롯에 배치할 것이 없다. 퀵슬롯 1~6 은 아이템 전용이다.
+ */
 UENUM(BlueprintType)
 enum class ETDQuickSlotType : uint8
 {
 	Empty	UMETA(DisplayName = "비어 있음"),
-	Item	UMETA(DisplayName = "아이템"),
-	Skill	UMETA(DisplayName = "스킬")
+	Item	UMETA(DisplayName = "아이템")
 };
 
 /**
@@ -31,7 +35,7 @@ struct FTDQuickSlot
 	UPROPERTY(BlueprintReadOnly, Category = "TD|QuickSlot")
 	ETDQuickSlotType Type = ETDQuickSlotType::Empty;
 
-	/** Type 에 따라 DT_ItemDefinition 의 RowName 이거나 스킬 식별자다. */
+	/** DT_ItemDefinition 의 RowName. */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|QuickSlot")
 	FName Id;
 

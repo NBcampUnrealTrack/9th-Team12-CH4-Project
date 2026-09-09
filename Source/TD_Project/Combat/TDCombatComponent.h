@@ -37,6 +37,18 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnAttackStarted OnAttackStarted;
+
+	/**
+	 * 피격 방송. 이 컴포넌트 밖에서 판정한 타격도 같은 델리게이트로 흘려보낸다.
+	 *
+	 * 스킬이 자기 OnHit 을 따로 갖지 않게 하려는 것이다. 델리게이트가 둘이면
+	 * 데미지 텍스트와 히트 VFX 가 양쪽을 다 구독해야 하고, 한쪽을 빠뜨리면
+	 * "평타는 숫자가 뜨는데 스킬은 안 뜨는" 상태가 된다.
+	 *
+	 * 서버에서만 의미가 있다. 클라이언트 호출은 조용히 무시된다.
+	 */
+	void NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation);
+
 	
 	/** 히트박스가 향할 방향(XY 단위벡터). 마지막 이동 방향이며, AI 는 공격 직전 명시한다. */
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")

@@ -142,7 +142,16 @@ void ATDEnemyBase::ApplyDefinition()
 
 	// 보상도 같은 행에서 레벨 스케일로 읽어둔다. 죽는 시점엔 테이블을 다시 열지 않는다.
 	ExpReward = FMath::RoundToInt(Row->ExpReward.GetValueAtLevel(LevelAsFloat));
-	
+
+	GoldMinReward = FMath::RoundToInt(Row->GoldMin.GetValueAtLevel(LevelAsFloat));
+	GoldMaxReward = FMath::RoundToInt(Row->GoldMax.GetValueAtLevel(LevelAsFloat));
+
+	// 시트에서 상하한이 뒤집혀 들어와도 난수가 깨지지 않게 한다.
+	if (GoldMaxReward < GoldMinReward)
+	{
+		Swap(GoldMinReward, GoldMaxReward);
+	}
+
 	//  어트리뷰트에 스탯을 옮겨서 클라이언트가 볼 수 있도록 한다.
 	UpdateVitalAttributes();
 }
@@ -165,7 +174,11 @@ void ATDEnemyBase::HandleDeath()
 	}
 
 	// 파괴는 서버 권한. 복제로 클라이언트에서도 함께 사라진다.
-	// TODO(드랍): GoldMin/Max 와 DropTableId 는 드랍 액터(W3)와 함께 붙인다.
+	//
+	// 골드는 바닥에 떨구지 않고 GrantRewards 에서 즉시 지급한다. 상점을 검증하려면
+	// 돈을 버는 경로가 먼저 있어야 하는데, 드랍 액터는 습득 판정·복제·파티 분배 규칙이
+	// 따로 필요해 그만큼을 기다릴 수 없었다.
+	// TODO(드랍): DropTableId(아이템 드랍)는 드랍 액터(W3)와 함께 붙인다.
 	if (HasAuthority())
 	{
 		SetLifeSpan(CorpseLifetime);
@@ -234,11 +247,20 @@ void ATDEnemyBase::GrantRewards(
 
 	/**
 	 * 경험치는 기존 파티 분배 경로를 사용한다.
+	 *
+	 * 골드도 같은 경로지만 규칙이 다르다 — 경험치는 각자 전액에 인원 보너스까지 붙고,
+	 * 골드는 인원수로 나눈다. 골드는 경제라 같은 방식으로 주면 파티를 맺는 것만으로
+	 * 돈이 불어난다. 자세한 이유는 AwardKillGold 주석에 있다.
 	 */
 	if (UTDPartyComponent* Party =
 		KillerPlayerState->GetPartyComponent())
 	{
 		Party->AwardKillExp(ExpReward);
+
+		if (GoldMaxReward > 0)
+		{
+			Party->AwardKillGold(FMath::RandRange(GoldMinReward, GoldMaxReward));
+		}
 	}
 
 	/**

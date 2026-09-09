@@ -4,6 +4,7 @@
 #include "Chat/TDChatTypes.h"
 #include "Game/TDGameMode.h"
 #include "Market/TDMarketTypes.h"
+#include "Shop/TDShopTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "Data/TDDialogueRow.h"
@@ -224,6 +225,15 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugQuickStart(int32 SlotIndex);
 
+	/**
+	 * 지금 직업의 스킬을 전부 지정 레벨로 맞춘다.
+	 *
+	 * 액티브는 찍지 않으면 나가지 않아서, 스킬을 만질 때마다 TD.SkillUp 을 여러 번 치게 된다.
+	 * TD.Start 도 안에서 같은 것을 부른다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugLearnSkills(int32 SkillLevel);
+
 public:
 	// ── 존 이동 피드백 ────────────────────────────────────
 
@@ -398,6 +408,35 @@ public:
 	/** 등록·구매·취소의 결과. **UI 가 구독할 지점이다.** */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Market")
 	FTDOnMarketResult OnMarketResult;
+
+	// ══════════════════════════════════════════════════════
+	//  NPC 상점
+	// ══════════════════════════════════════════════════════
+	// 거래소와 다른 시스템이다 — 플레이어 간이 아니라 NPC 가 고정 목록을 판다.
+	// 실제 처리는 UTDShopStatics 가 하고 여기는 통로다.
+	//
+	// **목록 조회는 여기 없다.** 재고가 무제한이고 가격이 테이블이라 클라이언트가
+	// UTDShopStatics::GetShopEntries 로 직접 읽으면 된다. RPC 를 왕복할 이유가 없다.
+
+	/**
+	 * 상점에서 산다. 사거리 검증은 서버가 한다.
+	 *
+	 * @param ShopId  UTDShopComponent 에 적힌 값. 어느 상인 앞인지 클라이언트가 알려주고,
+	 *                정말 그 앞에 있는지는 서버가 확인한다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Shop")
+	void ServerBuyFromShop(FName ShopId, FName ItemId, int32 Count);
+
+	/** 상점에 판다. **그 상점이 파는 물건만** 사 준다. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Shop")
+	void ServerSellToShop(FName ShopId, int32 InventorySlot, int32 Count);
+
+	UFUNCTION(Client, Reliable)
+	void ClientShopResult(ETDShopResult Result, FName ItemId, int32 Count, int32 TotalPrice);
+
+	/** 사거나 판 결과. **UI 가 구독할 지점이다.** */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Shop")
+	FTDOnShopResult OnShopResult;
 
 	/** 검색 결과. 내 판매 목록도 같은 델리게이트로 온다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Market")

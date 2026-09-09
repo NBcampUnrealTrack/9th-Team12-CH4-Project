@@ -1,0 +1,7 @@
+﻿Name,ShopId,ItemId,Price
+Forest_HPotion,Shop_Forest,HPotion_Low,50
+Forest_ExpPotion,Shop_Forest,ExpPotion_Low,300
+Forest_InvExpand,Shop_Forest,InvExpand,1000
+Desert_HPotion,Shop_Desert,HPotion_Low,70
+Desert_LevelTicket,Shop_Desert,LevelTicket_Low,5000
+Desert_InvExpand,Shop_Desert,InvExpand,1000

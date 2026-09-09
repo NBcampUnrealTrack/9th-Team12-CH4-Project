@@ -96,13 +96,27 @@ struct TD_PROJECT_API FTDQuestObjectiveDefinition
 	FText Description;
 
 	/**
-	 * KillMonster: DT_MonsterDefinition RowName
-	 * OwnItem: DT_ItemDefinition RowName
-	 * OpenChest: DT_TreasureChest RowName
+	 * KillMonster:
+	 *     DT_MonsterDefinition RowName
 	 *
-	 * OpenChest에서 비워 두면 아무 상자나 인정한다.
+	 * OwnItem:
+	 *     DT_ItemDefinition RowName
+	 *
+	 * OpenChest:
+	 *     DT_TreasureChest RowName
+	 *
+	 * GameplayEvent:
+	 *     해당 목표의 ! 마커를 표시할
+	 *     NPCId 또는 QuestObjectId
+	 *
+	 * OpenChest에서 비어 있으면
+	 * 아무 상자 열기 목표로 처리한다.
+	 *
+	 * GameplayEvent에서 비어 있으면
+	 * 기존 AcceptTarget 또는 TurnInTarget을 사용한다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "TD|Quest")
 	FName TargetId;
 
 	/** EnterZone 목표에서 사용하는 정확한 Zone 태그 */

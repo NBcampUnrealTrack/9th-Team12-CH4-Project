@@ -146,57 +146,43 @@ FName ATDQuestObject::FindInProgressDialogueRow(
 		return NAME_None;
 	}
 
-	TArray<FTDQuestViewData> Views =
+	const TArray<FTDQuestViewData> Views =
 		Quest->GetQuestViews();
-
-	Views.Sort(
-		[](const FTDQuestViewData& A,
-		   const FTDQuestViewData& B)
-		{
-			const bool bAMain =
-				A.QuestTypeTag ==
-					TDTags::Quest_Type_Main.GetTag();
-
-			const bool bBMain =
-				B.QuestTypeTag ==
-					TDTags::Quest_Type_Main.GetTag();
-
-			if (bAMain != bBMain)
-			{
-				return bAMain;
-			}
-
-			return A.AcceptSequence
-				< B.AcceptSequence;
-		});
 
 	for (const FTDQuestViewData& View : Views)
 	{
-		const FTDQuestRow* Definition =
-			Quest->GetQuestDefinition(
-				View.QuestId);
-
-		if (Definition == nullptr
-			|| Definition
-				->InProgressDialogueRow.IsNone())
+		/*
+		 * 메인 대화 목표와 완료 보고는 별도로 처리한다.
+		 * 일반 진행 안내에서는 메인을 제외한다.
+		 */
+		if (View.QuestTypeTag ==
+			TDTags::Quest_Type_Main.GetTag())
 		{
 			continue;
 		}
 
-		const bool bRelated =
-			(Definition->AcceptTargetType ==
-					ETDQuestTargetType::QuestObject
-				&& Definition->AcceptTargetId ==
-					GetQuestObjectId())
-			|| (Definition->TurnInTargetType ==
-					ETDQuestTargetType::QuestObject
-				&& Definition->TurnInTargetId ==
-					GetQuestObjectId());
+		const FTDQuestRow* Definition =
+			Quest->GetQuestDefinition(View.QuestId);
 
-		if (bRelated)
+		if (Definition == nullptr
+			|| Definition->InProgressDialogueRow.IsNone())
 		{
-			return Definition
-				->InProgressDialogueRow;
+			continue;
+		}
+
+		const bool bMatchesAcceptTarget =
+			Definition->AcceptTargetType ==
+				ETDQuestTargetType::QuestObject
+			&& Definition->AcceptTargetId == GetQuestObjectId();
+
+		const bool bMatchesTurnInTarget =
+			Definition->TurnInTargetType ==
+				ETDQuestTargetType::QuestObject
+			&& Definition->TurnInTargetId == GetQuestObjectId();
+
+		if (bMatchesAcceptTarget || bMatchesTurnInTarget)
+		{
+			return Definition->InProgressDialogueRow;
 		}
 	}
 
@@ -224,53 +210,117 @@ FName ATDQuestObject::ResolveDialogueStartRow(
 		return NAME_None;
 	}
 
+	const auto IsMainDefinition =
+		[](const FTDQuestRow* Definition)
+		{
+			return Definition != nullptr
+				&& Definition->QuestTypeTag ==
+					TDTags::Quest_Type_Main.GetTag();
+		};
+
+	/*
+	 * 1. 완료 가능한 메인 퀘스트
+	 */
 	const FName TurnInQuestId =
 		Quest->FindBestTurnInQuestForTarget(
 			ETDQuestTargetType::QuestObject,
 			GetQuestObjectId());
 
-	if (!TurnInQuestId.IsNone())
-	{
-		const FTDQuestRow* Definition =
-			Quest->GetQuestDefinition(
+	const FTDQuestRow* TurnInDefinition =
+		TurnInQuestId.IsNone()
+			? nullptr
+			: Quest->GetQuestDefinition(
 				TurnInQuestId);
 
-		if (Definition != nullptr
-			&& !Definition
-				->TurnInDialogueRow.IsNone())
-		{
-			return Definition
-				->TurnInDialogueRow;
-		}
+	if (IsMainDefinition(TurnInDefinition))
+	{
+		return !TurnInDefinition
+			->TurnInDialogueRow.IsNone()
+				? TurnInDefinition
+					->TurnInDialogueRow
+				: NAME_None;
 	}
 
+	/*
+	 * 2. 현재 물건과 관련된 진행 중 메인 퀘스트
+	 */
+	const FName ActiveMainQuestId =
+		Quest->FindActiveMainQuestForTarget(
+			ETDQuestTargetType::QuestObject,
+			GetQuestObjectId());
+
+	if (!ActiveMainQuestId.IsNone())
+	{
+		const FTDQuestRow* ActiveMainDefinition =
+			Quest->GetQuestDefinition(
+				ActiveMainQuestId);
+
+		return ActiveMainDefinition != nullptr
+			&& !ActiveMainDefinition
+				->InProgressDialogueRow.IsNone()
+					? ActiveMainDefinition
+						->InProgressDialogueRow
+					: NAME_None;
+	}
+
+	/*
+	 * 3. 받을 수 있는 메인 퀘스트
+	 */
 	const FName OfferQuestId =
 		Quest->FindBestOfferQuestForTarget(
 			ETDQuestTargetType::QuestObject,
 			GetQuestObjectId(),
 			true);
 
-	if (!OfferQuestId.IsNone())
-	{
-		const FTDQuestRow* Definition =
-			Quest->GetQuestDefinition(
+	const FTDQuestRow* OfferDefinition =
+		OfferQuestId.IsNone()
+			? nullptr
+			: Quest->GetQuestDefinition(
 				OfferQuestId);
 
-		if (Definition != nullptr
-			&& !Definition
-				->OfferDialogueRow.IsNone())
-		{
-			return Definition
-				->OfferDialogueRow;
-		}
+	if (IsMainDefinition(OfferDefinition))
+	{
+		return !OfferDefinition
+			->OfferDialogueRow.IsNone()
+				? OfferDefinition
+					->OfferDialogueRow
+				: NAME_None;
 	}
 
+	/*
+	 * 4. 완료 가능한 서브/일일 퀘스트
+	 */
+	if (TurnInDefinition != nullptr
+		&& !TurnInDefinition
+			->TurnInDialogueRow.IsNone())
+	{
+		return TurnInDefinition
+			->TurnInDialogueRow;
+	}
+
+	/*
+	 * 5. 이미 수락한 서브/일일 퀘스트
+	 */
 	const FName InProgressRow =
 		FindInProgressDialogueRow(Quest);
 
-	return !InProgressRow.IsNone()
-		? InProgressRow
-		: Row->DefaultDialogueRow;
+	if (!InProgressRow.IsNone())
+	{
+		return InProgressRow;
+	}
+
+	/*
+	 * 6. 받을 수 있는 서브/일일 퀘스트
+	 */
+	if (OfferDefinition != nullptr
+		&& !OfferDefinition
+			->OfferDialogueRow.IsNone())
+	{
+		return OfferDefinition
+			->OfferDialogueRow;
+	}
+
+	return Row->DefaultDialogueRow;
 }
 
 bool ATDQuestObject::HasRelevantQuest(

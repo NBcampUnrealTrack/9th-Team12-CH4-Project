@@ -242,5 +242,52 @@ namespace TDTags
 		Quest_Event_Talk_HongJongwoo,
 		"Quest.Event.Talk.HongJongwoo",
 		"홍종우 NPC와 필요한 대화를 완료한 이벤트");
+	
+	// ── 테스트 서브 퀘스트 진행 단계 ───────────────────────
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Accepted,
+		"Quest.Sub.GoblinHunt01.Accepted",
+		"고블린 사냥 서브 퀘스트를 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Ready,
+		"Quest.Sub.GoblinHunt01.Ready",
+		"고블린 사냥을 완료하고 장고은에게 보고할 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Completed,
+		"Quest.Sub.GoblinHunt01.Completed",
+		"고블린 사냥 서브 퀘스트 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Accepted,
+		"Quest.Sub.LunchMenu01.Accepted",
+		"점심 메뉴 추천을 받아야 하는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Ready,
+		"Quest.Sub.LunchMenu01.Ready",
+		"점심 메뉴 추천을 받고 돌아갈 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Completed,
+		"Quest.Sub.LunchMenu01.Completed",
+		"점심 메뉴 추천 서브 퀘스트 완료 상태");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Accepted,
+		"Quest.Sub.LunchMenu02.Accepted",
+		"서아영에게 점심 메뉴 추천을 받아야 하는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Ready,
+		"Quest.Sub.LunchMenu02.Ready",
+		"서아영의 추천을 듣고 고호진에게 보고할 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Completed,
+		"Quest.Sub.LunchMenu02.Completed",
+		"서아영 점심 메뉴 추천 서브 퀘스트 완료 상태");
+	
 }

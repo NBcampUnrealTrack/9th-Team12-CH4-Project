@@ -73,6 +73,22 @@ public:
 		FGameplayTag EventTag,
 		int32 Amount = 1);
 
+	/**
+	 * 지정한 퀘스트 하나에만 일반 이벤트를 반영한다.
+	 *
+	 * 퀘스트 전용 대화에서 사용한다.
+	 * 같은 EventTag를 사용하는 다른 퀘스트는 변경하지 않는다.
+	 *
+	 * 해당 목표가 이미 달성된 상태여도,
+	 * 아직 완료 보고 전이고 올바른 이벤트라면 Success를 반환한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TD|Quest",
+		meta = (BlueprintAuthorityOnly = "true"))
+	ETDQuestActionResult ReportQuestEventForQuest(
+		FName QuestId,
+		FGameplayTag EventTag,
+		int32 Amount = 1);
+	
 	UFUNCTION(BlueprintCallable, Category = "TD|Quest",
 		meta = (BlueprintAuthorityOnly = "true"))
 	int32 ReportMonsterKilled(FName MonsterId);
@@ -136,6 +152,11 @@ public:
 		FName TargetId,
 		bool bIgnoreSubQuestLimitForMarker = true) const;
 
+	UFUNCTION(BlueprintPure, Category = "TD|Quest")
+	FName FindActiveMainQuestForTarget(
+		ETDQuestTargetType TargetType,
+		FName TargetId) const;
+	
 	UFUNCTION(BlueprintPure, Category = "TD|Quest")
 	FTDQuestMarkerView GetQuestMarkerForTarget(
 		ETDQuestTargetType TargetType,

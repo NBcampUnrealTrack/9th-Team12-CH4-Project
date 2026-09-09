@@ -5,6 +5,7 @@
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDUIManagerSubsystem.generated.h"
 
+class UTDLoginWidget;
 class UTDUIRootWidget;
 class UTDWindowBaseWidget;
 
@@ -26,6 +27,13 @@ class TD_PROJECT_API UTDUIManagerSubsystem : public ULocalPlayerSubsystem
 public:
 	virtual void Deinitialize() override;
 
+    /** Root의 ScreenStack에서 로그인/선택 화면을 관리한다. */
+    void StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetClass);
+    UFUNCTION(BlueprintCallable, Category="TD|UI|Account")
+    void RequestCharacterSelection();
+    UFUNCTION(BlueprintCallable, Category="TD|UI|Account")
+    void RequestLogout();
+
 	void RegisterRoot(UTDUIRootWidget* InRootWidget);
 	void UnregisterRoot(UTDUIRootWidget* InRootWidget);
 
@@ -42,6 +50,10 @@ public:
     void BringWindowToFront(UTDWindowBaseWidget* Window);
 
 private:
+    UPROPERTY(Transient) TSubclassOf<UTDLoginWidget> AccountScreenClass;
+    UPROPERTY(Transient) TObjectPtr<UTDLoginWidget> AccountScreen;
+    FTimerHandle AccountFlowTimer;
+    void RefreshAccountFlow();
 	struct FWindowPlacement
 	{
 		FVector2D AnchorMinimum = FVector2D::ZeroVector;

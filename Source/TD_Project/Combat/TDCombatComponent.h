@@ -37,7 +37,18 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnAttackStarted OnAttackStarted;
-	
+
+	/**
+	 * 피격 방송. 이 컴포넌트 밖에서 판정한 타격도 같은 델리게이트로 흘려보낸다.
+	 *
+	 * 스킬이 자기 OnHit 을 따로 갖지 않게 하려는 것이다. 델리게이트가 둘이면
+	 * 데미지 텍스트와 히트 VFX 가 양쪽을 다 구독해야 하고, 한쪽을 빠뜨리면
+	 * "평타는 숫자가 뜨는데 스킬은 안 뜨는" 상태가 된다.
+	 *
+	 * 서버에서만 의미가 있다. 클라이언트 호출은 조용히 무시된다.
+	 */
+	void NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation);
+
 protected:
 	/** 기본 쿨타임(초). 쿨다운회복률 스탯으로 나눠져 실제 쿨타임이 된다. 추후 직업·스킬 테이블로 이관. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Combat", meta = (ClampMin = "0.1"))

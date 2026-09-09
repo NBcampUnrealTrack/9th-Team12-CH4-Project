@@ -93,8 +93,10 @@ void UTDQuickSlotComponent::ServerSetSlot_Implementation(int32 Index, ETDQuickSl
 			return;
 		}
 	}
-	else if (Type != ETDQuickSlotType::Skill)
+	else
 	{
+		// 아이템도 빈 것도 아닌 값이 오면 조용히 버린다. 지금은 그런 타입이 없지만,
+		// 타입이 늘었을 때 검증 없이 통과하는 일을 막는다.
 		return;
 	}
 
@@ -180,12 +182,6 @@ void UTDQuickSlotComponent::ServerUseSlot_Implementation(int32 Index)
 		ItemUse->UseItem(FoundSlot);
 		break;
 	}
-
-	case ETDQuickSlotType::Skill:
-		// 스킬은 S10 에서 붙는다. 그때 어빌리티 발동으로 바꾼다.
-		UE_LOG(LogTemp, Log,
-			TEXT("퀵슬롯 %d: 스킬 '%s' — 스킬 시스템이 아직 없다."), Index, *Slot.Id.ToString());
-		break;
 
 	default:
 		break;

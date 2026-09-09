@@ -6,6 +6,9 @@
 #include "Character/TDEnemyBase.h" 
 #include "Core/TDGameplayTags.h"
 #include "Data/TDZoneEnvironmentRow.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 #include "Game/TDGameMode.h"
 #include "GameplayEffect.h"
 #include "GameFramework/Pawn.h"
@@ -15,9 +18,16 @@
 #include "Interaction/TDInteractionFlowComponent.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
-	const FGameplayTagContainer& ContextTags)
+	const FGameplayTagContainer& ContextTags, float DamageMultiplier)
 {
 	const FTDDamageResult NoDamage;
+
+	// 배율 0 은 "피해 효과가 없다" 는 뜻이다. 그대로 흘려보내면 계산 마지막의
+	// 바닥값(최소 1) 때문에 때린 것이 되어 버린다.
+	if (DamageMultiplier <= 0.f)
+	{
+		return NoDamage;
+	}
 
 	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
 	ATDCharacterBase* TargetChar = Cast<ATDCharacterBase>(Target);
@@ -77,10 +87,17 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	FTDDamageInput Input;
 
 	// 물리·마법 중 높은 쪽을 주력으로. GetCombatPower 와 같은 판단이다.
-	// TODO: 스킬 도입 시 스킬이 명시한 태그로 교체한다.
+	//
+	// 스킬이 "나는 물리 스킬이다" 를 명시하는 방식도 검토했으나 넣지 않기로 했다.
+	// 직업 = 캐릭터라서 전사는 물리가, 마법사는 마법이 늘 높고, 그러면 이 max 가
+	// 알아서 맞는 쪽을 고른다. DT_Skill 에 열을 하나 더 두면 기획이 18 줄을 채워야
+	// 하는데 그 값이 직업만 보면 뻔하다.
+	//
+	// 한 직업이 물리·마법 스킬을 섞어 갖게 되면 그때 DT_Skill 에 DamageStatTag 를
+	// 더하고 여기로 넘긴다.
 	const float Physical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Physical, ContextTags);
 	const float Magical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Magical, ContextTags);
-	Input.AttackDamage = FMath::Max(Physical, Magical);
+	Input.AttackDamage = FMath::Max(Physical, Magical) * DamageMultiplier;
 
 	Input.CritChance = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritChance, ContextTags);
 	Input.CritDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritDamage, ContextTags);
@@ -204,6 +221,152 @@ bool UTDCombatStatics::RestoreMana(AActor* Target, float Amount)
 {
 	return RestoreAttribute(Target, Amount,
 		UTDAttributeSet::GetManaAttribute(), UTDAttributeSet::GetMaxManaAttribute());
+}
+
+bool UTDCombatStatics::ConsumeMana(AActor* Target, float Amount)
+{
+	ATDCharacterBase* TargetChar = Cast<ATDCharacterBase>(Target);
+	if (TargetChar == nullptr || !TargetChar->HasAuthority())
+	{
+		return false;
+	}
+
+	// 공짜 스킬. 소모할 것이 없으니 성공이다.
+	if (Amount <= 0.f)
+	{
+		return true;
+	}
+
+	UAbilitySystemComponent* ASC = TargetChar->GetAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		return false;
+	}
+
+	const float Current = ASC->GetNumericAttribute(UTDAttributeSet::GetManaAttribute());
+	if (Current < Amount)
+	{
+		return false;
+	}
+
+	ASC->SetNumericAttributeBase(UTDAttributeSet::GetManaAttribute(), Current - Amount);
+	return true;
+}
+
+float UTDCombatStatics::GetMana(const AActor* Actor)
+{
+	const ATDCharacterBase* Character = Cast<ATDCharacterBase>(Actor);
+	const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+
+	return ASC ? ASC->GetNumericAttribute(UTDAttributeSet::GetManaAttribute()) : 0.f;
+}
+
+namespace
+{
+	/**
+	 * 겹친 것들 중 실제로 때릴 수 있는 대상만 골라낸다.
+	 *
+	 * 모양(상자·구)이 달라도 이 규칙은 같아야 하므로 한 곳에 둔다.
+	 * 같은 액터가 콜리전 여러 개로 두 번 잡히는 것도 여기서 거른다.
+	 */
+	TArray<AActor*> FilterHostileTargets(const ATDCharacterBase* Attacker,
+		const TArray<FOverlapResult>& Overlaps)
+	{
+		TArray<AActor*> Targets;
+		TSet<AActor*> Seen;
+
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			ATDCharacterBase* Candidate = Cast<ATDCharacterBase>(Overlap.GetActor());
+			if (Candidate == nullptr || Candidate->IsDead() || Seen.Contains(Candidate))
+			{
+				continue;
+			}
+
+			// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
+			if (Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
+			{
+				continue;
+			}
+
+			Seen.Add(Candidate);
+			Targets.Add(Candidate);
+		}
+
+		return Targets;
+	}
+}
+
+TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker,
+	FVector HalfExtent, float ForwardOffset, bool bDrawDebug)
+{
+	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr)
+	{
+		return TArray<AActor*>();
+	}
+
+	UWorld* World = AttackerChar->GetWorld();
+	if (World == nullptr)
+	{
+		return TArray<AActor*>();
+	}
+
+	// 전방 박스. 지금은 액터의 정면 벡터를 쓴다 —
+	// 스프라이트 좌우 반전과의 동기화는 애님 인계 후 여기만 고치면 된다.
+	const FVector Center = AttackerChar->GetActorLocation()
+		+ AttackerChar->GetActorForwardVector() * ForwardOffset;
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(AttackerChar);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(Overlaps, Center, AttackerChar->GetActorQuat(),
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(HalfExtent), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		DrawDebugBox(World, Center, HalfExtent, AttackerChar->GetActorQuat(),
+			FColor::Red, false, 0.5f);
+	}
+#endif
+
+	return FilterHostileTargets(AttackerChar, Overlaps);
+}
+
+TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(const AActor* Attacker,
+	float Radius, bool bDrawDebug)
+{
+	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr || Radius <= 0.f)
+	{
+		return TArray<AActor*>();
+	}
+
+	UWorld* World = AttackerChar->GetWorld();
+	if (World == nullptr)
+	{
+		return TArray<AActor*>();
+	}
+
+	const FVector Center = AttackerChar->GetActorLocation();
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(AttackerChar);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		DrawDebugSphere(World, Center, Radius, 16, FColor::Red, false, 0.5f);
+	}
+#endif
+
+	return FilterHostileTargets(AttackerChar, Overlaps);
 }
 
 bool UTDCombatStatics::IsInSafeZone(const AActor* Actor)

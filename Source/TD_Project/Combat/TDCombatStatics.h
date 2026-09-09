@@ -18,10 +18,35 @@ class TD_PROJECT_API UTDCombatStatics : public UBlueprintFunctionLibrary
 public:
 	/**
 	 * 공격자 스탯으로 데미지를 계산해 대상에게 적용한다.
-	 * @param ContextTags  시전 상황 태그. 조건부 장비 옵션("화염 스킬 +30%")이 여기서 평가된다.
+	 *
+	 * @param ContextTags        시전 상황 태그. 조건부 장비 옵션("화염 스킬 +30%")이 여기서 평가된다.
+	 * @param DamageMultiplier   공격력 배율. 스킬이 DT_SkillEffect 의 값을 그대로 넘긴다.
+	 *                           1.5 면 공격력의 150%. 평타는 기본값 1 을 쓰므로 호출부가 그대로다.
+	 *                           크리와 방어 계산 **앞**에 곱해지므로 배율이 커도 방어가 정상적으로 깎는다.
 	 */
 	static FTDDamageResult ApplyDamage(AActor* Attacker, AActor* Target,
-		const FGameplayTagContainer& ContextTags);
+		const FGameplayTagContainer& ContextTags, float DamageMultiplier = 1.f);
+
+	// ── 대상 수집 ─────────────────────────────────────────
+	//
+	// 평타와 스킬이 같은 규칙으로 대상을 고른다. 같은 팀 제외·시체 제외·중복 제거를
+	// 두 곳에 적으면 한쪽만 고쳐졌을 때 "스킬로는 아군이 맞는" 같은 일이 생긴다.
+	//
+	// 서버 전용은 아니지만 판정에 쓰는 것은 서버뿐이다. 클라이언트가 불러도 되는 이유는
+	// 조준 표시처럼 화면에만 쓰는 용도가 있어서다.
+
+	/**
+	 * 캐릭터 앞쪽 상자 안의 적.
+	 *
+	 * @param HalfExtent     상자 절반 크기. 전체 크기가 아니다
+	 * @param ForwardOffset  몸 중심에서 상자 중심까지의 전방 거리
+	 */
+	static TArray<AActor*> GatherTargetsInBox(const AActor* Attacker,
+		FVector HalfExtent, float ForwardOffset, bool bDrawDebug = false);
+
+	/** 캐릭터를 중심으로 한 구 안의 적. 앞뒤를 가리지 않는다. */
+	static TArray<AActor*> GatherTargetsInSphere(const AActor* Attacker,
+		float Radius, bool bDrawDebug = false);
 
 	/**
 	 * 계산 없이 정해진 수치를 그대로 적용한다. 디버그 명령과 낙하 피해 같은
@@ -43,6 +68,20 @@ public:
 
 	/** 마나 회복. RestoreHealth 와 같은 규칙을 따른다. */
 	static bool RestoreMana(AActor* Target, float Amount);
+
+	/**
+	 * 마나 소모. RestoreMana 의 짝이다.
+	 *
+	 * 모자라면 **아무것도 하지 않고** false 를 돌려준다. 부분 소모가 없는 이유는
+	 * 부르는 쪽이 전부 "쓸 수 있으면 쓴다" 이기 때문이다 — 마나가 절반만 있다고
+	 * 스킬이 절반만 나가지는 않는다.
+	 *
+	 * Amount 가 0 이하면 소모할 것이 없으므로 true 다(공짜 스킬).
+	 */
+	static bool ConsumeMana(AActor* Target, float Amount);
+
+	/** 현재 마나. 어트리뷰트가 없으면 0. 쓰기 전에 미리 걸러내는 용도다. */
+	static float GetMana(const AActor* Actor);
 
 	/**
 	 * 이 캐릭터가 안전지대에 있는가. `DT_ZoneEnvironment.bIsSafeZone` 을 읽는다.

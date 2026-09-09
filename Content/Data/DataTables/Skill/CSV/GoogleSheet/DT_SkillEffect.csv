@@ -1,0 +1,5 @@
+﻿Name,SkillId,EffectTag,BaseValue,ValuePerLevel
+Warrior_Slash_Dmg,Warrior_Slash,Skill.Effect.Damage,1.5,0.2
+Warrior_Whirl_Dmg,Warrior_Whirl,Skill.Effect.Damage,0.4,0.05
+Warrior_Roar_Heal,Warrior_Roar,Skill.Effect.Heal,80,25
+Mage_Laser_Dmg,Mage_Laser,Skill.Effect.Damage,0.5,0.06

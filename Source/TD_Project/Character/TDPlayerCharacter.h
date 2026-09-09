@@ -7,6 +7,7 @@
 class UInputAction;
 class UInputMappingContext;
 class UTDInteractionComponent;
+class UTDSkillComponent;
 struct FInputActionValue;
 
 /**
@@ -28,6 +29,10 @@ public:
 	virtual UTDProgressionComponent* GetProgressionComponent() const override;
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	/** 액티브 스킬의 시전을 담당한다. 이동 제약을 Move 가 여기에 물어본다. */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	UTDSkillComponent* GetSkillComponent() const { return SkillComponent; }
 
 	// ── GAS 초기화 ────────────────────────────────────────
 	// ASC 는 자기가 누구에게 붙었는지(Owner)와 어떤 액터를 대신하는지(Avatar)를 알아야 한다.
@@ -102,11 +107,10 @@ protected:
 	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 
 	/**
-	 * 스킬 1~3. 퀵슬롯과 나눠 둔 이유는 성격이 달라서다 —
+	 * 스킬 1~3(Q·W·E). 퀵슬롯과 나눠 둔 이유는 성격이 달라서다 —
 	 * 퀵슬롯은 무엇을 넣을지 플레이어가 정하지만, 스킬은 직업이 정한다.
 	 *
-	 * 스킬 시스템(S10)이 아직 없어 지금은 눌러도 로그만 남는다.
-	 * IA 와 바인딩을 먼저 열어두면 그때 핸들러 안만 채우면 된다.
+	 * 배열 인덱스 0·1·2 가 DT_Skill 의 SlotIndex 1·2·3 에 대응한다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
 	TArray<TObjectPtr<UInputAction>> SkillActions;
@@ -123,6 +127,14 @@ protected:
 	 */
 	void Move(const FInputActionValue& Value);
 
+	/**
+	 * 이동 키를 **새로** 눌렀을 때. 이동 자체는 Move 가 하고, 여기서는 시전 취소만 판단한다.
+	 *
+	 * Move(Triggered)에서 취소하면 이동 중에 스킬을 누르는 순간 쥐고 있던 키가
+	 * 다음 프레임에 바로 끊어 버려서, 뛰면서는 스킬을 아예 못 쓰게 된다.
+	 */
+	void MoveStarted();
+
 	void StartJump();
 	void StopJump();
 
@@ -135,7 +147,7 @@ protected:
 	 */
 	void UseQuickSlot(int32 SlotIndex);
 
-	/** 스킬 사용. S10 에서 어빌리티 발동으로 채운다. */
+	/** 스킬 사용. 서버에 "몇 번을 눌렀다" 만 보낸다. 판단은 전부 서버 몫이다. */
 	void UseSkill(int32 SkillIndex);
 
 	// 상호작용
@@ -167,4 +179,14 @@ private:
 		Category = "TD|Interaction",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTDInteractionComponent> InteractionComponent;
+
+	/**
+	 * 액티브 스킬. 평타(UTDCombatComponent)와 마찬가지로 Pawn 에 둔다 —
+	 * 쿨타임과 시전 상태는 아바타의 것이다. 스킬 레벨과 테이블은
+	 * PlayerState 의 UTDProgressionComponent 를 거친다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+		Category = "TD|Skill",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTDSkillComponent> SkillComponent;
 };

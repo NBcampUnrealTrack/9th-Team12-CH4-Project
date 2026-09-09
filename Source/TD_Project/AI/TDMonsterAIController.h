@@ -43,7 +43,7 @@ protected:
 	float LoseAggroRadius = 1400.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0"))
-	float AttackRange = 150.f;
+	float AttackRange = 100.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "TD|AI", meta = (ClampMin = "0.05"))
 	float ThinkInterval = 0.25f;

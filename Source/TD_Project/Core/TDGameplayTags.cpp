@@ -82,6 +82,7 @@ namespace TDTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field01, "Zone.Region1.Field01", "지역1 사냥터 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field02, "Zone.Region1.Field02", "지역1 사냥터 2");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field03, "Zone.Region1.Field03", "지역1 사냥터 3");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field04, "Zone.Region1.Field04", "지역1 사냥터 4");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss, "Zone.Region1.Boss", "지역1 보스 구역 (하위 방들의 상위 태그)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room01, "Zone.Region1.Boss.Room01", "지역1 보스방 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room02, "Zone.Region1.Boss.Room02", "지역1 보스방 2");

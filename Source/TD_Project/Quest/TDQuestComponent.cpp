@@ -929,6 +929,140 @@ int32 UTDQuestComponent::ReportQuestEvent(
 	return ChangedQuestCount;
 }
 
+ETDQuestActionResult UTDQuestComponent::ReportQuestEventForQuest(
+	FName QuestId,
+	FGameplayTag EventTag,
+	int32 Amount)
+{
+	AActor* OwnerActor = GetOwner();
+
+	// 퀘스트 진행도는 서버에서만 변경한다.
+	if (OwnerActor == nullptr
+		|| !OwnerActor->HasAuthority()
+		|| QuestId.IsNone()
+		|| !EventTag.IsValid()
+		|| Amount <= 0)
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	const FTDQuestRow* Definition =
+		FindQuestDefinition(QuestId);
+
+	if (Definition == nullptr)
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	// 모든 퀘스트를 순회하지 않고,
+	// 전달받은 QuestId에 해당하는 퀘스트 하나만 찾는다.
+	FTDQuestRuntimeData* Entry =
+		FindMutableQuest(QuestId);
+
+	if (Entry == nullptr)
+	{
+		return ETDQuestActionResult::NotActive;
+	}
+
+	if (Entry->StateTag ==
+		TDTags::Quest_State_Completed.GetTag())
+	{
+		return ETDQuestActionResult::AlreadyCompleted;
+	}
+
+	// 진행 중 또는 완료 보고 대기 상태만 허용한다.
+	if (!IsActiveState(Entry->StateTag))
+	{
+		return ETDQuestActionResult::NotActive;
+	}
+
+	// 저장된 진행도와 현재 목표 데이터의 개수가 다르면
+	// 잘못된 배열 접근을 하지 않고 설정 오류로 처리한다.
+	if (Entry->ObjectiveProgress.Num()
+		!= Definition->Objectives.Num())
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	bool bMatchedObjective = false;
+	bool bChanged = false;
+
+	for (int32 ObjectiveIndex = 0;
+		ObjectiveIndex < Definition->Objectives.Num();
+		++ObjectiveIndex)
+	{
+		const FTDQuestObjectiveDefinition& Objective =
+			Definition->Objectives[ObjectiveIndex];
+
+		if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::GameplayEvent
+			|| !Objective.EventTag.IsValid()
+			|| !EventTag.MatchesTag(Objective.EventTag))
+		{
+			continue;
+		}
+
+		bMatchedObjective = true;
+
+		const int32 RequiredCount =
+			FMath::Max(1, Objective.RequiredCount);
+
+		const int32 PreviousCount =
+			Entry->ObjectiveProgress[ObjectiveIndex];
+
+		// 계산 중 정수 범위를 넘지 않도록 큰 정수로 더한 뒤,
+		// 최종 진행도는 0 ~ 목표 수량 사이로 제한한다.
+		const int64 AddedCount =
+			static_cast<int64>(PreviousCount)
+			+ static_cast<int64>(Amount);
+
+		const int32 NewCount =
+			static_cast<int32>(
+				FMath::Clamp<int64>(
+					AddedCount,
+					static_cast<int64>(0),
+					static_cast<int64>(RequiredCount)));
+
+		if (NewCount != PreviousCount)
+		{
+			Entry->ObjectiveProgress[ObjectiveIndex] =
+				NewCount;
+
+			bChanged = true;
+		}
+	}
+
+	// QuestId는 맞지만 그 퀘스트에 해당 이벤트 목표가 없으면
+	// 조용히 성공시키지 않고 데이터 설정 오류로 처리한다.
+	if (!bMatchedObjective)
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	// 목표 달성 여부를 다시 계산한다.
+	// 상태가 바뀌면 Accepted / Ready 태그도 기존 방식으로 갱신된다.
+	bChanged |= RefreshQuestState(
+		*Entry,
+		*Definition);
+
+	if (bChanged)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("퀘스트 지정 이벤트: Quest='%s', Event='%s'"),
+			*QuestId.ToString(),
+			*EventTag.ToString());
+
+		NotifyQuestListChanged();
+		ProcessAutomaticQuests();
+	}
+
+	// 이미 목표 수량에 도달했더라도 올바른 이벤트이면 성공이다.
+	// 인벤토리 부족으로 완료 보고에 실패한 뒤 재시도할 수 있게 한다.
+	return ETDQuestActionResult::Success;
+}
+
 int32 UTDQuestComponent::ReportMonsterKilled(
 	FName MonsterId)
 {
@@ -2003,53 +2137,283 @@ FindBestOfferQuestForTarget(
 	return BestQuestId;
 }
 
+FName UTDQuestComponent::FindActiveMainQuestForTarget(
+	ETDQuestTargetType TargetType,
+	FName TargetId) const
+{
+	if (TargetType == ETDQuestTargetType::None
+		|| TargetId.IsNone())
+	{
+		return NAME_None;
+	}
+
+	const FTDQuestRuntimeData* Best = nullptr;
+
+	for (const FTDQuestRuntimeData& Entry : QuestEntries)
+	{
+		// 아직 목표를 진행 중인 퀘스트만 검사한다.
+		// 완료 보고 가능한 퀘스트는 별도 함수에서 처리한다.
+		if (Entry.StateTag !=
+			TDTags::Quest_State_Active.GetTag())
+		{
+			continue;
+		}
+
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(Entry.QuestId);
+
+		if (Definition == nullptr
+			|| !IsMainQuest(*Definition)
+			|| Definition->bWaitForFutureContent
+			|| Definition->Objectives.IsEmpty()
+			|| Definition->InProgressDialogueRow.IsNone())
+		{
+			continue;
+		}
+
+		/*
+		 * 현재 시스템의 대화형 메인:
+		 * 모든 목표가 GameplayEvent인 메인 퀘스트.
+		 *
+		 * 몬스터 처치·아이템 수집 등의 퀘스트는
+		 * 목표를 수행하는 동안 대화 우선권을 갖지 않는다.
+		 */
+		bool bDialogueOnlyQuest = true;
+
+		for (const FTDQuestObjectiveDefinition& Objective :
+			Definition->Objectives)
+		{
+			if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::GameplayEvent)
+			{
+				bDialogueOnlyQuest = false;
+				break;
+			}
+		}
+
+		if (!bDialogueOnlyQuest)
+		{
+			continue;
+		}
+
+		/*
+		 * 기존 데이터에서 목표 TargetId가 비어 있을 때
+		 * 사용할 수락 대상·완료 대상 검사.
+		 */
+		const bool bMatchesAcceptTarget =
+			Definition->AcceptTargetType == TargetType
+			&& Definition->AcceptTargetId == TargetId;
+
+		const bool bMatchesTurnInTarget =
+			Definition->TurnInTargetType == TargetType
+			&& Definition->TurnInTargetId == TargetId;
+
+		bool bHasPendingDialogueAtTarget = false;
+
+		for (int32 ObjectiveIndex = 0;
+			ObjectiveIndex < Definition->Objectives.Num();
+			++ObjectiveIndex)
+		{
+			const FTDQuestObjectiveDefinition& Objective =
+				Definition->Objectives[ObjectiveIndex];
+
+			const int32 CurrentCount =
+				Entry.ObjectiveProgress.IsValidIndex(ObjectiveIndex)
+					? Entry.ObjectiveProgress[ObjectiveIndex]
+					: 0;
+
+			const int32 RequiredCount =
+				FMath::Max(1, Objective.RequiredCount);
+
+			// 이미 끝난 대화 목표에는 다시 !를 표시하지 않는다.
+			if (CurrentCount >= RequiredCount)
+			{
+				continue;
+			}
+
+			/*
+			 * 목표에 TargetId가 지정되어 있으면 그 대상을 사용한다.
+			 * 비어 있으면 기존 수락·완료 대상을 사용한다.
+			 */
+			const bool bMatchesObjectiveTarget =
+				Objective.TargetId.IsNone()
+					? (bMatchesAcceptTarget || bMatchesTurnInTarget)
+					: Objective.TargetId == TargetId;
+
+			if (bMatchesObjectiveTarget)
+			{
+				bHasPendingDialogueAtTarget = true;
+				break;
+			}
+		}
+
+		if (!bHasPendingDialogueAtTarget)
+		{
+			continue;
+		}
+
+		if (Best == nullptr
+			|| Entry.AcceptSequence < Best->AcceptSequence)
+		{
+			Best = &Entry;
+		}
+	}
+
+	return Best != nullptr
+		? Best->QuestId
+		: NAME_None;
+}
+
 FTDQuestMarkerView
 UTDQuestComponent::GetQuestMarkerForTarget(
 	ETDQuestTargetType TargetType,
 	FName TargetId) const
 {
-	FTDQuestMarkerView View;
+	const auto MakeMarkerView =
+		[this](
+			ETDQuestMarkerType MarkerType,
+			FName QuestId)
+		{
+			FTDQuestMarkerView Result;
+			Result.MarkerType = MarkerType;
+			Result.QuestId = QuestId;
 
-	/**
-	 * 1순위: 목표를 모두 달성하여 완료 보고 가능한 퀘스트.
-	 *
-	 * 몬스터 처치, 아이템 수집, 지역 진입 등의 목표를
-	 * 모두 달성하면 완료 NPC 머리 위에 ?를 표시한다.
+			if (const FTDQuestRow* Definition =
+				FindQuestDefinition(QuestId))
+			{
+				Result.QuestTypeTag =
+					Definition->QuestTypeTag;
+			}
+
+			return Result;
+		};
+
+	/*
+	 * 1. 완료 가능한 퀘스트 조회
 	 */
 	const FName TurnInQuestId =
 		FindBestTurnInQuestForTarget(
 			TargetType,
 			TargetId);
 
-	if (!TurnInQuestId.IsNone())
+	const FTDQuestRow* TurnInDefinition =
+		TurnInQuestId.IsNone()
+			? nullptr
+			: FindQuestDefinition(
+				TurnInQuestId);
+
+	/*
+	 * 1순위:
+	 * 완료 가능한 메인 퀘스트
+	 */
+	if (TurnInDefinition != nullptr
+		&& IsMainQuest(*TurnInDefinition))
 	{
-		View.MarkerType =
-			ETDQuestMarkerType::TurnIn;
-
-		View.QuestId = TurnInQuestId;
-
-		if (const FTDQuestRow* Definition =
-			FindQuestDefinition(TurnInQuestId))
-		{
-			View.QuestTypeTag =
-				Definition->QuestTypeTag;
-		}
-
-		return View;
+		return MakeMarkerView(
+			ETDQuestMarkerType::TurnIn,
+			TurnInQuestId);
 	}
 
-	/**
-	 * 2순위: 대화 자체가 목표인 진행 중 메인 퀘스트.
+	/*
+	 * 2순위:
+	 * 현재 대상과 관련된 진행 중 메인 퀘스트
+	 */
+	const FName ActiveMainQuestId =
+		FindActiveMainQuestForTarget(
+			TargetType,
+			TargetId);
+
+	if (!ActiveMainQuestId.IsNone())
+	{
+		const FTDQuestRow* Definition =
+			FindQuestDefinition(
+				ActiveMainQuestId);
+
+		if (Definition == nullptr)
+		{
+			return FTDQuestMarkerView();
+		}
+
+		bool bDialogueOnlyQuest =
+			!Definition->Objectives.IsEmpty();
+
+		for (const FTDQuestObjectiveDefinition&
+			 Objective : Definition->Objectives)
+		{
+			if (Objective.ObjectiveType !=
+				ETDQuestObjectiveType::
+					GameplayEvent)
+			{
+				bDialogueOnlyQuest = false;
+				break;
+			}
+		}
+
+		if (bDialogueOnlyQuest
+			&& !Definition
+				->InProgressDialogueRow.IsNone())
+		{
+			return MakeMarkerView(
+				ETDQuestMarkerType::Available,
+				ActiveMainQuestId);
+		}
+
+		/*
+		 * 몬스터 처치나 아이템 수집 중인
+		 * 메인이 현재 NPC와 관련되어 있으면
+		 * 서브 마커도 가린다.
+		 */
+		return FTDQuestMarkerView();
+	}
+
+	/*
+	 * 3. 받을 수 있는 퀘스트 조회
+	 */
+	const FName OfferQuestId =
+		FindBestOfferQuestForTarget(
+			TargetType,
+			TargetId,
+			true);
+
+	const FTDQuestRow* OfferDefinition =
+		OfferQuestId.IsNone()
+			? nullptr
+			: FindQuestDefinition(
+				OfferQuestId);
+
+	/*
+	 * 3순위:
+	 * 받을 수 있는는 메인 퀘스트
+	 */
+	if (OfferDefinition != nullptr
+		&& IsMainQuest(*OfferDefinition))
+	{
+		return MakeMarkerView(
+			ETDQuestMarkerType::Available,
+			OfferQuestId);
+	}
+
+	/*
+	 * 4순위:
+	 * 완료 가능한 서브/일일 퀘스트
+	 */
+	if (TurnInDefinition != nullptr)
+	{
+		return MakeMarkerView(
+			ETDQuestMarkerType::TurnIn,
+			TurnInQuestId);
+	}
+
+	/*
+	 * 5순위:
+	 * 진행 중인 서브/일일 퀘스트의
+	 * GameplayEvent 목적지
 	 *
-	 * 모든 목표가 GameplayEvent인 메인 퀘스트만
-	 * 대화 목적지에 !를 표시한다.
-	 *
-	 * KillMonster, OwnItem, EnterZone, OpenChest 같은
-	 * 목표가 하나라도 포함되어 있으면 진행 중에는
-	 * NPC 머리 위에 아무 마커도 표시하지 않는다.
+	 * 여기서 점심 메뉴 퀘스트의
+	 * 한수현 노란색 !가 결정된다.
 	 */
 	const FTDQuestRuntimeData*
-		ActiveDialogueMainQuest = nullptr;
+		ActiveObjectiveQuest = nullptr;
 
 	for (const FTDQuestRuntimeData& Entry :
 		QuestEntries)
@@ -2064,107 +2428,89 @@ UTDQuestComponent::GetQuestMarkerForTarget(
 			FindQuestDefinition(Entry.QuestId);
 
 		if (Definition == nullptr
-			|| !IsMainQuest(*Definition)
-			|| Definition->Objectives.IsEmpty()
-			|| Definition
-				->InProgressDialogueRow.IsNone())
+			|| IsMainQuest(*Definition))
 		{
 			continue;
 		}
 
-		bool bDialogueOnlyQuest = true;
+		bool bHasPendingObjectiveAtTarget =
+			false;
 
-		for (const FTDQuestObjectiveDefinition&
-			 Objective : Definition->Objectives)
+		for (int32 ObjectiveIndex = 0;
+			 ObjectiveIndex <
+				Definition->Objectives.Num();
+			 ++ObjectiveIndex)
 		{
+			const FTDQuestObjectiveDefinition&
+				Objective =
+					Definition
+						->Objectives[
+							ObjectiveIndex];
+
 			if (Objective.ObjectiveType !=
-				ETDQuestObjectiveType::
-					GameplayEvent)
+					ETDQuestObjectiveType::
+						GameplayEvent
+				|| Objective.TargetId !=
+					TargetId)
 			{
-				bDialogueOnlyQuest = false;
+				continue;
+			}
+
+			const int32 CurrentCount =
+				Entry.ObjectiveProgress
+					.IsValidIndex(
+						ObjectiveIndex)
+						? Entry
+							.ObjectiveProgress[
+								ObjectiveIndex]
+						: 0;
+
+			const int32 RequiredCount =
+				FMath::Max(
+					1,
+					Objective.RequiredCount);
+
+			if (CurrentCount < RequiredCount)
+			{
+				bHasPendingObjectiveAtTarget =
+					true;
 				break;
 			}
 		}
 
-		if (!bDialogueOnlyQuest)
+		if (!bHasPendingObjectiveAtTarget)
 		{
 			continue;
 		}
 
-		const bool bMatchesAcceptTarget =
-			Definition->AcceptTargetType ==
-				TargetType
-			&& Definition->AcceptTargetId ==
-				TargetId;
-
-		const bool bMatchesTurnInTarget =
-			Definition->TurnInTargetType ==
-				TargetType
-			&& Definition->TurnInTargetId ==
-				TargetId;
-
-		if (!bMatchesAcceptTarget
-			&& !bMatchesTurnInTarget)
-		{
-			continue;
-		}
-
-		if (ActiveDialogueMainQuest == nullptr
+		if (ActiveObjectiveQuest == nullptr
 			|| Entry.AcceptSequence <
-				ActiveDialogueMainQuest
+				ActiveObjectiveQuest
 					->AcceptSequence)
 		{
-			ActiveDialogueMainQuest = &Entry;
+			ActiveObjectiveQuest = &Entry;
 		}
 	}
 
-	if (ActiveDialogueMainQuest != nullptr)
+	if (ActiveObjectiveQuest != nullptr)
 	{
-		View.MarkerType =
-			ETDQuestMarkerType::Available;
-
-		View.QuestId =
-			ActiveDialogueMainQuest->QuestId;
-
-		if (const FTDQuestRow* Definition =
-			FindQuestDefinition(
-				ActiveDialogueMainQuest
-					->QuestId))
-		{
-			View.QuestTypeTag =
-				Definition->QuestTypeTag;
-		}
-
-		return View;
+		return MakeMarkerView(
+			ETDQuestMarkerType::Available,
+			ActiveObjectiveQuest->QuestId);
 	}
 
-	/**
-	 * 3순위: NPC나 물건에서 직접 수락 가능한 퀘스트.
-	 *
-	 * 서브 퀘스트와 일일 퀘스트가 주로 해당한다.
+	/*
+	 * 6순위:
+	 * 받을 수 있는 서브/일일 퀘스트
 	 */
-	const FName OfferQuestId =
-		FindBestOfferQuestForTarget(
-			TargetType,
-			TargetId,
-			true);
-
-	if (!OfferQuestId.IsNone())
+	if (OfferDefinition != nullptr)
 	{
-		View.MarkerType =
-			ETDQuestMarkerType::Available;
-
-		View.QuestId = OfferQuestId;
-
-		if (const FTDQuestRow* Definition =
-			FindQuestDefinition(OfferQuestId))
-		{
-			View.QuestTypeTag =
-				Definition->QuestTypeTag;
-		}
+		return MakeMarkerView(
+			ETDQuestMarkerType::Available,
+			OfferQuestId);
 	}
 
-	return View;
+	return FTDQuestMarkerView();
 }
 
 void UTDQuestComponent::EnsureInitialMainQuest()

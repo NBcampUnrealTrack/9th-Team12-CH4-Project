@@ -210,4 +210,35 @@ namespace TDTags
 
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
 		Quest_Event_Talk_HongJongwoo);
+	
+	
+	// ── 테스트 서브 퀘스트 진행 단계 ───────────────────────
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_GoblinHunt01_Completed);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu01_Completed);
+	
+	// 서아영 점심 메뉴 테스트 퀘스트
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Accepted);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Ready);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Sub_LunchMenu02_Completed);
 }

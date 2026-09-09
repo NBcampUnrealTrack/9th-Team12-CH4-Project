@@ -453,57 +453,53 @@ FName ATDNPCBase::FindInProgressDialogueRow(
 		return NAME_None;
 	}
 
-	TArray<FTDQuestViewData> Views =
+	/*
+	 * GetQuestViews는 진행 중인 퀘스트를
+	 * 메인 우선, 이후 수락 순서로 반환한다.
+	 *
+	 * 여기서는 메인을 제외하고
+	 * 서브/일일 퀘스트의 진행 안내만 찾는다.
+	 */
+	const TArray<FTDQuestViewData> Views =
 		Quest->GetQuestViews();
-
-	Views.Sort(
-		[](const FTDQuestViewData& A,
-		   const FTDQuestViewData& B)
-		{
-			const bool bAMain =
-				A.QuestTypeTag ==
-				TDTags::Quest_Type_Main.GetTag();
-
-			const bool bBMain =
-				B.QuestTypeTag ==
-				TDTags::Quest_Type_Main.GetTag();
-
-			if (bAMain != bBMain)
-			{
-				return bAMain;
-			}
-
-			return A.AcceptSequence
-				< B.AcceptSequence;
-		});
 
 	for (const FTDQuestViewData& View : Views)
 	{
-		const FTDQuestRow* Definition =
-			Quest->GetQuestDefinition(
-				View.QuestId);
-
-		if (Definition == nullptr
-			|| Definition->InProgressDialogueRow
-				.IsNone())
+		/*
+		 * 메인의 실제 대화 목표와 완료 보고는
+		 * ResolveDialogueStartRow에서 별도로 처리한다.
+		 *
+		 * 이곳에서 메인을 다시 선택하면
+		 * 사냥 대기 멘트가 서브 대화를 막게 된다.
+		 */
+		if (View.QuestTypeTag ==
+			TDTags::Quest_Type_Main.GetTag())
 		{
 			continue;
 		}
 
-		const bool bRelated =
-			(Definition->AcceptTargetType ==
-					ETDQuestTargetType::NPC
-				&& Definition->AcceptTargetId ==
-					GetNPCId())
-			|| (Definition->TurnInTargetType ==
-					ETDQuestTargetType::NPC
-				&& Definition->TurnInTargetId ==
-					GetNPCId());
+		const FTDQuestRow* Definition =
+			Quest->GetQuestDefinition(View.QuestId);
 
-		if (bRelated)
+		if (Definition == nullptr
+			|| Definition->InProgressDialogueRow.IsNone())
 		{
-			return Definition
-				->InProgressDialogueRow;
+			continue;
+		}
+
+		const bool bMatchesAcceptTarget =
+			Definition->AcceptTargetType ==
+				ETDQuestTargetType::NPC
+			&& Definition->AcceptTargetId == GetNPCId();
+
+		const bool bMatchesTurnInTarget =
+			Definition->TurnInTargetType ==
+				ETDQuestTargetType::NPC
+			&& Definition->TurnInTargetId == GetNPCId();
+
+		if (bMatchesAcceptTarget || bMatchesTurnInTarget)
+		{
+			return Definition->InProgressDialogueRow;
 		}
 	}
 
@@ -527,8 +523,7 @@ FName ATDNPCBase::ResolveDialogueStartRow(
 
 	const UTDPersonalWorldStateComponent* Personal =
 		PlayerState
-			? PlayerState
-				->GetPersonalWorldStateComponent()
+			? PlayerState->GetPersonalWorldStateComponent()
 			: nullptr;
 
 	if (Row == nullptr
@@ -538,50 +533,96 @@ FName ATDNPCBase::ResolveDialogueStartRow(
 		return NAME_None;
 	}
 
-	// 1. 완료 가능한 메인/서브/일일
+	const FName CurrentNpcId = GetNPCId();
+
+	const auto IsMainDefinition =
+		[](const FTDQuestRow* Definition)
+		{
+			return Definition != nullptr
+				&& Definition->QuestTypeTag ==
+					TDTags::Quest_Type_Main.GetTag();
+		};
+
+	// 1. 현재 NPC에게 완료 보고할 수 있는 메인을 우선한다.
 	const FName TurnInQuestId =
 		Quest->FindBestTurnInQuestForTarget(
 			ETDQuestTargetType::NPC,
-			GetNPCId());
+			CurrentNpcId);
 
-	if (!TurnInQuestId.IsNone())
+	const FTDQuestRow* TurnInDefinition =
+		TurnInQuestId.IsNone()
+			? nullptr
+			: Quest->GetQuestDefinition(TurnInQuestId);
+
+	if (IsMainDefinition(TurnInDefinition))
 	{
-		const FTDQuestRow* QuestDefinition =
-			Quest->GetQuestDefinition(
-				TurnInQuestId);
-
-		if (QuestDefinition != nullptr
-			&& !QuestDefinition
-				->TurnInDialogueRow.IsNone())
-		{
-			return QuestDefinition
-				->TurnInDialogueRow;
-		}
+		return TurnInDefinition->TurnInDialogueRow;
 	}
 
-	// 2. 받을 수 있는 퀘스트
+	// 2. 현재 NPC와 대화하는 것이 목표인 메인을 처리한다.
+	// 사냥 중인 메인의 단순 안내 대사는 여기서 선택하지 않는다.
+	const FName ActiveMainQuestId =
+		Quest->FindActiveMainQuestForTarget(
+			ETDQuestTargetType::NPC,
+			CurrentNpcId);
+
+	if (!ActiveMainQuestId.IsNone())
+	{
+		const FTDQuestRow* ActiveMainDefinition =
+			Quest->GetQuestDefinition(ActiveMainQuestId);
+
+		return ActiveMainDefinition != nullptr
+			? ActiveMainDefinition->InProgressDialogueRow
+			: NAME_None;
+	}
+
+	// 3. 현재 NPC가 제안할 수 있는 퀘스트를 찾는다.
+	// 슬롯이 가득 찼어도 제안 자체는 보여주고,
+	// 실제 수락 시 서버가 2개 제한을 검사한다.
 	const FName OfferQuestId =
 		Quest->FindBestOfferQuestForTarget(
 			ETDQuestTargetType::NPC,
-			GetNPCId(),
+			CurrentNpcId,
 			true);
 
-	if (!OfferQuestId.IsNone())
-	{
-		const FTDQuestRow* QuestDefinition =
-			Quest->GetQuestDefinition(
-				OfferQuestId);
+	const FTDQuestRow* OfferDefinition =
+		OfferQuestId.IsNone()
+			? nullptr
+			: Quest->GetQuestDefinition(OfferQuestId);
 
-		if (QuestDefinition != nullptr
-			&& !QuestDefinition
-				->OfferDialogueRow.IsNone())
+	if (IsMainDefinition(OfferDefinition))
+	{
+		return OfferDefinition->OfferDialogueRow;
+	}
+
+	// 4. 완료 보고 가능한 서브/일일 퀘스트.
+	if (TurnInDefinition != nullptr
+		&& !TurnInDefinition->TurnInDialogueRow.IsNone())
+	{
+		return TurnInDefinition->TurnInDialogueRow;
+	}
+
+	// 5. 조건에 맞는 특별 대화.
+	// 한수현/서아영에게 점심 메뉴를 묻는 대화가 여기에 해당한다.
+	for (const FTDNPCDialogueRule& Rule : Row->DialogueRules)
+	{
+		if (!Rule.StartDialogueRow.IsNone()
+			&& Personal->MatchesCondition(Rule.Condition))
 		{
-			return QuestDefinition
-				->OfferDialogueRow;
+			return Rule.StartDialogueRow;
 		}
 	}
 
-	// 3. 진행 중 대사
+	// 6. 새로운 서브/일일 퀘스트 제안.
+	// 단순 진행 안내보다 먼저 선택해야,
+	// 같은 NPC에게 두 번째 서브도 받을 수 있다.
+	if (OfferDefinition != nullptr
+		&& !OfferDefinition->OfferDialogueRow.IsNone())
+	{
+		return OfferDefinition->OfferDialogueRow;
+	}
+
+	// 7. 이미 받은 서브/일일 퀘스트의 단순 진행 안내.
 	const FName InProgressRow =
 		FindInProgressDialogueRow(Quest);
 
@@ -590,19 +631,7 @@ FName ATDNPCBase::ResolveDialogueStartRow(
 		return InProgressRow;
 	}
 
-	// 4. 기존 태그 조건 대사
-	for (const FTDNPCDialogueRule& Rule :
-		Row->DialogueRules)
-	{
-		if (!Rule.StartDialogueRow.IsNone()
-			&& Personal->MatchesCondition(
-				Rule.Condition))
-		{
-			return Rule.StartDialogueRow;
-		}
-	}
-
-	// 5. 일반 대사
+	// 8. 처리할 퀘스트나 특별 대화가 없으면 기본 대사.
 	return Row->DefaultDialogueRow;
 }
 

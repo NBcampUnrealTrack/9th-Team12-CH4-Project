@@ -1,6 +1,11 @@
 #include "UI/Core/TDUIManagerSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
+#include "UI/TEST/TDLoginWidget.h"
+#include "UI/TEST/TDUI_Login_PlayerController.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Engine/LocalPlayer.h"
@@ -11,6 +16,8 @@
 
 void UTDUIManagerSubsystem::Deinitialize()
 {
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
+    AccountScreen = nullptr;
 	ClearWindowRegistry();
 	SavedWindowPlacements.Empty();
 	RootWidget.Reset();
@@ -27,6 +34,8 @@ void UTDUIManagerSubsystem::RegisterRoot(UTDUIRootWidget* InRootWidget)
 
 	ClearWindowRegistry();
 	RootWidget = InRootWidget;
+    AccountScreen = nullptr;
+    RefreshAccountFlow();
 
 	// 현재 WBP_Root에 미리 배치된 인벤토리 창이 있으면 첫 프레임부터
 	// 보이지 않게 숨긴 뒤, 첫 Nav 클릭에서 같은 인스턴스를 재사용한다.
@@ -64,6 +73,7 @@ void UTDUIManagerSubsystem::UnregisterRoot(UTDUIRootWidget* InRootWidget)
 
 	ClearWindowRegistry();
 	RootWidget.Reset();
+    AccountScreen = nullptr;
 }
 
 void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
@@ -348,4 +358,61 @@ void UTDUIManagerSubsystem::HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow
 		OnMenuWindowStateChanged.Broadcast(ClosedMenuType, false);
 		break;
 	}
+}
+
+void UTDUIManagerSubsystem::StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetClass)
+{
+    AccountScreenClass = WidgetClass;
+    if (GetWorld()) GetWorld()->GetTimerManager().SetTimer(AccountFlowTimer, this, &ThisClass::RefreshAccountFlow, .1f, true);
+    RefreshAccountFlow();
+}
+
+void UTDUIManagerSubsystem::RefreshAccountFlow()
+{
+    UTDUIRootWidget* Root = RootWidget.Get();
+    if (!Root || !AccountScreenClass || !Root->GetScreenStack()) return;
+    APlayerController* Controller = Root->GetOwningPlayer();
+    if (!Controller || !Controller->IsLocalController()) return;
+    Root->RefreshPlayerHUD();
+    UCommonActivatableWidgetStack* Stack = Root->GetScreenStack();
+    if (Root->IsPlayerHUDReady())
+    {
+        if (AccountScreen)
+        {
+            Stack->RemoveWidget(*AccountScreen);
+            AccountScreen = nullptr;
+            Controller->SetInputMode(FInputModeGameOnly());
+            Controller->bShowMouseCursor = false;
+            if (Root->GetWindowLayer()) Root->GetWindowLayer()->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        }
+        return;
+    }
+    if (!AccountScreen)
+    {
+        // 이전 캐릭터의 창/팝업을 다음 캐릭터에게 남기지 않는다.
+        TArray<TWeakObjectPtr<UTDWindowBaseWidget>> Windows;
+        OpenWindows.GenerateValueArray(Windows);
+        for (auto Window : Windows) if (Window.IsValid()) Window->CloseWindow();
+        Root->GetModalStack()->ClearWidgets();
+        Stack->ClearWidgets();
+        AccountScreen = Stack->AddWidget<UTDLoginWidget>(AccountScreenClass);
+        if (Root->GetWindowLayer()) Root->GetWindowLayer()->SetVisibility(ESlateVisibility::Collapsed);
+        if (AccountScreen)
+        {
+            FInputModeUIOnly Mode;
+            Mode.SetWidgetToFocus(AccountScreen->TakeWidget());
+            Controller->SetInputMode(Mode);
+            Controller->bShowMouseCursor = true;
+        }
+    }
+}
+
+void UTDUIManagerSubsystem::RequestCharacterSelection()
+{
+    if (ATDUI_Login_PlayerController* Controller = Cast<ATDUI_Login_PlayerController>(GetLocalPlayer()->GetPlayerController(GetWorld()))) Controller->TDCharacterSelect();
+}
+
+void UTDUIManagerSubsystem::RequestLogout()
+{
+    if (ATDUI_Login_PlayerController* Controller = Cast<ATDUI_Login_PlayerController>(GetLocalPlayer()->GetPlayerController(GetWorld()))) Controller->TDLogout();
 }

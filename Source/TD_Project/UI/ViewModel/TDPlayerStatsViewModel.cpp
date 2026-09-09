@@ -4,6 +4,11 @@
 #include "Core/TDGameplayTags.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
+#include "Character/TDCharacterClassData.h"
+#include "Data/TDCharacterClassRow.h"
+#include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
+#include "Settings/TDCharacterClassSettings.h"
 
 namespace
 {
@@ -28,6 +33,7 @@ void UTDPlayerStatsViewModel::SetSource(ATDPlayerState* InPlayerState)
  {
   // 이름은 변경을 감시하지 않고 최초 연결과 캐릭터 선택 완료 시 읽는다.
   InPlayerState->OnCharacterSelected.AddUniqueDynamic(this, &ThisClass::RefreshIdentity);
+  InPlayerState->OnCharacterClassChanged.AddUniqueDynamic(this, &ThisClass::RefreshClassVisuals);
   InPlayerState->OnStatsReplicated.AddUniqueDynamic(this, &ThisClass::RefreshCombatStats);
   InPlayerState->OnCombatPowerChanged.AddUniqueDynamic(this, &ThisClass::HandleCombatPowerChanged);
   BoundASC = InPlayerState->GetAbilitySystemComponent();
@@ -42,6 +48,13 @@ void UTDPlayerStatsViewModel::SetSource(ATDPlayerState* InPlayerState)
    Progression->OnProgressionChanged.AddUniqueDynamic(this, &ThisClass::RefreshProgression);
  }
  UE_MVVM_SET_PROPERTY_VALUE(HasPlayerState, InPlayerState != nullptr);
+ RefreshAll();
+}
+
+void UTDPlayerStatsViewModel::RefreshAll()
+{
+ ATDPlayerState* Player = Source.Get();
+ RefreshClassVisuals(Player ? Player->GetCharacterClassId() : NAME_None);
  RefreshIdentity();
  RefreshProgression();
  RefreshVitals();
@@ -53,6 +66,7 @@ void UTDPlayerStatsViewModel::UnbindSource()
  if (ATDPlayerState* PS = Source.Get())
  {
   PS->OnCharacterSelected.RemoveDynamic(this, &ThisClass::RefreshIdentity);
+  PS->OnCharacterClassChanged.RemoveDynamic(this, &ThisClass::RefreshClassVisuals);
   PS->OnStatsReplicated.RemoveDynamic(this, &ThisClass::RefreshCombatStats);
   PS->OnCombatPowerChanged.RemoveDynamic(this, &ThisClass::HandleCombatPowerChanged);
  }
@@ -139,4 +153,31 @@ void UTDPlayerStatsViewModel::RefreshCombatStats()
 void UTDPlayerStatsViewModel::HandleCombatPowerChanged(int32 NewValue)
 {
  UE_MVVM_SET_PROPERTY_VALUE(CombatPower, NewValue);
+}
+
+void UTDPlayerStatsViewModel::RefreshClassVisuals(FName NewClassId)
+{
+ // 직업이 바뀌거나 이미지가 없으면 이전 캐릭터의 그림을 남기지 않는다.
+ FText NewClassName = NewClassId.IsNone()
+  ? NSLOCTEXT("TDPlayerStatus", "ClassUnselected", "미선택") : FText::FromName(NewClassId);
+ UTexture2D* NewPortrait = nullptr;
+ UTexture2D* NewIcon = nullptr;
+ if (!NewClassId.IsNone())
+ {
+  const UDataTable* Table = UTDCharacterClassSettings::Get()->ClassTable.LoadSynchronous();
+  const FTDCharacterClassRow* Row = Table
+   ? Table->FindRow<FTDCharacterClassRow>(NewClassId, TEXT("PlayerClassVisuals"), false) : nullptr;
+  if (Row)
+  {
+   if (!Row->DisplayName.IsEmpty()) NewClassName = Row->DisplayName;
+   if (const UTDCharacterClassData* Visuals = Row->VisualData.LoadSynchronous())
+   {
+    NewPortrait = Visuals->Portrait.LoadSynchronous();
+    NewIcon = Visuals->Icon.LoadSynchronous();
+   }
+  }
+ }
+ if (!CharacterClassName.EqualTo(NewClassName)) UE_MVVM_SET_PROPERTY_VALUE(CharacterClassName, NewClassName);
+ UE_MVVM_SET_PROPERTY_VALUE(CharacterPortrait, NewPortrait);
+ UE_MVVM_SET_PROPERTY_VALUE(CharacterClassIcon, NewIcon);
 }

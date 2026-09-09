@@ -54,7 +54,12 @@ bool UTDZoneEnvironmentComponent::TryBindPlayerState()
 		return false;
 	}
 
-	PlayerState->OnZoneChanged.AddDynamic(this, &UTDZoneEnvironmentComponent::HandleZoneChanged);
+    if (ATDPlayerState* Previous = BoundPlayerState.Get())
+    {
+        Previous->OnZoneChanged.RemoveDynamic(this, &UTDZoneEnvironmentComponent::HandleZoneChanged);
+    }
+    BoundPlayerState = PlayerState;
+    PlayerState->OnZoneChanged.AddUniqueDynamic(this, &UTDZoneEnvironmentComponent::HandleZoneChanged);
 	bWaitingForPlayerState = false;
 
 	// 구독을 건 시점에 이미 존이 정해져 있을 수 있다. 접속하면서 서버가 존을 넣어 주는데,
@@ -331,7 +336,9 @@ void UTDZoneEnvironmentComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// 접속 순서상 컨트롤러가 PlayerState 보다 먼저 준비될 수 있다. 잡을 때까지 다시 시도한다.
-	if (bWaitingForPlayerState)
+    const APlayerController* Controller = Cast<APlayerController>(GetOwner());
+    const ATDPlayerState* Current = Controller ? Controller->GetPlayerState<ATDPlayerState>() : nullptr;
+    if (bWaitingForPlayerState || BoundPlayerState.Get() != Current)
 	{
 		TryBindPlayerState();
 		return;

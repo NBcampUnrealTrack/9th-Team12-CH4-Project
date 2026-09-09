@@ -83,7 +83,7 @@ struct FTDPlayerSaveData
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
 	//~~~~~기존
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 2;
 	
 	/**
 	 * 직업. DT_ClassGrowth 의 ClassId 와 짝이다.
@@ -133,19 +133,17 @@ struct FTDPlayerSaveData
 	float ManaRatio = 1.0f;
 
 	
-	/**
-	 * 마지막으로 있던 존. 다시 접속하면 이 존의 시작 지점에서 시작한다.
-	 *
-	 * 좌표를 저장하지 않는 이유는 지형 때문이다. 맵을 수정한 뒤 옛 좌표로 복원하면
-	 * 벽 안이나 허공에 떨어질 수 있다. 존의 시작 지점은 항상 안전한 자리다.
-	 *
-	 * 비어 있으면(신규 캐릭터) 기본 시작 존으로 보낸다.
-	 *
-	 * 런타임의 `ATDPlayerState::CurrentZoneId` 와 짝이다. 이름이 다른 것은 의도적이다 —
-	 * 저장 시점에서는 "마지막으로 있던 곳"이고, 접속하면 그 값이 곧 "지금 있는 곳"이 된다.
-	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
-	FGameplayTag LastZoneId;
+    /** 마지막 존. 비어 있으면 기본 시작 존으로 배치한다. */
+    UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+    FGameplayTag LastZoneId;
+
+    /** 서버 월드 좌표. 원점도 유효한 위치이므로 별도 플래그로 저장 여부를 구분한다. */
+    UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+    FVector LastLocation = FVector::ZeroVector;
+
+    /** false 또는 이전 저장 버전이면 존의 시작점을 사용한다. */
+    UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+    bool bHasSavedLocation = false;
 
 	
 	// ── 퀘스트·개인 월드 상태 ─────────────────────────────

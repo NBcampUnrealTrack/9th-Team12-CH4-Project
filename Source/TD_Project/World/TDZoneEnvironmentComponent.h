@@ -6,6 +6,7 @@
 #include "World/TDZoneEnvironmentData.h"
 #include "TDZoneEnvironmentComponent.generated.h"
 
+class ATDPlayerState;
 class ADirectionalLight;
 class AExponentialHeightFog;
 class ASkyLight;
@@ -107,6 +108,7 @@ private:
 	 * BeginPlay 한 번으로는 구독에 실패할 수 있다. 그때는 Tick 이 다시 시도한다.
 	 */
 	bool bWaitingForPlayerState = true;
+    TWeakObjectPtr<ATDPlayerState> BoundPlayerState;
 
 	/**
 	 * 라이팅 액터. 매번 월드를 훑지 않으려고 찾아 둔다.

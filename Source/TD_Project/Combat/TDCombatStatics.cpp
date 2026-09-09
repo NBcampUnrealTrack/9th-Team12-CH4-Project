@@ -302,7 +302,7 @@ namespace
 	}
 }
 
-TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker,
+TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVector Direction,
 	FVector HalfExtent, float ForwardOffset, bool bDrawDebug)
 {
 	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
@@ -317,23 +317,34 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker,
 		return TArray<AActor*>();
 	}
 
-	// 전방 박스. 지금은 액터의 정면 벡터를 쓴다 —
-	// 스프라이트 좌우 반전과의 동기화는 애님 인계 후 여기만 고치면 된다.
-	const FVector Center = AttackerChar->GetActorLocation()
-		+ AttackerChar->GetActorForwardVector() * ForwardOffset;
+	// 방향을 인자로 받는 이유는 액터 회전과 눈에 보이는 방향이 다르기 때문이다.
+	// 스프라이트는 마지막 이동 방향(ABP SetDirectionality ← Velocity)을 따라가므로,
+	// 액터 회전으로 판정하면 화면에서 보는 쪽과 맞는 곳이 어긋난다.
+	//
+	// 0 벡터가 오면 액터 정면으로 떨어뜨린다 — 그러지 않으면 MakeFromX 가
+	// NaN 회전을 만들어 판정이 통째로 사라진다.
+	FVector Facing = Direction.GetSafeNormal2D();
+	if (Facing.IsNearlyZero())
+	{
+		Facing = AttackerChar->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	const FQuat BoxRotation = FRotationMatrix::MakeFromX(Facing).ToQuat();
+	const FVector Center = AttackerChar->GetActorLocation() + Facing * ForwardOffset;
 
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(AttackerChar);
 
 	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(Overlaps, Center, AttackerChar->GetActorQuat(),
+	World->OverlapMultiByObjectType(Overlaps, Center, BoxRotation,
 		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(HalfExtent), Params);
 
 #if ENABLE_DRAW_DEBUG
 	if (bDrawDebug)
 	{
-		DrawDebugBox(World, Center, HalfExtent, AttackerChar->GetActorQuat(),
-			FColor::Red, false, 0.5f);
+		// 질의와 같은 회전으로 그린다. 다른 값을 쓰면 눈에 보이는 상자와 실제로
+		// 맞는 범위가 달라져, 사거리를 맞추려다 엉뚱한 곳을 고치게 된다.
+		DrawDebugBox(World, Center, HalfExtent, BoxRotation, FColor::Red, false, 0.5f);
 	}
 #endif
 

@@ -8,6 +8,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
+#include "Components/CapsuleComponent.h"
 
 void ATDMonsterAIController::OnPossess(APawn* InPawn)
 {
@@ -199,7 +200,6 @@ void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
 {
 	ATDCharacterBase* Target = AggroTarget.Get();
 
-	// 대상 상실 — 죽었거나, 사라졌거나, 너무 멀어졌다.
 	if (Target == nullptr || Target->IsDead() ||
 		FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation()) > LoseAggroRadius)
 	{
@@ -207,24 +207,28 @@ void ATDMonsterAIController::TickCombat(ATDCharacterBase* Self)
 		return;
 	}
 
-	const float Distance = FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation());
+	// 캡슐 표면 사이의 거리(XY). 중심 거리를 쓰면 몸집이 큰 쪽이 사거리 손해를 보고,
+	// MoveToActor 의 도착 판정(반지름 포함)과 자가 달라 "도착했는데 사거리 밖"인 틈이 생긴다.
+	const float SelfRadius = Self->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float TargetRadius = Target->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float EdgeDistance = FVector::Dist2D(Self->GetActorLocation(), Target->GetActorLocation())
+		- SelfRadius - TargetRadius;
 
 	SetFocus(Target, EAIFocusPriority::Gameplay);
 
-	if (Distance <= AttackRange)
+	if (EdgeDistance <= AttackRange)
 	{
 		StopMovement();
 
 		if (UTDCombatComponent* Combat = Self->GetCombatComponent())
 		{
-			// 대상 쪽을 보고 친다. 서 있으면 속도가 0 이라 마지막 이동 방향이 남는데, 그게 대상 반대일 수 있다.
 			Combat->SetFacingDirection(Target->GetActorLocation() - Self->GetActorLocation());
-			
 			Combat->ServerRequestAttack();
 		}
 	}
 	else
 	{
+		// 도착 반경도 표면 기준(반지름 자동 포함)이라 위 판정과 같은 자다.
 		MoveToActor(Target, AttackRange * 0.7f);
 	}
 }

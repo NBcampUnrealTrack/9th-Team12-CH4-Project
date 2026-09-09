@@ -804,7 +804,15 @@ namespace TDDebugCommands
 			return;
 		}
 
-		const TArray<FTDShopEntry> Entries = UTDShopStatics::GetShopEntries(ShopId);
+		// 인벤토리를 넘기는 것은 되팔기 값 때문이다 — 아이템 정의의 주인이 그쪽이다.
+		// 캐릭터를 아직 안 골랐으면 구매가만 찍히고 되팔기가 0 으로 나온다.
+		// (GetLocalInventory 는 이 아래에 있어 여기서는 직접 꺼낸다)
+		const APlayerController* LocalPC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* LocalState = LocalPC ? LocalPC->GetPlayerState<ATDPlayerState>() : nullptr;
+		const UTDInventoryComponent* Inventory =
+			LocalState ? LocalState->GetInventoryComponent() : nullptr;
+
+		const TArray<FTDShopEntry> Entries = UTDShopStatics::GetShopEntries(Inventory, ShopId);
 
 		UE_LOG(LogTDDebug, Log, TEXT("── %s (%s) — %d종 ──"),
 			*ShopRow.DisplayName.ToString(), *ShopId.ToString(), Entries.Num());

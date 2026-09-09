@@ -1,3 +1,2 @@
-﻿Name,DisplayName,ItemType,Icon,bStackable,MaxStackSize,bCanDiscard,RequiredLevel,Rarity,InitialOptionRarity,OptionPoolId,SetId
-ExpPotion,경험치 물약,Item.Type.Consumable,,True,100,True,0,Item.Rarity.Common,,,
-LevelTicket,성장의 증표,Item.Type.Consumable,,True,10,True,0,Item.Rarity.Epic,,,
+﻿Name,DisplayName,ItemType,Icon,bStackable,MaxStackSize,bCanDiscard,SellPrice,RequiredLevel,Rarity,InitialOptionRarity,OptionPoolId,SetId
+ExpPotion,경험치 물약,Item.Type.Consumable,,True,100,True,60,0,Item.Rarity.Common,,,

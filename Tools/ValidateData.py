@@ -34,6 +34,8 @@ TABLES = {
     "Skill":          f"{ROOT}/Skill/DT_Skill",
     "SkillEffect":    f"{ROOT}/Skill/DT_SkillEffect",
     "SkillPassive":   f"{ROOT}/Skill/DT_SkillPassive",
+    "OptionDefinition": f"{ROOT}/Item/DT_OptionDefinition",
+    "OptionPool":       f"{ROOT}/Item/DT_OptionPool",
 
     # 아래는 도메인 규칙에서만 쓴다.
     "StatDefinition":    f"{ROOT}/Character/DT_StatDefinition",
@@ -64,6 +66,8 @@ REFERENCES = [
     ("ItemSetBonus",  "SetId",   "ItemSet",        False),
 
     ("ItemDefinition", "SetId",  "ItemSet",        True),
+
+    ("OptionPool",   "OptionId", "OptionDefinition", False),
 ]
 
 # DT_ClassGrowth 의 ClassId 는 "모든 직업" 을 뜻하는 Default 를 쓸 수 있다.
@@ -455,7 +459,8 @@ def check_stat_rules(report):
 
     rows = read_columns(table, "StatDefinition",
                         ["StatTag", "DefaultValue", "bHasMinValue", "MinValue",
-                         "bHasMaxValue", "MaxValue"], report)
+                         "bHasMaxValue", "MaxValue", "DisplayName",
+                         "bIsPercent", "DecimalPlaces"], report)
     if rows is None:
         return
 
@@ -500,6 +505,29 @@ def check_stat_rules(report):
             report.warn("스탯",
                         f"[{tag}] 는 상위 태그인데 DefaultValue={default} 다. "
                         f"기본값은 계층을 타지 않아 Physical/Magical 계산에 들어가지 않는다.")
+
+        # ── 표시 ──
+        # 셋 다 비어 있어도 게임은 돈다. 화면만 조용히 나빠진다.
+
+        if not row["DisplayName"].strip():
+            report.warn("스탯 표시",
+                        f"[{tag}] 의 DisplayName 이 비어 있다. "
+                        f"툴팁에 태그 문자열이 그대로 찍힌다.")
+
+        # 0~1 비율인 스탯은 bIsPercent 가 꺼져 있으면 0.049 가 "0" 으로 보인다.
+        # 값의 범위로 짐작한다 — 상한이 1 이하면 비율일 가능성이 높다.
+        looks_like_ratio = has_max and 0.0 < maximum <= 1.0
+
+        if looks_like_ratio and not as_bool(row["bIsPercent"]):
+            report.warn("스탯 표시",
+                        f"[{tag}] 는 상한이 {maximum} 인데 bIsPercent 가 꺼져 있다. "
+                        f"0.049 가 '0' 으로 보인다. 비율 스탯이면 켤 것.")
+
+        # 비율 스탯을 정수로 반올림하면 4.9% 가 5% 로 뭉개진다.
+        if as_bool(row["bIsPercent"]) and as_int(row["DecimalPlaces"]) <= 0:
+            report.warn("스탯 표시",
+                        f"[{tag}] 는 퍼센트 표시인데 DecimalPlaces=0 이다. "
+                        f"4.9% 가 5% 로 잘린다. 1 을 권한다.")
 
 
 def check_curve_rules(report):
@@ -624,6 +652,232 @@ def check_skill_rules(report):
                         f"[{name}] 은 {cast_type} 인데 Channel 값이 들어 있다. 쓰이지 않는 값이다.")
 
 
+# ── 서식 인자 ────────────────────────────────────────────────
+#
+# 테이블의 문구에는 숫자가 없고 자리만 있다. 코드가 그 자리를 채우는데,
+# 이름을 잘못 쓰면 **화면에 {Damage} 가 글자 그대로 남는다.** 오류도 경고도 없이,
+# 그 스킬을 누가 툴팁으로 볼 때까지 아무도 모른다. 그래서 여기서 잡는다.
+#
+# 아래 목록은 UTDTooltipStatics::FormatSkillDescription 과 같아야 한다.
+
+CAST_ARGUMENTS = {
+    "Level", "Mana", "Cooldown", "CastTime",
+    "Duration", "Interval", "Ticks", "Range", "Width",
+}
+
+FORMAT_ARG_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+ORDERED_ARG_RE = re.compile(r"\{(\d+)\}")
+
+
+def tag_argument_names(tag, prefix):
+    """
+    태그 하나가 만드는 인자 이름들. UTDTooltipStatics::AddTagArgument 와 같은 규칙이다.
+
+      Stat.Defense.Armor  →  {Defense_Armor} 와 {Armor}
+      Skill.Effect.Damage →  {Damage}          (조각이 하나라 둘이 같다)
+    """
+    if not tag:
+        return set()
+
+    name = tag[len(prefix):] if tag.startswith(prefix) else tag
+    return {name.replace(".", "_"), name.rsplit(".", 1)[-1]}
+
+
+def collect_by_skill(alias, tag_column, prefix, report):
+    """스킬마다 쓸 수 있는 인자 이름을 모은다. {SkillId: {이름, ...}}"""
+    table = load_table(alias, report)
+    if table is None:
+        return {}
+
+    rows = read_columns(table, alias, ["SkillId", tag_column], report)
+    if rows is None:
+        return {}
+
+    result = {}
+    for row in rows:
+        skill = row["SkillId"].strip()
+        result.setdefault(skill, set()).update(
+            tag_argument_names(as_tag(row[tag_column]), prefix))
+
+    return result
+
+
+def check_format_arguments(report):
+    table = load_table("Skill", report)
+    if table is None:
+        return
+
+    rows = read_columns(table, "Skill", ["Description", "SkillType"], report)
+    if rows is None:
+        return
+
+    effects = collect_by_skill("SkillEffect", "EffectTag", "Skill.Effect.", report)
+    passives = collect_by_skill("SkillPassive", "StatTag", "Stat.", report)
+
+    for row in rows:
+        name = row["__name__"]
+        description = row["Description"]
+
+        if not description.strip():
+            report.warn("설명", f"[{name}] 의 Description 이 비어 있다. 툴팁에 수치가 하나도 안 나온다.")
+            continue
+
+        # 값에서 나온 이름과 시전 이름을 합친 것이 이 스킬이 쓸 수 있는 전부다.
+        value_arguments = effects.get(name, set()) | passives.get(name, set())
+        allowed = CAST_ARGUMENTS | value_arguments
+
+        for used in FORMAT_ARG_RE.findall(description):
+            if used not in allowed:
+                report.error("설명",
+                             f"[{name}] 의 Description 이 {{{used}}} 를 쓰는데 채울 값이 없다. "
+                             f"화면에 글자 그대로 남는다. 쓸 수 있는 이름: "
+                             f"{', '.join(sorted(allowed))}")
+
+        # 순서 인자는 스킬에서 쓰지 않는다. {0} 은 아무것도 채우지 않는다.
+        for used in ORDERED_ARG_RE.findall(description):
+            report.error("설명",
+                         f"[{name}] 의 Description 이 {{{used}}} 를 쓴다. 스킬은 이름 인자만 쓴다.")
+
+        # 값 인자는 이미 `%` 가 붙어서 나온다. 문장에 또 쓰면 "150%%" 가 된다.
+        for used, _ in re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}(%)", description):
+            if used in value_arguments:
+                report.error("설명",
+                             f"[{name}] 의 Description 이 {{{used}}}% 로 되어 있다. "
+                             f"이 값은 `%` 를 스스로 붙이므로 문장에서는 빼야 한다.")
+
+
+def check_option_rules(report):
+    table = load_table("OptionDefinition", report)
+    if table is None:
+        return
+
+    rows = read_columns(table, "OptionDefinition",
+                        ["DisplayName", "StatTag", "MinValue", "MaxValue"], report)
+    if rows is None:
+        return
+
+    for row in rows:
+        name = row["__name__"]
+
+        if not as_tag(row["StatTag"]):
+            report.error("옵션", f"[{name}] 의 StatTag 가 비어 있다. 붙어도 스탯이 오르지 않는다.")
+
+        low = as_float(row["MinValue"])
+        high = as_float(row["MaxValue"])
+        if low > high:
+            report.error("옵션", f"[{name}] 의 MinValue({low}) 가 MaxValue({high}) 보다 크다.")
+
+        if high == 0.0:
+            report.warn("옵션", f"[{name}] 의 MaxValue 가 0 이다. 붙어도 아무 효과가 없다.")
+
+        # 옵션은 값이 언제나 하나라 순서 인자를 쓴다. 자리가 없으면 수치가 안 보인다.
+        display = row["DisplayName"]
+        if ORDERED_ARG_RE.findall(display) != ["0"]:
+            report.error("옵션",
+                         f"[{name}] 의 DisplayName 에 {{0}} 이 정확히 하나 있어야 한다: \"{display}\"")
+
+    # 아이템이 가리키는 풀이 실제로 있는가. RowName 이 아니라 열 값끼리라
+    # 위쪽 REFERENCES 로는 볼 수 없다.
+    pool = load_table("OptionPool", report)
+    items = load_table("ItemDefinition", report)
+    if pool is None or items is None:
+        return
+
+    pool_ids = column(pool, "OptionPool", "PoolId", report)
+    item_pools = column(items, "ItemDefinition", "OptionPoolId", report)
+    if pool_ids is None or item_pools is None:
+        return
+
+    known = {value.strip() for _, value in pool_ids if value.strip()}
+
+    for item_name, value in item_pools:
+        pool_id = value.strip()
+        if pool_id and pool_id not in known:
+            report.error("옵션",
+                         f"[{item_name}] 의 OptionPoolId '{pool_id}' 가 DT_OptionPool 에 없다. "
+                         f"굴려도 옵션이 하나도 붙지 않는다.")
+
+
+# ── 툴팁이 읽는 테이블 ───────────────────────────────────────
+#
+# UTDUISettings 의 참조가 비어 있으면 툴팁이 **조용히 덜 나온다.** 오류도 경고도 없이
+# 스탯 이름이 "Stat.Offense.Damage.Physical" 처럼 태그 그대로 찍히고, 소수 자릿수와
+# 퍼센트 표시도 기본값으로 떨어진다. 화면을 보기 전에는 알 수 없다.
+
+TOOLTIP_SETTINGS = [
+    ("TooltipStatDefinitionTable", "스탯 이름·퍼센트 여부·소수 자릿수"),
+    ("TooltipItemStatTable", "아이템이 주는 고정 스탯"),
+    ("TooltipItemTable", "아이템 정의 (인벤토리 밖에서 여는 툴팁)"),
+    ("TooltipUseEffectTable", "소비 아이템 효과"),
+]
+
+
+def check_tooltip_settings(report):
+    path = unreal.Paths.combine([unreal.Paths.project_config_dir(), "DefaultGame.ini"])
+
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            config = handle.read()
+    except OSError:
+        report.warn("툴팁 설정", "DefaultGame.ini 를 읽지 못했다. 이 검사는 건너뛴다.")
+        return
+
+    for key, purpose in TOOLTIP_SETTINGS:
+        if re.search(rf"^{key}\s*=\s*\S", config, re.MULTILINE) is None:
+            report.warn("툴팁 설정",
+                        f"UTDUISettings 의 {key} 이 비어 있다 ({purpose}). "
+                        f"프로젝트 세팅 > Game > TD UI 에서 지정할 것.")
+
+
+# ── 코드에 박힌 만렙 ─────────────────────────────────────────
+#
+# 강화 상승폭과 재굴림 비용은 "아이템 착용레벨 / 만렙" 으로 보간한다. 그 만렙이
+# C++ 상수로 박혀 있다 — 두 함수를 순수하게(월드도 컴포넌트도 없이) 두려고 한 선택이라
+# 그 자체는 의도한 것이다. **문제는 DT_LevelExp 와 어긋나도 아무도 모른다는 점이다.**
+#
+# 만렙을 60 으로 올리면 50레벨 장비가 최고 배율을 받아 버리고, 그 위 구간은 전부
+# 같은 값이 된다. 조용히 틀리는 종류라 여기서 잡는다.
+
+MAX_LEVEL_CONSTANTS = [
+    ("Source/TD_Project/Items/TDEnhanceStatics.cpp", "강화 1강당 상승폭"),
+    ("Source/TD_Project/Items/TDItemOptionStatics.cpp", "재굴림 비용 배율"),
+]
+
+REFERENCE_MAX_LEVEL_RE = re.compile(r"ReferenceMaxLevel\s*=\s*([\d.]+)f?\s*;")
+
+
+def check_reference_max_level(report):
+    expected = get_max_character_level(report)
+    if expected <= 0:
+        return
+
+    project_dir = unreal.Paths.project_dir()
+
+    for relative_path, purpose in MAX_LEVEL_CONSTANTS:
+        path = unreal.Paths.combine([project_dir, relative_path])
+
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                source = handle.read()
+        except OSError:
+            report.warn("만렙 상수", f"{relative_path} 를 읽지 못했다. 이 검사는 건너뛴다.")
+            continue
+
+        match = REFERENCE_MAX_LEVEL_RE.search(source)
+        if match is None:
+            report.warn("만렙 상수",
+                        f"{relative_path} 에서 ReferenceMaxLevel 을 찾지 못했다. "
+                        f"이름이 바뀌었다면 ValidateData.py 의 정규식도 함께 고칠 것.")
+            continue
+
+        found = int(float(match.group(1)))
+        if found != expected:
+            report.error("만렙 상수",
+                         f"{relative_path} 의 ReferenceMaxLevel={found} 인데 "
+                         f"DT_LevelExp 의 만렙은 {expected} 다 ({purpose}). "
+                         f"보간 기준이 어긋나 고레벨 장비가 제 값을 못 받는다.")
+
+
 def get_max_character_level(report):
     """DT_LevelExp 의 마지막 레벨. 못 읽으면 0 — 그러면 관련 검사를 건너뛴다."""
     table = load_table("LevelExp", report)
@@ -746,6 +1000,10 @@ def main():
     check_skill_rules(report)
     check_shop_rules(report)
     check_monster_rules(report)
+    check_format_arguments(report)
+    check_option_rules(report)
+    check_reference_max_level(report)
+    check_tooltip_settings(report)
 
     if not report.dump():
         # -run=pythonscript 는 예외로 끝나야 종료 코드가 0 이 아니게 된다.

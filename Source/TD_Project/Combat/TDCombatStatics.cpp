@@ -106,6 +106,15 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	Input.TargetArmor = TargetChar->GetStat(TDTags::Stat_Defense_Armor);
 	Input.TargetDamageReduction = TargetChar->GetStat(TDTags::Stat_Defense_DamageReduction);
 
+	// 보스 추가 피해는 대상이 보스일 때만 붙는다. "보스인가" 는 몬스터 테이블을 읽어야
+	// 알 수 있어서 계산 함수 안에서 판단하지 않는다 — 그러면 순수 함수가 아니게 된다.
+	const ATDEnemyBase* TargetEnemy = Cast<ATDEnemyBase>(TargetChar);
+	if (TargetEnemy != nullptr && TargetEnemy->IsBoss())
+	{
+		Input.BossDamageBonus =
+			AttackerStats->GetStatWithContext(TDTags::Stat_Offense_BossDamage, ContextTags);
+	}
+
 	// 난수는 여기서 굴린다 — 순수 함수에 주입하기로 한 그 지점이다.
 	const FTDDamageResult Result = TDCombat::CalculateDamage(Input, FMath::FRand());
 

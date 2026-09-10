@@ -1,0 +1,81 @@
+﻿Name,DisplayName,StatTag,Op,MinValue,MaxValue
+Opt_Lv01_Hp_Common,최대 체력 +{0},Stat.Resource.Health.Max,Added,30,60
+Opt_Lv01_Mp_Common,최대 마나 +{0},Stat.Resource.Mana.Max,Added,20,40
+Opt_Lv01_Armor_Common,방어력 +{0},Stat.Defense.Armor,Added,5,12
+Opt_Lv01_Phys_Common,물리공격력 +{0},Stat.Offense.Damage.Physical,Added,3,8
+Opt_Lv01_Magic_Common,마법공격력 +{0},Stat.Offense.Damage.Magical,Added,3,8
+Opt_Lv01_Hp_Rare,최대 체력 +{0},Stat.Resource.Health.Max,Added,75,150
+Opt_Lv01_Armor_Rare,방어력 +{0},Stat.Defense.Armor,Added,12,30
+Opt_Lv01_HpRegen_Rare,초당 체력 재생 +{0},Stat.Resource.Health.Regen,Added,2,8
+Opt_Lv01_HpPct_Rare,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.03,0.05
+Opt_Lv01_PhysPct_Rare,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.03,0.05
+Opt_Lv01_MagicPct_Rare,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.03,0.05
+Opt_Lv01_Move_Rare,이동속도 +{0}%,Stat.Utility.MoveSpeed,Increased,0.012,0.02
+Opt_Lv01_HpPct_Epic,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.06,0.08
+Opt_Lv01_PhysPct_Epic,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.06,0.08
+Opt_Lv01_MagicPct_Epic,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.06,0.08
+Opt_Lv01_Crit_Epic,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.042,0.056
+Opt_Lv01_ArmorPen_Epic,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.042,0.056
+Opt_Lv01_MpRegen_Epic,초당 마나 재생 +{0},Stat.Resource.Mana.Regen,Added,6,12
+Opt_Lv01_HpPct_Legendary,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.09,0.11
+Opt_Lv01_PhysPct_Legendary,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.09,0.11
+Opt_Lv01_MagicPct_Legendary,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.09,0.11
+Opt_Lv01_Crit_Legendary,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.063,0.077
+Opt_Lv01_ArmorPen_Legendary,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.063,0.077
+Opt_Lv01_Reduce_Legendary,받는 피해 감소 +{0}%,Stat.Defense.DamageReduction,Added,0.045,0.055
+Opt_Lv20_Hp_Common,최대 체력 +{0},Stat.Resource.Health.Max,Added,180,360
+Opt_Lv20_Mp_Common,최대 마나 +{0},Stat.Resource.Mana.Max,Added,120,240
+Opt_Lv20_Armor_Common,방어력 +{0},Stat.Defense.Armor,Added,30,72
+Opt_Lv20_Phys_Common,물리공격력 +{0},Stat.Offense.Damage.Physical,Added,18,48
+Opt_Lv20_Magic_Common,마법공격력 +{0},Stat.Offense.Damage.Magical,Added,18,48
+Opt_Lv20_Hp_Rare,최대 체력 +{0},Stat.Resource.Health.Max,Added,450,900
+Opt_Lv20_Armor_Rare,방어력 +{0},Stat.Defense.Armor,Added,75,180
+Opt_Lv20_HpRegen_Rare,초당 체력 재생 +{0},Stat.Resource.Health.Regen,Added,15,45
+Opt_Lv20_HpPct_Rare,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.04,0.06
+Opt_Lv20_PhysPct_Rare,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.04,0.06
+Opt_Lv20_MagicPct_Rare,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.04,0.06
+Opt_Lv20_Move_Rare,이동속도 +{0}%,Stat.Utility.MoveSpeed,Increased,0.016,0.024
+Opt_Lv20_HpPct_Epic,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.07,0.09
+Opt_Lv20_PhysPct_Epic,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.07,0.09
+Opt_Lv20_MagicPct_Epic,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.07,0.09
+Opt_Lv20_Crit_Epic,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.049,0.063
+Opt_Lv20_ArmorPen_Epic,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.049,0.063
+Opt_Lv20_MpRegen_Epic,초당 마나 재생 +{0},Stat.Resource.Mana.Regen,Added,36,72
+Opt_Lv20_BossDmg_Epic,보스 피해 +{0}%,Stat.Offense.BossDamage,Added,0.105,0.135
+Opt_Lv20_HpPct_Legendary,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.1,0.12
+Opt_Lv20_PhysPct_Legendary,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.1,0.12
+Opt_Lv20_MagicPct_Legendary,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.1,0.12
+Opt_Lv20_Crit_Legendary,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.07,0.084
+Opt_Lv20_ArmorPen_Legendary,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.07,0.084
+Opt_Lv20_Reduce_Legendary,받는 피해 감소 +{0}%,Stat.Defense.DamageReduction,Added,0.05,0.06
+Opt_Lv20_CritDmg_Legendary,치명타 피해 +{0},Stat.Offense.CritDamage,Added,0.2,0.24
+Opt_Lv20_BossDmg_Legendary,보스 피해 +{0}%,Stat.Offense.BossDamage,Added,0.15,0.18
+Opt_Lv40_Hp_Common,최대 체력 +{0},Stat.Resource.Health.Max,Added,450,900
+Opt_Lv40_Mp_Common,최대 마나 +{0},Stat.Resource.Mana.Max,Added,300,600
+Opt_Lv40_Armor_Common,방어력 +{0},Stat.Defense.Armor,Added,75,180
+Opt_Lv40_Phys_Common,물리공격력 +{0},Stat.Offense.Damage.Physical,Added,45,120
+Opt_Lv40_Magic_Common,마법공격력 +{0},Stat.Offense.Damage.Magical,Added,45,120
+Opt_Lv40_Hp_Rare,최대 체력 +{0},Stat.Resource.Health.Max,Added,1125,2250
+Opt_Lv40_Armor_Rare,방어력 +{0},Stat.Defense.Armor,Added,188,450
+Opt_Lv40_HpRegen_Rare,초당 체력 재생 +{0},Stat.Resource.Health.Regen,Added,38,112
+Opt_Lv40_HpPct_Rare,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.05,0.07
+Opt_Lv40_PhysPct_Rare,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.05,0.07
+Opt_Lv40_MagicPct_Rare,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.05,0.07
+Opt_Lv40_Move_Rare,이동속도 +{0}%,Stat.Utility.MoveSpeed,Increased,0.02,0.028
+Opt_Lv40_HpPct_Epic,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.08,0.1
+Opt_Lv40_PhysPct_Epic,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.08,0.1
+Opt_Lv40_MagicPct_Epic,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.08,0.1
+Opt_Lv40_Crit_Epic,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.056,0.07
+Opt_Lv40_ArmorPen_Epic,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.056,0.07
+Opt_Lv40_MpRegen_Epic,초당 마나 재생 +{0},Stat.Resource.Mana.Regen,Added,90,180
+Opt_Lv40_BossDmg_Epic,보스 피해 +{0}%,Stat.Offense.BossDamage,Added,0.12,0.15
+Opt_Lv40_HpPct_Legendary,최대 체력 +{0}%,Stat.Resource.Health.Max,Increased,0.11,0.13
+Opt_Lv40_PhysPct_Legendary,물리공격력 +{0}%,Stat.Offense.Damage.Physical,Increased,0.11,0.13
+Opt_Lv40_MagicPct_Legendary,마법공격력 +{0}%,Stat.Offense.Damage.Magical,Increased,0.11,0.13
+Opt_Lv40_Crit_Legendary,치명타 확률 +{0}%,Stat.Offense.CritChance,Added,0.077,0.091
+Opt_Lv40_ArmorPen_Legendary,방어력 무시 +{0}%,Stat.Offense.ArmorPenetration,Added,0.077,0.091
+Opt_Lv40_Reduce_Legendary,받는 피해 감소 +{0}%,Stat.Defense.DamageReduction,Added,0.055,0.065
+Opt_Lv40_CritDmg_Legendary,치명타 피해 +{0},Stat.Offense.CritDamage,Added,0.22,0.26
+Opt_Lv40_BossDmg_Legendary,보스 피해 +{0}%,Stat.Offense.BossDamage,Added,0.165,0.195
+Opt_Lv40_Cooldown_Legendary,쿨다운 회복 +{0}%,Stat.Utility.CooldownRecoveryRate,Added,0.088,0.104
+Opt_Lv40_DmgPct_Legendary,공격력 +{0}%,Stat.Offense.Damage,Increased,0.11,0.13

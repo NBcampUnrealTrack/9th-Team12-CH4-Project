@@ -18,6 +18,7 @@
 #include "Party/TDPartyComponent.h"
 #include "Settings/TDChatSettings.h"
 #include "Settings/TDInputSettingsLibrary.h"
+#include "UI/Common/Tooltip/TDTooltipStatics.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "UI/Settings/TDUISettings.h"
@@ -358,11 +359,28 @@ namespace TDDebugCommands
 				return A.SlotIndex < B.SlotIndex;
 			});
 
+			// 강화는 인벤토리 아이템만 대상이라(D76) 결과도 여기서 바로 보여야 한다.
+			// 장착까지 해야 확인할 수 있으면 굴린 직후에 맞는지 알 방법이 없다.
+			const APlayerController* PC = Cast<APlayerController>(Character.GetController());
+
 			for (const FTDItemInstance& Item : SortedItems)
 			{
 				UE_LOG(LogTDDebug, Log, TEXT("    [%3d] %-24s x%-4d  강화 +%d  옵션 %d개"),
 					Item.SlotIndex, *Item.ItemId.ToString(), Item.Count,
 					Item.EnhanceLevel, Item.Options.Num());
+
+				// 강화하지 않은 물건까지 스탯을 늘어놓으면 인벤토리 덤프가 읽기 어려워진다.
+				if (Item.EnhanceLevel <= 0)
+				{
+					continue;
+				}
+
+				for (const FTDTooltipLine& Line :
+					UTDTooltipStatics::MakeItemStatLines(PC, Item.ItemId, Item.EnhanceLevel))
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("          %-20s %s"),
+						*Line.Label.ToString(), *Line.Value.ToString());
+				}
 			}
 		});
 	}
@@ -473,6 +491,8 @@ namespace TDDebugCommands
 				return A.SlotIndex < B.SlotIndex;
 			});
 
+			const APlayerController* PC = Cast<APlayerController>(Character.GetController());
+
 			for (const FTDItemInstance& Item : SortedEquipped)
 			{
 				// 강화 배율을 함께 찍는다. 스탯창 숫자가 왜 그 값인지 여기서 바로 대조할 수 있다.
@@ -486,6 +506,24 @@ namespace TDDebugCommands
 					Item.SlotIndex, *Item.ItemId.ToString(), Item.EnhanceLevel,
 					Multiplier, PercentPerLevel,
 					Item.Options.Num(), *Item.OptionRarity.ToString());
+
+				// 배율이 실제 스탯으로 얼마가 되는지. 위의 x1.147 만 보고는 아이템마다
+				// 기본값이 달라 암산이 되지 않는다.
+				for (const FTDTooltipLine& Line :
+					UTDTooltipStatics::MakeItemStatLines(PC, Item.ItemId, Item.EnhanceLevel))
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("          %-20s %s"),
+						*Line.Label.ToString(), *Line.Value.ToString());
+				}
+
+				// 한 단계 더 올렸을 때. 강화 창이 "성공하면 이렇게 됩니다" 를 띄울 때와
+				// 같은 호출이다(EnhanceLevel + 1).
+				for (const FTDTooltipLine& Line :
+					UTDTooltipStatics::MakeItemStatLines(PC, Item.ItemId, Item.EnhanceLevel + 1))
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("        → %-20s %s"),
+						*Line.Label.ToString(), *Line.Value.ToString());
+				}
 			}
 		});
 	}
@@ -757,6 +795,28 @@ namespace TDDebugCommands
 				*SkillId.ToString(),
 				Row.SkillType == ETDSkillType::Active ? TEXT("[액티브]") : TEXT("[패시브]"),
 				SkillLevel, Row.MaxLevel, Row.RequiredLevel, Blocked);
+
+			// 툴팁에 실제로 나갈 문장. 위젯 없이 서식 인자가 제대로 채워지는지 보려는 것이다 —
+			// 이름을 잘못 쓰면 {Damage} 가 글자 그대로 남으므로 여기서 바로 드러난다.
+			const FText Description =
+				UTDTooltipStatics::FormatSkillDescription(Progression, SkillId, SkillLevel);
+
+			if (!Description.IsEmpty())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("      %s"), *Description.ToString());
+			}
+
+			// 한 단계 올렸을 때의 문장. 스킬을 실제로 찍지 않고도 수치가 따라오는지 확인한다.
+			if (SkillLevel < Row.MaxLevel)
+			{
+				const FText NextDescription =
+					UTDTooltipStatics::FormatSkillDescription(Progression, SkillId, SkillLevel + 1);
+
+				if (!NextDescription.IsEmpty())
+				{
+					UE_LOG(LogTDDebug, Log, TEXT("      → %s"), *NextDescription.ToString());
+				}
+			}
 		}
 	}
 
@@ -782,6 +842,94 @@ namespace TDDebugCommands
 
 		UE_LOG(LogTDDebug, Log,
 			TEXT("스킬 '%s' 강화를 요청했다. (결과는 TD.DumpSkill, 스탯 반영은 TD.DumpStats)"), *Args[0]);
+	}
+
+	/** 로컬 플레이어의 장착·사용 컴포넌트. 재굴림이 여기 있다(장착 아이템도 굴려야 하므로). */
+	static UTDItemUseComponent* GetLocalItemUse(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetItemUseComponent() : nullptr;
+	}
+
+	static void Reroll(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Reroll <슬롯> [equip]   세 번째 인자를 주면 장착 칸을 굴린다"));
+			return;
+		}
+
+		UTDItemUseComponent* ItemUse = GetLocalItemUse(World);
+		if (ItemUse == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Reroll: ItemUseComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 SlotIndex = FCString::Atoi(*Args[0]);
+		const bool bEquipped = Args.IsValidIndex(1);
+
+		UE_LOG(LogTDDebug, Log, TEXT("%s 칸 %d 재굴림을 요청했다. (비용 %d, 결과는 TD.DumpOptions)"),
+			bEquipped ? TEXT("장착") : TEXT("인벤"), SlotIndex,
+			ItemUse->GetRerollCost(SlotIndex, bEquipped));
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		ItemUse->ServerRerollOptions(SlotIndex, bEquipped);
+	}
+
+	static void DumpOptions(const TArray<FString>& Args, UWorld* World)
+	{
+		// GetLocalInventory 는 이 아래에 있어 여기서는 직접 꺼낸다.
+		const APlayerController* LocalPC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* LocalState = LocalPC ? LocalPC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		const UTDInventoryComponent* Inventory =
+			LocalState ? LocalState->GetInventoryComponent() : nullptr;
+		const UTDItemUseComponent* ItemUse = GetLocalItemUse(World);
+
+		if (Inventory == nullptr || ItemUse == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpOptions: 컴포넌트를 찾지 못했다."));
+			return;
+		}
+
+		// 굴려진 옵션이 어떤 스탯인지는 정의 테이블을 봐야 알 수 있다.
+		// 그 테이블의 주인은 ItemUseComponent 라 조회도 그쪽을 거친다.
+		auto DumpOne = [LocalPC](const TCHAR* Where, const FTDItemInstance& Item)
+		{
+			if (Item.Options.Num() == 0 && !Item.OptionRarity.IsValid())
+			{
+				return;
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("  [%s %d] %s  등급 %s"),
+				Where, Item.SlotIndex, *Item.ItemId.ToString(),
+				Item.OptionRarity.IsValid() ? *Item.OptionRarity.ToString() : TEXT("(없음)"));
+
+			for (const FTDItemOption& Option : Item.Options)
+			{
+				// 굴려진 값과 화면에 나갈 문장을 나란히 둔다. 0.07 이 "7%" 로 보이는지,
+				// 소수점이 잘리지 않는지(DecimalPlaces) 를 한 줄에서 대조할 수 있다.
+				UE_LOG(LogTDDebug, Log, TEXT("      %-28s %8.4f   %s"),
+					*Option.OptionId.ToString(), Option.Value,
+					*UTDTooltipStatics::FormatItemOption(LocalPC, Option).ToString());
+			}
+		};
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 추가 옵션 ──"));
+
+		for (const FTDItemInstance& Item : ItemUse->GetEquippedItems())
+		{
+			DumpOne(TEXT("장착"), Item);
+		}
+
+		for (const FTDItemInstance& Item : Inventory->GetItems())
+		{
+			DumpOne(TEXT("인벤"), Item);
+		}
 	}
 
 	static void DumpShop(const TArray<FString>& Args, UWorld* World)
@@ -1976,6 +2124,16 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSkillUp(
 	TEXT("TD.SkillUp"),
 	TEXT("스킬을 한 단계 올린다. 사용법: TD.SkillUp <스킬ID>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillUp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDReroll(
+	TEXT("TD.Reroll"),
+	TEXT("추가 옵션을 다시 굴린다. 사용법: TD.Reroll <슬롯> [equip]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Reroll));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpOptions(
+	TEXT("TD.DumpOptions"),
+	TEXT("장착·인벤토리 아이템의 추가 옵션을 찍는다. 사용법: TD.DumpOptions"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpOptions));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDShop(
 	TEXT("TD.Shop"),

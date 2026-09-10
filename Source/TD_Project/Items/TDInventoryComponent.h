@@ -133,6 +133,20 @@ public:
 	/** 아이템 정의 조회. 다른 컴포넌트가 같은 테이블을 또 들고 있지 않도록 열어둔다. */
 	const FTDItemRow* FindItemDefinition(FName ItemId) const;
 
+	/**
+	 * 굴려진 추가 옵션을 인벤토리 아이템에 적어 넣는다. **서버 전용.**
+	 *
+	 * 굴리는 것은 UTDItemUseComponent 가 한다 — 장착 중인 아이템도 굴릴 수 있어야 하는데
+	 * 그쪽은 이 컨테이너에 없기 때문이다. 여기서는 결과를 받아 적고 복제만 시킨다.
+	 *
+	 * FindMutableBySlot 을 열지 않은 이유는 그것이 "아무거나 고쳐도 된다" 는 통로가 되기
+	 * 때문이다. 목적이 분명한 함수 하나면 밖에서 할 수 있는 일이 이것으로 한정된다.
+	 *
+	 * @return 그 칸에 아이템이 있고 실제로 적었으면 true.
+	 */
+	bool SetItemOptions(int32 SlotIndex, FGameplayTag OptionRarity,
+		const TArray<FTDItemOption>& Options);
+
 	// ── 조회 ──────────────────────────────────────────────
 
 	const FTDItemInstance* FindBySlot(int32 SlotIndex) const;

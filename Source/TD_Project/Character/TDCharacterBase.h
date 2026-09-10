@@ -170,6 +170,23 @@ protected:
 	void BindToStatComponent();
 
 	/**
+	 * 재생 주기(초). Stat.Resource.*.Regen 은 **초당** 값이라 이 간격만큼 곱해 적용된다.
+	 *
+	 * 1초보다 촘촘하게 둘 이유가 없다. 회복량은 간격에 비례해 보정되므로 총량은 같고,
+	 * 짧게 잡으면 어트리뷰트 복제만 늘어난다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Stats", meta = (ClampMin = "0.1"))
+	float RegenIntervalSeconds = 1.f;
+
+	/**
+	 * 재생 한 번. 서버 타이머가 부른다.
+	 *
+	 * 전투 중에도 돈다. 멈추려면 "전투 중" 을 판정할 기준이 필요한데, 마지막 피격
+	 * 시각이든 어그로든 지금은 그 개념이 없다. 필요해지면 여기에 조건 하나를 더한다.
+	 */
+	void TickRegen();
+
+	/**
 	 * 소속 팀. 값 배정(플레이어 0 / 몬스터 1 등)은 AI 담당과 맞춰야 하므로
 	 * 코드에 박지 않고 블루프린트에서 지정한다.
 	 */
@@ -187,6 +204,9 @@ protected:
 private:
 	/** 중복 구독을 막기 위한 표시. 플레이어는 PlayerState 복제 시점이 일정하지 않아 여러 번 시도된다. */
 	bool bBoundToStatComponent = false;
+
+	/** 재생 타이머. 서버에서만 돈다 — 어트리뷰트를 바꾸는 것은 서버 권한이다. */
+	FTimerHandle RegenTimerHandle;
 
 	UFUNCTION()
 	void OnRep_IsDead();

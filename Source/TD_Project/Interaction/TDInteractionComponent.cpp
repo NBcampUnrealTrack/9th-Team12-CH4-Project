@@ -20,8 +20,30 @@ UTDInteractionComponent::UTDInteractionComponent()
 
 void UTDInteractionComponent::RequestInteract()
 {
-	// 클라이언트에서 호출하면 서버 RPC,
-	// 서버에서 직접 호출하면 즉시 서버 구현부가 실행된다.
+	ATDPlayerCharacter* Player =
+		Cast<ATDPlayerCharacter>(GetOwner());
+
+	if (Player == nullptr || Player->IsDead())
+	{
+		return;
+	}
+
+	APlayerController* OwningController =
+		Cast<APlayerController>(Player->GetController());
+
+	UTDInteractionFlowComponent* Flow =
+		OwningController
+			? OwningController->FindComponentByClass<
+				UTDInteractionFlowComponent>()
+			: nullptr;
+
+	// 대화 중이면 이번 입력을 다음/수락으로 사용한다.
+	if (Flow != nullptr && Flow->TryHandleDialogueInteractInput())
+	{
+		return;
+	}
+
+	// 대화에서 사용하지 않은 입력만 기존 일반 상호작용으로 전달한다.
 	ServerRequestInteract();
 }
 
@@ -126,43 +148,47 @@ void UTDInteractionComponent::ServerRequestInteract_Implementation()
 		return;
 	}
 
-	// 서버가 자기 월드에서 직접 가장 가까운 대상을 찾는다.
+	APlayerController* OwningController =
+		Cast<APlayerController>(Player->GetController());
+
+	const UTDInteractionFlowComponent* Flow =
+		OwningController
+			? OwningController->FindComponentByClass<
+				UTDInteractionFlowComponent>()
+			: nullptr;
+
+	// 서버에 이미 대화가 열려 있으면 일반 상호작용을 추가 실행하지 않는다.
+	//
+	// 대화 화면이 클라이언트에 도착하기 전에 F를 다시 누르는 등,
+	// 네트워크 지연 중 들어온 일반 상호작용 요청도 여기에서 막는다.
+	//
+	// 다음/수락은 별도의 기존 대화 서버 함수가 담당한다.
+	if (Flow != nullptr && Flow->IsDialogueActive())
+	{
+		return;
+	}
+
+	// 기존 방식대로 서버가 주변 상호작용 대상을 직접 찾는다.
 	AActor* Target = FindBestInteractable();
 
 	if (!IsValid(Target)
 		|| !Target->Implements<UTDInteractable>())
 	{
 #if !UE_BUILD_SHIPPING
-		UE_LOG(LogTemp, Verbose,
+		UE_LOG(
+			LogTemp,
+			Verbose,
 			TEXT("%s: 상호작용 범위 안에 사용할 수 있는 대상이 없다."),
 			*GetNameSafe(Player));
 #endif
 		return;
 	}
 
-	// FindBestInteractable에서도 검사했지만 실제 실행 직전에 다시 검사한다.
-	// 앞선 검사 직후 다른 요청이 상자를 획득하는 등의 상태 변화가 생길 수 있다.
+	// 실제 실행 직전에 다시 상호작용 가능 여부를 검사한다.
 	if (!ITDInteractable::Execute_CanInteract(Target, Player))
 	{
 		return;
 	}
 
 	ITDInteractable::Execute_Interact(Target, Player);
-	
-	
-	APlayerController* Controller =
-	Cast<APlayerController>(
-		Player->GetController());
-
-	const UTDInteractionFlowComponent* Flow =
-		Controller
-			? Controller->FindComponentByClass<
-				UTDInteractionFlowComponent>()
-			: nullptr;
-
-	if (Flow != nullptr
-		&& Flow->IsGameplayLocked())
-	{
-		return;
-	}
 }

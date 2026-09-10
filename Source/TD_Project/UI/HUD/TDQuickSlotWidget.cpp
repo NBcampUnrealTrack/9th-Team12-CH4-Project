@@ -1,6 +1,11 @@
 #include "TDQuickSlotWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
+#include "GameFramework/Pawn.h"
+#include "Skill/TDSkillComponent.h"
+#include "UI/Common/Tooltip/TDItemTooltipWidget.h"
+#include "Stats/TDProgressionComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDItemRow.h"
 #include "Engine/World.h"
@@ -25,10 +30,21 @@ void UTDQuickSlotWidget::NativeConstruct()
 			UE_LOG(LogTemp, Warning, TEXT("퀵슬롯: WBP_QuickSlot에 '%s' 이름의 슬롯베이스가 필요합니다."), *Name.ToString());
 		}
 	}
+    // 기존 WBP의 구분선 다음 세 슬롯. 아이템 6칸과 별도로 표시만 관리한다.
+    SkillWidgets.Reset();
+    for (const FName Name : {FName(TEXT("QuickSlot")), FName(TEXT("QuickSlot_7")), FName(TEXT("QuickSlot_8"))})
+    {
+        SkillWidgets.Add(WidgetTree ? Cast<UTDItemSlotVisualWidget>(WidgetTree->FindWidget(Name)) : nullptr);
+    }
+    SkillSource.Reset();
+    DisplayedSkillClass = NAME_None;
+    RefreshSkillSlots();
 	RefreshSources();
 	RefreshSlots();
+    RefreshSkillCooldowns();
 	if (UWorld* World = GetWorld())
 	{
+		World->GetTimerManager().SetTimer(SkillCooldownTimer, this, &ThisClass::RefreshSkillCooldowns, 0.1f, true);
 		// PlayerState가 UI보다 늦게 도착하거나 교체되는 경우만 재연결한다.
 		World->GetTimerManager().SetTimer(SourceCheckTimer, this, &ThisClass::RefreshSources, 0.25f, true);
 	}
@@ -39,10 +55,14 @@ void UTDQuickSlotWidget::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(SourceCheckTimer);
+        World->GetTimerManager().ClearTimer(SkillCooldownTimer);
 		World->GetTimerManager().ClearTimer(RefreshTimer);
 	}
 	UnbindSources();
 	SlotWidgets.Reset();
+    SkillWidgets.Reset();
+    SkillSource.Reset();
+    DisplayedSkillClass = NAME_None;
 	PressedSlot = INDEX_NONE;
 	PressedButton = FKey();
 	Super::NativeDestruct();
@@ -62,6 +82,14 @@ void UTDQuickSlotWidget::RefreshSources()
 	const ATDPlayerState* State = Controller ? Controller->GetPlayerState<ATDPlayerState>() : nullptr;
 	UTDQuickSlotComponent* NewQuickSlots = State ? State->GetQuickSlotComponent() : nullptr;
 	UTDInventoryComponent* NewInventory = State ? State->GetInventoryComponent() : nullptr;
+    UTDProgressionComponent* Progression = State ? State->GetProgressionComponent() : nullptr;
+    const FName ClassId = Progression ? Progression->GetClassId() : NAME_None;
+    if (SkillSource.Get() != Progression || DisplayedSkillClass != ClassId)
+    {
+        SkillSource = Progression;
+        DisplayedSkillClass = ClassId;
+        RefreshSkillSlots();
+    }
 	if (QuickSlots == NewQuickSlots && Inventory == NewInventory) return;
 
 	UnbindSources();
@@ -196,4 +224,69 @@ bool UTDQuickSlotWidget::NativeOnDrop(const FGeometry& Geometry, const FDragDrop
 	RefreshSources();
 	if (!IsValid(Inventory) || ItemDrag->SourceInventory.Get() != Inventory) return false;
 	return RequestRegisterItem(FindSlotAt(Event.GetScreenSpacePosition()), ItemDrag->ItemId);
+}
+
+void UTDQuickSlotWidget::RefreshSkillSlots()
+{
+    const UTDProgressionComponent* Progression = SkillSource.Get();
+    for (int32 Index = 0; Index < SkillWidgets.Num(); ++Index)
+    {
+        UTDItemSlotVisualWidget* Visual = SkillWidgets[Index];
+        if (!Visual) continue;
+        const FName SkillId = Progression ? Progression->GetSkillForSlot(Index + 1) : NAME_None;
+        const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
+        UTextBlock* NameText = WidgetTree ? Cast<UTextBlock>(WidgetTree->FindWidget(
+            FName(*FString::Printf(TEXT("SkillName_%d"), Index + 1)))) : nullptr;
+        Visual->ClearSlotVisual();
+        Visual->SetSlotEnabled(true);
+
+        if (Row)
+        {
+            FTDItemSlotVisualData Data;
+            Data.bHasItem = true;
+            Data.DisplayName = Row->DisplayName;
+            Data.Icon = Row->Icon;
+            Visual->SetSlotVisualData(Data);
+        }
+        // 아이템 슬롯의 내부 시각 갱신과 별도로, 슬롯 전체 영역에 공용 카드를 연결한다.
+        UWidget* TooltipHost = WidgetTree ? WidgetTree->FindWidget(
+            FName(*FString::Printf(TEXT("QuickSlotKeyOverlay_%d"), Index + 7))) : nullptr;
+        if (!TooltipHost) TooltipHost = Visual;
+        TooltipHost->SetVisibility(ESlateVisibility::Visible);
+        const TCHAR* Keys[] = {TEXT("Q"), TEXT("W"), TEXT("E")};
+        const FText Details = Row ? FText::Format(
+            NSLOCTEXT("TDQuickSlot", "SkillTooltip", "액티브 스킬 · {0}\n요구 레벨: {1}\n기본 마나: {2}\n기본 재사용 대기시간: {3}초"),
+            FText::FromString(Keys[Index]), FText::AsNumber(Row->RequiredLevel),
+            FText::AsNumber(Row->ManaCost), FText::AsNumber(Row->Cooldown)) : FText::GetEmpty();
+        UTDItemTooltipWidget::AttachText(this, TooltipHost,
+            Row ? Row->DisplayName : FText::GetEmpty(), Details);
+        if (NameText)
+        {
+            NameText->SetText(Row ? Row->DisplayName : FText::GetEmpty());
+            NameText->SetVisibility(Row && Row->Icon.IsNull()
+                ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void UTDQuickSlotWidget::RefreshSkillCooldowns()
+{
+    const APlayerController* Controller = GetOwningPlayer();
+    const APawn* CharacterPawn = Controller ? Controller->GetPawn() : nullptr;
+    const UTDSkillComponent* Skills = CharacterPawn ? CharacterPawn->FindComponentByClass<UTDSkillComponent>() : nullptr;
+    if (!WidgetTree) return;
+    for (int32 SlotIndex = 1; SlotIndex <= 3; ++SlotIndex)
+    {
+        // 자체 타이머로 쿨을 추측하지 않고 실제 스킬 컴포넌트의 남은 시간을 읽는다.
+        const float Remaining = Skills ? Skills->GetCooldownRemainingForSlot(SlotIndex) : 0.f;
+        const bool bCoolingDown = Remaining > 0.f;
+        const ESlateVisibility CooldownVisibility = bCoolingDown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+        if (UWidget* Shade = WidgetTree->FindWidget(FName(*FString::Printf(TEXT("SkillCooldownShade_%d"), SlotIndex))))
+            Shade->SetVisibility(CooldownVisibility);
+        if (UTextBlock* Text = Cast<UTextBlock>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("SkillCooldownText_%d"), SlotIndex)))))
+        {
+            Text->SetVisibility(CooldownVisibility);
+            Text->SetText(bCoolingDown ? FText::AsNumber(FMath::CeilToInt(Remaining)) : FText::GetEmpty());
+        }
+    }
 }

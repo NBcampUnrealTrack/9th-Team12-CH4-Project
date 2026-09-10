@@ -7,6 +7,7 @@
 #include "TimerManager.h"
 #include "TDQuickSlotWidget.generated.h"
 
+class UTDProgressionComponent;
 class UTDInventoryComponent;
 class UTDItemSlotVisualWidget;
 class UTDQuickSlotComponent;
@@ -41,6 +42,12 @@ private:
 	void RefreshSources();
 	void UnbindSources();
 	void RefreshSlots();
+    void RefreshSkillSlots();
+    void RefreshSkillCooldowns();
+    FTimerHandle SkillCooldownTimer;
+    UPROPERTY(Transient) TArray<TObjectPtr<UTDItemSlotVisualWidget>> SkillWidgets;
+    TWeakObjectPtr<UTDProgressionComponent> SkillSource;
+    FName DisplayedSkillClass;
 	int32 FindSlotAt(const FVector2D& ScreenPosition) const;
 	UFUNCTION()
 	void QueueRefresh();

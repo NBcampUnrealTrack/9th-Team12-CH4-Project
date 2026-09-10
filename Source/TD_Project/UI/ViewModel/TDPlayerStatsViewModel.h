@@ -28,6 +28,9 @@ public:
  TObjectPtr<UTexture2D> CharacterPortrait = nullptr;
 
  UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
+ TObjectPtr<UTexture2D> CharacterFullBody = nullptr;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
  TObjectPtr<UTexture2D> CharacterClassIcon = nullptr;
  virtual void BeginDestroy() override;
 

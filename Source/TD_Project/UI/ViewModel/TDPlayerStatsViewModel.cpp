@@ -162,6 +162,7 @@ void UTDPlayerStatsViewModel::RefreshClassVisuals(FName NewClassId)
   ? NSLOCTEXT("TDPlayerStatus", "ClassUnselected", "미선택") : FText::FromName(NewClassId);
  UTexture2D* NewPortrait = nullptr;
  UTexture2D* NewIcon = nullptr;
+ UTexture2D* NewFullBody = nullptr;
  if (!NewClassId.IsNone())
  {
   const UDataTable* Table = UTDCharacterClassSettings::Get()->ClassTable.LoadSynchronous();
@@ -174,10 +175,12 @@ void UTDPlayerStatsViewModel::RefreshClassVisuals(FName NewClassId)
    {
     NewPortrait = Visuals->Portrait.LoadSynchronous();
     NewIcon = Visuals->Icon.LoadSynchronous();
+    NewFullBody = Visuals->FullBody.LoadSynchronous();
    }
   }
  }
  if (!CharacterClassName.EqualTo(NewClassName)) UE_MVVM_SET_PROPERTY_VALUE(CharacterClassName, NewClassName);
  UE_MVVM_SET_PROPERTY_VALUE(CharacterPortrait, NewPortrait);
  UE_MVVM_SET_PROPERTY_VALUE(CharacterClassIcon, NewIcon);
+ UE_MVVM_SET_PROPERTY_VALUE(CharacterFullBody, NewFullBody);
 }

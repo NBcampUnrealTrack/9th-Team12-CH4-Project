@@ -5,7 +5,11 @@
 void UTDAccountSubSystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-    Accounts = TDAccountDummyData::CreateAccounts();
+#if !UE_BUILD_SHIPPING
+    const UTDAccountDummyData* Initial = GetDefault<UTDAccountDummySettings>()->InitialAccounts.LoadSynchronous();
+    if (Initial) Accounts = Initial->BuildInitialAccounts();
+    else UE_LOG(LogTemp, Warning, TEXT("더미 계정 DA가 없습니다. Project Settings > Game > TD Dummy Accounts에서 Initial Accounts를 지정하세요."));
+#endif
 }
 
 bool UTDAccountSubSystem::Login(ATDPlayerState* Player, const FString& LoginId,

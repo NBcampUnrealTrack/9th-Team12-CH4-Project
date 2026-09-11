@@ -8,24 +8,27 @@
 class ATDPlayerState;
 
 /** 캐릭터 ID와 계정 소유 관계는 저장 내용 밖에서 관리한다. */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FTDDummyCharacterRecord
 {
 	GENERATED_BODY()
-	UPROPERTY() FGuid CharacterId;
-	UPROPERTY() FString CharacterName;
-	UPROPERTY() FTDPlayerSaveData Data;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FGuid CharacterId;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FString CharacterName;
+    /** None이면 Data의 존/좌표 설정을 사용한다. 프리셋은 초기 로드에만 적용한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Initial Location", meta=(GetOptions="GetLocationPresetOptions"))
+    FName InitialLocationPreset;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FTDPlayerSaveData Data;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FTDDummyAccountRecord
 {
 	GENERATED_BODY()
-	UPROPERTY() FGuid AccountId;
-	UPROPERTY() FString LoginId;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FGuid AccountId;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FString LoginId;
 	/** 공개된 개발용 자격 증명. 실제 사용자 비밀번호를 넣지 않는다. */
-	UPROPERTY() FString Password;
-	UPROPERTY() TArray<FTDDummyCharacterRecord> Characters;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") FString Password;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dummy Account") TArray<FTDDummyCharacterRecord> Characters;
 };
 
 UCLASS()

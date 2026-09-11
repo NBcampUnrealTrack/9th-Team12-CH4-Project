@@ -78,6 +78,7 @@ void ATDUI_Login_PlayerController::ServerSelectCharacter_Implementation(int32 Sl
 
 void ATDUI_Login_PlayerController::ServerLogin_Implementation(const FString& LoginId, const FString& Password)
 {
+
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     if (!State) return;
     if (State->HasSelectedCharacter() || IsLoggedIn())

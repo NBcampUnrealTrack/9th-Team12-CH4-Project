@@ -313,24 +313,24 @@ struct TD_PROJECT_API FTDQuestRuntimeData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	FName QuestId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	FGameplayTag StateTag;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	TArray<int32> ObjectiveProgress;
 
 	/** 서브 퀘스트를 HUD에서 수락 순서대로 정렬할 때 사용 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	int64 AcceptSequence = 0;
 
 	/**
 	 * 일일 퀘스트 완료 날짜.
 	 * 예: 20260906
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Quest")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	int32 CompletedKstDayKey = 0;
 };
 
@@ -340,14 +340,14 @@ struct TD_PROJECT_API FTDAffectionRuntimeData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Affection")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Affection")
 	FName NPCId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Affection")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Affection")
 	int32 Points = 0;
 
 	/** 이 NPC에게 마지막으로 선물한 한국 날짜 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Affection")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Affection")
 	int32 LastGiftKstDayKey = 0;
 };
 

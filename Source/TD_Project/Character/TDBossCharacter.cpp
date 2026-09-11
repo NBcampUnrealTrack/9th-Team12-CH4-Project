@@ -86,7 +86,8 @@ bool ATDBossCharacter::IsBusy() const
 
 bool ATDBossCharacter::IsInvulnerable() const
 {
-	return bInEntrance || bInPhaseTransition || bBurrowed;
+	// 시간 무적(방벽 스킬, 부모)에 보스 고유 무적을 더한다. Super 를 빼면 보스만 방벽이 안 먹는다.
+	return Super::IsInvulnerable() || bInEntrance || bInPhaseTransition || bBurrowed;
 }
 
 float ATDBossCharacter::GetIncomingDamageMultiplier() const

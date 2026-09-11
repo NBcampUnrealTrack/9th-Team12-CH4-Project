@@ -43,6 +43,8 @@ public:
 	void BeginFight(ATDCharacterBase* FirstTarget);
 	void ResetFight();
 	bool StartPattern(int32 PatternIndex);
+	/** 진행 중인 패턴을 끊는다. 쿨은 안 건다. BT 가 태스크를 중단할 때·페이즈 전환·사망·리셋에 쓴다. */
+	void CancelPattern();
 	int32 ChoosePattern(float DistanceToTarget) const;
 	void SetPatternTarget(ATDCharacterBase* Target);
 	ATDCharacterBase* FindEnemy(bool bFarthest, float MaxRange) const;
@@ -233,7 +235,6 @@ protected:
 	void DoStrikeHit();
 	void EnterRecovery();
 	void FinishPattern();
-	void CancelPattern();
 	float ScaledTelegraph(float Base) const;
 	float ScaledRecovery(float Base) const;
 

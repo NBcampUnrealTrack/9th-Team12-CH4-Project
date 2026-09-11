@@ -26,7 +26,7 @@ FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, cons
 {
 	// 입력창에 포커스가 있어도 Alt 처리 
 	if (IsPlayerHUDReady()
-		&& (InKeyEvent.GetKey() == EKeys::LeftAlt)
+		&& (InKeyEvent.GetKey() == EKeys::LeftAlt))
 	{
 		if (ATDPlayerController* Controller = Cast<ATDPlayerController>(GetOwningPlayer()))
 		{

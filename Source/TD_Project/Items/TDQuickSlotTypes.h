@@ -32,11 +32,11 @@ struct FTDQuickSlot
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|QuickSlot")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|QuickSlot")
 	ETDQuickSlotType Type = ETDQuickSlotType::Empty;
 
 	/** DT_ItemDefinition 의 RowName. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|QuickSlot")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|QuickSlot", meta=(GetOptions="TD_Project.TDAccountDummyData.GetItemOptions"))
 	FName Id;
 
 	bool IsEmpty() const { return Type == ETDQuickSlotType::Empty || Id.IsNone(); }

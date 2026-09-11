@@ -102,6 +102,15 @@ private:
 	/** ApplyDefinition 때 테이블에서 읽어둔 처치 경험치. */
 	int32 ExpReward = 0;
 
+	/**
+	 * 처치 골드의 범위. 경험치와 같은 자리에서 레벨 스케일로 읽어둔다.
+	 *
+	 * FScalableFloat 라 커브를 붙이면 레벨이 높은 사냥터일수록 자동으로 많아지고,
+	 * 안 붙이면 상수로 동작한다.
+	 */
+	int32 GoldMinReward = 0;
+	int32 GoldMaxReward = 0;
+
 	/** 마지막 프레임에 여럿이 동시 타격해도 보상은 한 번만 나가게 하는 표시. */
 	bool bRewardsGranted = false;
 	

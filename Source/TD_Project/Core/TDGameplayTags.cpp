@@ -74,6 +74,23 @@ namespace TDTags
 		"Value 레벨 미만이면 즉시 1레벨업, 그 이상이면 Value 레벨 한 구간만큼의 경험치만 얻는다.");
 
 
+	// ── 스킬 ──────────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_ForwardBox, "Skill.Shape.ForwardBox",
+		"전방의 상자 범위. 몸에서 Range 만큼 앞으로 뻗고 Width 만큼 좌우로 넓다. 평타보다 길게 잡는 것이 보통이다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_SelfRadius, "Skill.Shape.SelfRadius",
+		"시전자를 중심으로 한 원. Range 가 반경이며 Width 는 쓰지 않는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_Self, "Skill.Shape.Self",
+		"대상을 찾지 않고 시전자에게만 적용한다. 회복과 버프용.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Damage, "Skill.Effect.Damage",
+		"피해를 준다. Value 는 피해량이 아니라 **공격력 배율**이다 — 1.5 면 공격력의 150%.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Heal, "Skill.Effect.Heal",
+		"체력을 Value 만큼 회복한다. 이쪽은 배율이 아니라 절대값이다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_RestoreMana, "Skill.Effect.RestoreMana",
+		"마나를 Value 만큼 회복한다.");
+
+
 	// ── 존(맵) ────────────────────────────────────────────
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1, "Zone.Region1",
@@ -82,6 +99,7 @@ namespace TDTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field01, "Zone.Region1.Field01", "지역1 사냥터 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field02, "Zone.Region1.Field02", "지역1 사냥터 2");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field03, "Zone.Region1.Field03", "지역1 사냥터 3");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field04, "Zone.Region1.Field04", "지역1 사냥터 4");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss, "Zone.Region1.Boss", "지역1 보스 구역 (하위 방들의 상위 태그)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room01, "Zone.Region1.Boss.Room01", "지역1 보스방 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room02, "Zone.Region1.Boss.Room02", "지역1 보스방 2");
@@ -107,6 +125,9 @@ namespace TDTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Equipment, "Source.Equipment",
 		"장착 중인 장신구와 세트 효과에서 온 모디파이어.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Skill, "Source.Skill",
+		"찍어 둔 패시브 스킬에서 온 모디파이어.");
 	
 	
 	

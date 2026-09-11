@@ -4,6 +4,7 @@
 #include "MVVMViewModelBase.h"
 #include "TDPlayerStatsViewModel.generated.h"
 
+class UTexture2D;
 class ATDPlayerState;
 class UAbilitySystemComponent;
 class UTDProgressionComponent;
@@ -16,6 +17,21 @@ class TD_PROJECT_API UTDPlayerStatsViewModel : public UMVVMViewModelBase
  GENERATED_BODY()
 public:
  void SetSource(ATDPlayerState* InPlayerState);
+ UFUNCTION(BlueprintCallable, Category="TD|UI|ViewModel")
+ void RefreshAll();
+
+ /** HUD와 스탯창에서 공통으로 읽는 직업 표시 정보. */
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
+ FText CharacterClassName;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
+ TObjectPtr<UTexture2D> CharacterPortrait = nullptr;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
+ TObjectPtr<UTexture2D> CharacterFullBody = nullptr;
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Character Visuals")
+ TObjectPtr<UTexture2D> CharacterClassIcon = nullptr;
  virtual void BeginDestroy() override;
 
  UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
@@ -113,6 +129,8 @@ private:
 
  UFUNCTION()
  void RefreshIdentity();
+ UFUNCTION()
+ void RefreshClassVisuals(FName NewClassId);
  UFUNCTION()
  void RefreshProgression();
  UFUNCTION()

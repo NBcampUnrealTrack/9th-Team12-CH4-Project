@@ -1,0 +1,4 @@
+﻿Name,SkillId,StatTag,Op,BaseValue,ValuePerLevel
+Warrior_Tough_Armor,Warrior_Tough,Stat.Defense.Armor,Added,10,5
+Warrior_Vitality_HP,Warrior_Vitality,Stat.Resource.Health.Max,Increased,0.03,0.02
+Warrior_Fury_Atk,Warrior_Fury,Stat.Offense.Damage.Physical,Added,5,3

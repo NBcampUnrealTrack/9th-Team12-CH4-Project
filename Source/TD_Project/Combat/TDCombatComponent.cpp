@@ -9,6 +9,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "Skill/TDSkillComponent.h"
 
 UTDCombatComponent::UTDCombatComponent()
 {
@@ -144,6 +145,14 @@ bool UTDCombatComponent::CanAttack() const
 		return false;
 	}
 
+	// 시전 중에는 평타가 나가지 않는다. 막지 않으면 정신집중으로 계속 때리면서
+	// 평타까지 섞어 넣을 수 있다.
+	const UTDSkillComponent* Skills = Owner->FindComponentByClass<UTDSkillComponent>();
+	if (Skills != nullptr && Skills->IsCasting())
+	{
+		return false;
+	}
+
 	return GetWorld()->GetTimeSeconds() - LastAttackTime >= CurrentCooldown;
 }
 
@@ -219,4 +228,12 @@ void UTDCombatComponent::MulticastOnAttack_Implementation(int32 AttackIndex)
 void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
 {
 	OnHit.Broadcast(Target, Damage, bCritical, HitLocation);
+}
+
+void UTDCombatComponent::NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation)
+{
+	if (GetOwnerRole() == ROLE_Authority)
+	{
+		MulticastOnHit(Target, Damage, bCritical, HitLocation);
+	}
 }

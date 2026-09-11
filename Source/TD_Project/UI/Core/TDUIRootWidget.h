@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include "TDUIRootWidget.generated.h"
 
 class UCanvasPanel;
+class APawn;
 class UOverlay;
 class UVerticalBox;
 class UCommonActivatableWidgetStack;
@@ -49,11 +50,29 @@ public:
 		return HUDLayer;
 	}
 
-	void SetLoadingVisible(bool bVisible);
+    void SetLoadingVisible(bool bVisible);
+
+    /** 선택한 캐릭터와 Pawn의 연결을 확인하고 HUD 데이터를 갱신한다. */
+    UFUNCTION(BlueprintCallable, Category="TD|UI")
+    void RefreshPlayerHUD();
+    bool IsPlayerHUDReady() const { return bPlayerHUDReady; }
+
 
 	/** WindowLayer에 창을 가운데 정렬하여 추가한다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|UI")
 	bool AddWindow(UTDWindowBaseWidget* WindowWidget);
+
+protected:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
+    bool bWaitForCharacterLoad = true;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
+    ESlateVisibility LoadedHUDVisibility = ESlateVisibility::SelfHitTestInvisible;
+
+private:
+    FTimerHandle HUDReadyTimer;
+    TWeakObjectPtr<APawn> DisplayedPawn;
+    bool bPlayerHUDReady = false;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))

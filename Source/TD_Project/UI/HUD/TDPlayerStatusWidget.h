@@ -6,6 +6,7 @@
 #include "UI/HUD/TDProgressBarAnimation.h"
 #include "TDPlayerStatusWidget.generated.h"
 
+class UBorder;
 class UTDPlayerStatsViewModel;
 class UTextBlock;
 class UProgressBar;
@@ -70,7 +71,16 @@ private:
 	FTDProgressBarAnimation HealthAnimation;
 	FTDProgressBarAnimation ManaAnimation;
 	bool bVitalsPending = false;
-	void RefreshVitalTargets(bool bAnimate);
+    void RefreshClassVisuals();
+    UPROPERTY(meta=(BindWidgetOptional))
+    TObjectPtr<UBorder> MainPortraitFallback;
+    UPROPERTY(meta=(BindWidgetOptional))
+    TObjectPtr<UBorder> ClassIconFallback;
+    UPROPERTY(meta=(BindWidgetOptional))
+    TObjectPtr<UTextBlock> MainPortraitClassText;
+    UPROPERTY(meta=(BindWidgetOptional))
+    TObjectPtr<UTextBlock> ClassIconText;
+    void RefreshVitalTargets(bool bAnimate);
 	void ApplyVitalVisuals();
 	void UnbindViewModel();
 	void RefreshField(UE::FieldNotification::FFieldId Field);

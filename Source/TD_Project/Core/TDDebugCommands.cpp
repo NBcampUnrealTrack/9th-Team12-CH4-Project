@@ -22,8 +22,11 @@
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "UI/Settings/TDUISettings.h"
 #include "Items/TDItemUseComponent.h"
+#include "Character/TDPlayerCharacter.h"
+#include "Shop/TDShopStatics.h"
 #include "Player/TDPlayerController.h"
 #include "Player/TDPlayerState.h"
+#include "Skill/TDSkillComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
 #include "Combat/TDCombatStatics.h"
@@ -699,6 +702,269 @@ namespace TDDebugCommands
 	}
 
 	/** 자기 퀵슬롯 컴포넌트. 서버·클라 어느 쪽에서 쳐도 자기 것을 집는다. */
+	/** 로컬 플레이어의 성장 컴포넌트. 스킬 레벨과 잔여 포인트가 여기 있다. */
+	static UTDProgressionComponent* GetLocalProgression(UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState = PC ? PC->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		return PlayerState ? PlayerState->GetProgressionComponent() : nullptr;
+	}
+
+	static void DumpSkills(const TArray<FString>& Args, UWorld* World)
+	{
+		const UTDProgressionComponent* Progression = GetLocalProgression(World);
+		if (Progression == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.DumpSkill: ProgressionComponent 를 찾지 못했다. 캐릭터를 먼저 선택할 것."));
+			return;
+		}
+
+		const TArray<FName> Skills = Progression->GetClassSkills();
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 직업 '%s' 의 스킬 %d종  (잔여 포인트 %d) ──"),
+			*Progression->GetClassId().ToString(), Skills.Num(), Progression->GetRemainingSkillPoints());
+
+		if (Skills.Num() == 0)
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("  비어 있다. DT_Skill 이 지정되지 않았거나 ClassId 가 맞는 행이 없다."));
+			return;
+		}
+
+		for (const FName& SkillId : Skills)
+		{
+			FTDSkillRow Row;
+			if (!Progression->GetSkillInfo(SkillId, Row))
+			{
+				continue;
+			}
+
+			const int32 SkillLevel = Progression->GetSkillLevel(SkillId);
+
+			// 왜 못 찍는지까지 찍는다. "회색인 이유" 를 눈으로 확인하려는 것이다.
+			const TCHAR* Blocked = TEXT("");
+			if (!Progression->CanUpgradeSkill(SkillId))
+			{
+				Blocked = SkillLevel >= Row.MaxLevel
+					? TEXT("  ← 최대")
+					: (Progression->GetLevel() < Row.RequiredLevel
+						? TEXT("  ← 레벨 부족")
+						: TEXT("  ← 포인트 부족"));
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("  %-18s %-8s Lv %d/%d  (요구 레벨 %d)%s"),
+				*SkillId.ToString(),
+				Row.SkillType == ETDSkillType::Active ? TEXT("[액티브]") : TEXT("[패시브]"),
+				SkillLevel, Row.MaxLevel, Row.RequiredLevel, Blocked);
+		}
+	}
+
+	static void SkillUp(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.SkillUp <스킬ID>   예) TD.SkillUp Warrior_Tough   (목록은 TD.DumpSkill)"));
+			return;
+		}
+
+		UTDProgressionComponent* Progression = GetLocalProgression(World);
+		if (Progression == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.SkillUp: ProgressionComponent 를 찾지 못했다. 캐릭터를 먼저 선택할 것."));
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다. 거부 사유는 서버 로그에 남는다.
+		Progression->ServerUpgradeSkill(FName(*Args[0]));
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("스킬 '%s' 강화를 요청했다. (결과는 TD.DumpSkill, 스탯 반영은 TD.DumpStats)"), *Args[0]);
+	}
+
+	static void DumpShop(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.Shop <상점ID>   예) TD.Shop Shop_Forest"));
+			return;
+		}
+
+		const FName ShopId(*Args[0]);
+
+		FTDShopRow ShopRow;
+		if (!UTDShopStatics::GetShopInfo(ShopId, ShopRow))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("TD.Shop: DT_Shop 에 '%s' 행이 없다. 프로젝트 세팅 > TD > Shop 의 테이블도 확인할 것."),
+				*ShopId.ToString());
+			return;
+		}
+
+		// 인벤토리를 넘기는 것은 되팔기 값 때문이다 — 아이템 정의의 주인이 그쪽이다.
+		// 캐릭터를 아직 안 골랐으면 구매가만 찍히고 되팔기가 0 으로 나온다.
+		// (GetLocalInventory 는 이 아래에 있어 여기서는 직접 꺼낸다)
+		const APlayerController* LocalPC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* LocalState = LocalPC ? LocalPC->GetPlayerState<ATDPlayerState>() : nullptr;
+		const UTDInventoryComponent* Inventory =
+			LocalState ? LocalState->GetInventoryComponent() : nullptr;
+
+		const TArray<FTDShopEntry> Entries = UTDShopStatics::GetShopEntries(Inventory, ShopId);
+
+		UE_LOG(LogTDDebug, Log, TEXT("── %s (%s) — %d종 ──"),
+			*ShopRow.DisplayName.ToString(), *ShopId.ToString(), Entries.Num());
+
+		for (const FTDShopEntry& Entry : Entries)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("  %-16s 구매 %6d   되팔기 %6d"),
+				*Entry.ItemId.ToString(), Entry.Price, Entry.SellBackPrice);
+		}
+	}
+
+	static void ShopBuy(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.ShopBuy <상점ID> <아이템ID> [개수=1]"));
+			return;
+		}
+
+		ATDPlayerController* Controller = World != nullptr
+			? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+			: nullptr;
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShopBuy: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 Count = Args.IsValidIndex(2) ? FCString::Atoi(*Args[2]) : 1;
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다. 사거리 검증도 서버가 한다.
+		Controller->ServerBuyFromShop(FName(*Args[0]), FName(*Args[1]), Count);
+
+		UE_LOG(LogTDDebug, Log, TEXT("'%s' %d개 구매를 요청했다. (결과는 상점 결과 로그)"),
+			*Args[1], Count);
+	}
+
+	static void ShopSell(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(1))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("사용법: TD.ShopSell <상점ID> <인벤슬롯> [개수=1]   (칸 번호는 TD.DumpInventory)"));
+			return;
+		}
+
+		ATDPlayerController* Controller = World != nullptr
+			? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+			: nullptr;
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.ShopSell: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 SlotIndex = FCString::Atoi(*Args[1]);
+		const int32 Count = Args.IsValidIndex(2) ? FCString::Atoi(*Args[2]) : 1;
+
+		Controller->ServerSellToShop(FName(*Args[0]), SlotIndex, Count);
+
+		UE_LOG(LogTDDebug, Log, TEXT("%d번 칸 %d개 판매를 요청했다. (결과는 상점 결과 로그)"),
+			SlotIndex, Count);
+	}
+
+	static void LearnSkills(const TArray<FString>& Args, UWorld* World)
+	{
+		// 인자가 없으면 1레벨. TD.LearnSkills 0 은 전부 초기화다.
+		const int32 SkillLevel = Args.IsValidIndex(0) ? FCString::Atoi(*Args[0]) : 1;
+
+		ATDPlayerController* Controller = GetClientControllerForCheat(World);
+		if (Controller == nullptr)
+		{
+			Controller = World != nullptr
+				? Cast<ATDPlayerController>(World->GetFirstPlayerController())
+				: nullptr;
+		}
+
+		if (Controller == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.LearnSkills: PlayerController 를 찾지 못했다."));
+			return;
+		}
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
+		Controller->ServerDebugLearnSkills(SkillLevel);
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("스킬 전부를 레벨 %d 로 맞추도록 요청했다. (결과는 TD.DumpSkill)"), SkillLevel);
+	}
+
+	static void UseSkill(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.UseSkill <자리1~3>   Q·W·E 를 누른 것과 같다"));
+			return;
+		}
+
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		ATDPlayerCharacter* Character = PC ? Cast<ATDPlayerCharacter>(PC->GetPawn()) : nullptr;
+		UTDSkillComponent* Skills = Character ? Character->GetSkillComponent() : nullptr;
+
+		if (Skills == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.UseSkill: SkillComponent 를 찾지 못했다."));
+			return;
+		}
+
+		const int32 SlotIndex = FCString::Atoi(*Args[0]);
+
+		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다. 거부 사유는 서버 로그에 남는다.
+		Skills->ServerUseSkillSlot(SlotIndex);
+
+		UE_LOG(LogTDDebug, Log, TEXT("스킬 자리 %d 사용을 요청했다."), SlotIndex);
+	}
+
+	static void DumpCooldowns(const TArray<FString>& Args, UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerCharacter* Character = PC ? Cast<ATDPlayerCharacter>(PC->GetPawn()) : nullptr;
+		const UTDSkillComponent* Skills = Character ? Character->GetSkillComponent() : nullptr;
+		const UTDProgressionComponent* Progression = GetLocalProgression(World);
+
+		if (Skills == nullptr || Progression == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpCooldown: 스킬·성장 컴포넌트를 찾지 못했다."));
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("── 시전 상태 ──"));
+		UE_LOG(LogTDDebug, Log, TEXT("  시전 중: %s"),
+			Skills->IsCasting() ? *Skills->GetCastingSkillId().ToString() : TEXT("(없음)"));
+
+		for (int32 Slot = 1; Slot <= 3; ++Slot)
+		{
+			const FName SkillId = Progression->GetSkillForSlot(Slot);
+			if (SkillId.IsNone())
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %d.  (비어 있음)"), Slot);
+				continue;
+			}
+
+			const float Remaining = Skills->GetCooldownRemaining(SkillId);
+			UE_LOG(LogTDDebug, Log, TEXT("  %d.  %-18s Lv %d   쿨 %.1f초"),
+				Slot, *SkillId.ToString(), Progression->GetSkillLevel(SkillId), Remaining);
+		}
+	}
+
 	static UTDQuickSlotComponent* GetLocalQuickSlots(UWorld* World)
 	{
 		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
@@ -731,13 +997,11 @@ namespace TDDebugCommands
 			// 아이템이면 인벤토리에 몇 개 있는지 함께 찍는다. 0 이면 회색으로 표시될 자리다.
 			const int32 Count = QuickSlots->GetSlotItemCount(i);
 
-			UE_LOG(LogTDDebug, Log, TEXT("  %d.  %-8s %-16s %s"),
+			UE_LOG(LogTDDebug, Log, TEXT("  %d.  %-16s 보유 %d개%s"),
 				i,
-				Slot.Type == ETDQuickSlotType::Item ? TEXT("[아이템]") : TEXT("[스킬]"),
 				*Slot.Id.ToString(),
-				Slot.Type == ETDQuickSlotType::Item
-					? *FString::Printf(TEXT("보유 %d개%s"), Count, Count == 0 ? TEXT(" ← 사용 불가") : TEXT(""))
-					: TEXT(""));
+				Count,
+				Count == 0 ? TEXT(" ← 사용 불가") : TEXT(""));
 		}
 	}
 
@@ -1218,7 +1482,7 @@ namespace TDDebugCommands
 		if (!Args.IsValidIndex(1))
 		{
 			UE_LOG(LogTDDebug, Warning,
-				TEXT("사용법: TD.QuickSet <슬롯0~%d> <아이템ID> [skill]   예) TD.QuickSet 0 Elixir"),
+				TEXT("사용법: TD.QuickSet <슬롯0~%d> <아이템ID>   예) TD.QuickSet 0 Elixir"),
 				UTDQuickSlotComponent::SlotCount - 1);
 			return;
 		}
@@ -1233,14 +1497,8 @@ namespace TDDebugCommands
 		const int32 SlotIndex = FCString::Atoi(*Args[0]);
 		const FName Id(*Args[1]);
 
-		// 세 번째 인자에 아무거나 넣으면 스킬로 등록한다. 스킬 시스템이 없어도
-		// 슬롯이 타입을 구분해 저장하는지는 확인할 수 있다.
-		const ETDQuickSlotType Type = Args.IsValidIndex(2)
-			? ETDQuickSlotType::Skill
-			: ETDQuickSlotType::Item;
-
 		// Server RPC 라 클라이언트에서 쳐도 서버까지 간다.
-		QuickSlots->ServerSetSlot(SlotIndex, Type, Id);
+		QuickSlots->ServerSetSlot(SlotIndex, ETDQuickSlotType::Item, Id);
 
 		UE_LOG(LogTDDebug, Log, TEXT("퀵슬롯 %d 에 '%s' 등록을 요청했다. (결과는 TD.DumpQuick)"),
 			SlotIndex, *Id.ToString());
@@ -1765,6 +2023,46 @@ static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
 	TEXT("TD.AddExp"),
 	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpSkill(
+	TEXT("TD.DumpSkill"),
+	TEXT("내 직업의 스킬 목록과 찍은 레벨을 찍는다. 사용법: TD.DumpSkill"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpSkills));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSkillUp(
+	TEXT("TD.SkillUp"),
+	TEXT("스킬을 한 단계 올린다. 사용법: TD.SkillUp <스킬ID>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillUp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDShop(
+	TEXT("TD.Shop"),
+	TEXT("상점이 파는 목록과 되팔기 값을 찍는다. 사용법: TD.Shop <상점ID>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpShop));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDShopBuy(
+	TEXT("TD.ShopBuy"),
+	TEXT("상점에서 산다(사거리 검증 있음). 사용법: TD.ShopBuy <상점ID> <아이템ID> [개수=1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShopBuy));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDShopSell(
+	TEXT("TD.ShopSell"),
+	TEXT("상점에 판다. 사용법: TD.ShopSell <상점ID> <인벤슬롯> [개수=1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShopSell));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDLearnSkills(
+	TEXT("TD.LearnSkills"),
+	TEXT("내 직업의 스킬을 전부 지정 레벨로 맞춘다(레벨 조건·포인트 무시). 사용법: TD.LearnSkills [레벨=1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::LearnSkills));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDUseSkill(
+	TEXT("TD.UseSkill"),
+	TEXT("Q·W·E 자리의 스킬을 쓴다. 사용법: TD.UseSkill <자리1~3>"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::UseSkill));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpCooldown(
+	TEXT("TD.DumpCooldown"),
+	TEXT("시전 상태와 스킬 쿨타임을 찍는다. 사용법: TD.DumpCooldown"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpCooldowns));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpParty(
 	TEXT("TD.DumpParty"),

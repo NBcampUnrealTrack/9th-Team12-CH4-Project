@@ -18,16 +18,16 @@ class TD_PROJECT_API UTDUISettings : public UDeveloperSettings
 public:
 	/** 아이템/향후 스킬의 공용 카드. 기존 HUD 에셋을 변경하지 않고 이 클래스만 교체한다. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
-	TSoftClassPtr<UTDItemTooltipWidget> ItemTooltipClass;
+		TSoftClassPtr<UTDItemTooltipWidget> ItemTooltipClass;
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
-	TSoftObjectPtr<UDataTable> TooltipItemTable;
+		TSoftObjectPtr<UDataTable> TooltipItemTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
-	TSoftObjectPtr<UDataTable> TooltipItemStatTable;
+		TSoftObjectPtr<UDataTable> TooltipItemStatTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
-	TSoftObjectPtr<UDataTable> TooltipStatDefinitionTable;
+		TSoftObjectPtr<UDataTable> TooltipStatDefinitionTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
-	TSoftObjectPtr<UDataTable> TooltipUseEffectTable;
+		TSoftObjectPtr<UDataTable> TooltipUseEffectTable;
 
 	virtual FName GetCategoryName() const override
 	{
@@ -36,15 +36,21 @@ public:
 
 	/** 모든 TD Text 위젯이 기본으로 사용할 Typography Theme. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Typography")
-	TSoftObjectPtr<UTDTypographyThemeDA> DefaultTypographyTheme;
+		TSoftObjectPtr<UTDTypographyThemeDA> DefaultTypographyTheme;
 
 	/** WindowLayer에 생성할 위젯 클래스. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
-	TSoftClassPtr<UTDWindowBaseWidget> InventoryWindowClass;
+		TSoftClassPtr<UTDWindowBaseWidget> InventoryWindowClass;
 
 	/** Nav의 캐릭터 버튼으로 열 캐릭터 정보 창. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
-	TSoftClassPtr<UTDWindowBaseWidget> CharacterWindowClass;
+		TSoftClassPtr<UTDWindowBaseWidget> CharacterWindowClass;
+
+	/** Nav 스킬 버튼으로 열 직업별 스킬 목록. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+		TSoftClassPtr<UTDWindowBaseWidget> SkillWindowClass;
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+		TSoftClassPtr<UTDWindowBaseWidget> PartyWindowClass;
 
 	/**
 	 * 설정 창(그래픽·사운드·화면·단축키).
@@ -53,5 +59,5 @@ public:
 	 * 고쳤을 때 화면이 갈라진다.
 	 */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
-	TSoftClassPtr<UTDWindowBaseWidget> SystemWindowClass;
+		TSoftClassPtr<UTDWindowBaseWidget> SystemWindowClass;
 };

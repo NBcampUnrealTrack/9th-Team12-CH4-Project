@@ -66,6 +66,17 @@ public:
 	/** 특정 공격을 지정해 요청한다. 보스 패턴처럼 "무엇을 쓸지"를 밖에서 정할 때. 서버 전용. */
 	void RequestAttack(int32 AttackIndex);
 
+	/**
+	 * 피격 방송. 이 컴포넌트 밖에서 판정한 타격(스킬)도 같은 델리게이트로 흘려보낸다.
+	 *
+	 * 스킬이 자기 OnHit 을 따로 갖지 않게 하려는 것이다. 델리게이트가 둘이면
+	 * 데미지 텍스트와 히트 VFX 가 양쪽을 다 구독해야 하고, 한쪽을 빠뜨리면
+	 * "평타는 숫자가 뜨는데 스킬은 안 뜨는" 상태가 된다.
+	 *
+	 * 서버에서만 의미가 있다. 클라이언트 호출은 조용히 무시된다.
+	 */
+	void NotifyHit(AActor* Target, float Damage, bool bCritical, FVector HitLocation);
+
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnHit OnHit;
 

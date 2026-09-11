@@ -2,6 +2,7 @@
 
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "Items/TDInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/TDPlayerState.h"
 #include "Settings/TDPartySettings.h"
@@ -140,6 +141,55 @@ int32 UTDPartyComponent::AwardKillExp(int32 BaseAmount)
 		if (UTDProgressionComponent* Progression = Member->GetProgressionComponent())
 		{
 			Progression->AddExp(FinalAmount);
+			++AwardedCount;
+		}
+	}
+
+	return AwardedCount;
+}
+
+int32 UTDPartyComponent::AwardKillGold(int32 BaseAmount)
+{
+	const ATDPlayerState* Self = GetOwnerPlayerState();
+	if (Self == nullptr || !Self->HasAuthority() || BaseAmount <= 0)
+	{
+		return 0;
+	}
+
+	const FGameplayTag KillZone = Self->GetCurrentZoneId();
+
+	// 받을 사람을 먼저 센다. 나눗셈을 하려면 인원이 확정돼야 하는데,
+	// 존이 다른 파티원은 제외되므로 GetPartyMembers().Num() 을 그대로 쓸 수 없다.
+	TArray<ATDPlayerState*> Receivers;
+	for (ATDPlayerState* Member : GetPartyMembers())
+	{
+		if (Member != nullptr && Member->GetCurrentZoneId() == KillZone)
+		{
+			Receivers.Add(Member);
+		}
+	}
+
+	if (Receivers.Num() == 0)
+	{
+		return 0;
+	}
+
+	// 경험치와 달리 나눈다. 인원 보너스도 없다 — 그러면 파티를 맺는 것만으로 돈이 불어난다.
+	const int32 Share = BaseAmount / Receivers.Num();
+	if (Share <= 0)
+	{
+		// 1 골드를 3명이 나누면 0 이다. 아무도 못 받는 편이 낫다 —
+		// 누구 하나에게 몰아주면 그 규칙을 또 설명해야 한다.
+		return 0;
+	}
+
+	int32 AwardedCount = 0;
+
+	for (ATDPlayerState* Member : Receivers)
+	{
+		if (UTDInventoryComponent* Inventory = Member->GetInventoryComponent())
+		{
+			Inventory->AddGold(Share);
 			++AwardedCount;
 		}
 	}

@@ -12,13 +12,16 @@
 #include "Items/TDQuickSlotComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Interaction/TDInteractionComponent.h"
+#include "Skill/TDSkillComponent.h"
 
 ATDPlayerCharacter::ATDPlayerCharacter()
 {
 	//상호작용
 	InteractionComponent =
 	CreateDefaultSubobject<UTDInteractionComponent>(TEXT("InteractionComponent"));
-	
+
+	SkillComponent = CreateDefaultSubobject<UTDSkillComponent>(TEXT("SkillComponent"));
+
 	// 이동 방향으로 캐릭터가 돌아야 PaperZD 가 4방향 스프라이트 중 맞는 것을 고른다.
 	// 컨트롤러 회전을 따라가면 카메라를 돌릴 때 캐릭터가 같이 돌아 방향이 어긋난다.
 	bUseControllerRotationYaw = false;
@@ -129,6 +132,11 @@ void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	if (MoveAction != nullptr)
 	{
 		EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ATDPlayerCharacter::Move);
+
+		// Started 는 "안 눌림 → 눌림" 으로 바뀌는 순간에만 온다. 시전을 끊는 것은 이쪽이다 —
+		// Triggered 로 끊으면 이동 중에 스킬을 누르는 순간 이미 눌려 있던 키가
+		// 다음 프레임에 바로 취소시켜 버린다.
+		EnhancedInput->BindAction(MoveAction, ETriggerEvent::Started, this, &ATDPlayerCharacter::MoveStarted);
 	}
 
 	if (JumpAction != nullptr)
@@ -191,10 +199,64 @@ void ATDPlayerCharacter::Move(const FInputActionValue& Value)
 	}
 #endif
 
+	// 시전 중이면 그 스킬이 허락한 만큼만 움직인다.
+	//
+	// 서버에도 같은 감시가 있지만(UTDSkillComponent::TickComponent) 그쪽은 안전망이다.
+	// 여기서 먼저 막아야 클라이언트 화면이 먼저 반응하고, 서버가 뒤늦게 끊어
+	// "움직였더니 스킬이 취소됐다" 가 한 박자 늦게 보이는 일이 없다.
+	const ETDSkillCastMovement CastMovement =
+		SkillComponent ? SkillComponent->GetCastMovement() : ETDSkillCastMovement::Free;
+
+	if (CastMovement == ETDSkillCastMovement::TurnOnly)
+	{
+		// 제자리에서 방향만 바꾼다. bOrientRotationToMovement 는 속도를 보고 도는데
+		// 제자리에서는 속도가 없으므로 직접 돌려야 한다.
+		const FVector Direction =
+			FVector::ForwardVector * Axis.Y + FVector::RightVector * Axis.X;
+		const FRotator Facing = Direction.Rotation();
+
+		SetActorRotation(Facing);
+
+		// 히트박스 방향도 함께 돌린다. 그쪽은 마지막 이동 방향을 쓰는데(UTDCombatComponent)
+		// 그 값은 속도에서 나오므로 제자리 회전으로는 갱신되지 않는다.
+		// 이 줄이 없으면 디버그 상자가 처음 방향에 그대로 서 있다.
+		if (UTDCombatComponent* Combat = GetCombatComponent())
+		{
+			Combat->SetFacingDirection(Direction);
+		}
+
+		// 서버에도 알린다. 판정은 서버가 자기 값으로 하므로 여기서만 돌리면
+		// 화면에서는 돌았는데 광선은 처음 방향으로 계속 나간다.
+		SkillComponent->ServerSetCastFacing(Facing);
+		return;
+	}
+
+	if (CastMovement == ETDSkillCastMovement::Locked)
+	{
+		// 제자리에 선다. 취소는 여기가 아니라 MoveStarted 가 맡는다 —
+		// 이동 중에 스킬을 누른 경우, 아직 쥐고 있는 키로 끊기면 안 되기 때문이다.
+		return;
+	}
+
 	// 월드 축 기준이다. 탑다운에서는 카메라가 어디를 보든 "위" 키가 같은 방향이어야 한다.
 	// 이동 자체는 CharacterMovementComponent 가 예측·복제까지 처리하므로 RPC 를 만들지 않는다(D42).
 	AddMovementInput(FVector::ForwardVector, Axis.Y);
 	AddMovementInput(FVector::RightVector, Axis.X);
+}
+
+void ATDPlayerCharacter::MoveStarted()
+{
+	// 이동 키를 **새로** 눌렀을 때만 온다. 이동 중에 스킬을 쓴 경우 그 키는 이미 눌려 있으므로
+	// 여기로 오지 않는다 — 그래서 "움직이던 중에 시전 → 키를 뗐다 다시 눌러야 취소" 가 된다.
+	if (SkillComponent == nullptr
+		|| SkillComponent->GetCastMovement() != ETDSkillCastMovement::Locked)
+	{
+		return;
+	}
+
+	// TurnOnly 는 여기 오지 않는다. 겨냥을 계속 바꾸는 것이 그 스킬의 목적이라
+	// 새로 누른 입력도 회전으로만 쓰인다.
+	SkillComponent->ServerCancelCast();
 }
 
 void ATDPlayerCharacter::StartJump()
@@ -252,9 +314,17 @@ void ATDPlayerCharacter::UseQuickSlot(int32 SlotIndex)
 
 void ATDPlayerCharacter::UseSkill(int32 SkillIndex)
 {
-	// S10 에서 어빌리티 발동으로 바꾼다. 그때도 클라이언트는 "몇 번을 눌렀다"만 보내고
-	// 쿨타임·마나·사거리는 서버가 판정한다 — 평타(Attack)와 같은 구조다.
-	UE_LOG(LogTemp, Log, TEXT("스킬 %d 입력 — 스킬 시스템이 아직 없다."), SkillIndex + 1);
+	if (SkillComponent == nullptr)
+	{
+		return;
+	}
+
+	// 배열 인덱스는 0부터지만 DT_Skill 의 SlotIndex 는 1부터다. 시트에서 Q·W·E 를
+	// 1·2·3 으로 읽는 편이 자연스러워 그렇게 두었고, 변환은 여기 한 곳에서만 한다.
+	//
+	// 클라이언트는 "몇 번을 눌렀다"만 보낸다. 쿨타임·마나·사거리는 전부 서버가 판정한다 —
+	// 평타(Attack)와 같은 구조다.
+	SkillComponent->ServerUseSkillSlot(SkillIndex + 1);
 }
 
 void ATDPlayerCharacter::InitAbilityActorInfo()
@@ -289,6 +359,12 @@ void ATDPlayerCharacter::HandleDeath()
 	if (!HasAuthority())
 	{
 		return;
+	}
+
+	// 죽는 순간 시전을 접는다. 놔두면 시체가 정신집중을 마저 채워 피해를 넣는다.
+	if (SkillComponent != nullptr)
+	{
+		SkillComponent->CancelCast();
 	}
 
 	const ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;

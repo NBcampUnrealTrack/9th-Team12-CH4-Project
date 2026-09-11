@@ -13,6 +13,7 @@
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
+#include "Shop/TDShopStatics.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
@@ -316,6 +317,35 @@ void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
 
 	UE_LOG(LogTemp, Log, TEXT("[치트] 빠른 시작: %d번 캐릭터 선택 %s"),
 		SlotIndex, bSelected ? TEXT("성공") : TEXT("실패"));
+
+	// 선택 직후에 스킬을 전부 1레벨로 찍어 둔다. 액티브는 찍지 않으면 나가지 않아서
+	// 빠른 시작을 쓴 뒤에도 매번 TD.SkillUp 을 세 번 쳐야 했다.
+	// 직업이 정해진 뒤여야 하므로 SelectCharacter 다음이다.
+	if (bSelected)
+	{
+		ServerDebugLearnSkills_Implementation(1);
+	}
+#endif
+}
+
+void ATDPlayerController::ServerDebugLearnSkills_Implementation(int32 SkillLevel)
+{
+#if !UE_BUILD_SHIPPING
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+	UTDProgressionComponent* Progression =
+		TDPlayerState ? TDPlayerState->GetProgressionComponent() : nullptr;
+
+	if (Progression == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[치트] 스킬 습득: ProgressionComponent 를 찾지 못했다. 캐릭터를 먼저 선택할 것."));
+		return;
+	}
+
+	const int32 ChangedCount = Progression->DebugLearnAllSkills(SkillLevel);
+
+	UE_LOG(LogTemp, Log, TEXT("[치트] 직업 '%s' 의 스킬 %d개를 레벨 %d 로 맞췄다."),
+		*Progression->GetClassId().ToString(), ChangedCount, SkillLevel);
 #endif
 }
 
@@ -851,6 +881,55 @@ void ATDPlayerController::ClientMarketResult_Implementation(ETDMarketResult Resu
 
 	UE_LOG(LogTemp, Log, TEXT("거래소 결과: %s (매물 %d)"),
 		*UEnum::GetDisplayValueAsText(Result).ToString(), ListingId);
+}
+
+// ── NPC 상점 ──────────────────────────────────────────────
+
+void ATDPlayerController::ServerBuyFromShop_Implementation(FName ShopId, FName ItemId, int32 Count)
+{
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	int32 TotalPrice = 0;
+	const ETDShopResult Result = TDPlayerState != nullptr
+		? UTDShopStatics::BuyItem(TDPlayerState, ShopId, ItemId, Count, TotalPrice)
+		: ETDShopResult::NoCharacterSelected;
+
+	// 무엇에 대한 결과인지 함께 돌려준다. 요청을 연달아 보내면 순서가 섞일 수 있어
+	// UI 가 "방금 누른 그것" 인지 판단할 근거가 필요하다.
+	ClientShopResult(Result, ItemId, Count, TotalPrice);
+}
+
+void ATDPlayerController::ServerSellToShop_Implementation(FName ShopId, int32 InventorySlot, int32 Count)
+{
+	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
+
+	// 어느 아이템이었는지 먼저 알아둔다. 팔고 나면 그 칸이 비어 되짚을 수 없다.
+	FName SoldItemId;
+	if (const UTDInventoryComponent* Inventory =
+		TDPlayerState ? TDPlayerState->GetInventoryComponent() : nullptr)
+	{
+		if (const FTDItemInstance* Found = Inventory->GetItems().FindByPredicate(
+			[InventorySlot](const FTDItemInstance& Item) { return Item.SlotIndex == InventorySlot; }))
+		{
+			SoldItemId = Found->ItemId;
+		}
+	}
+
+	int32 TotalPrice = 0;
+	const ETDShopResult Result = TDPlayerState != nullptr
+		? UTDShopStatics::SellItem(TDPlayerState, ShopId, InventorySlot, Count, TotalPrice)
+		: ETDShopResult::NoCharacterSelected;
+
+	ClientShopResult(Result, SoldItemId, Count, TotalPrice);
+}
+
+void ATDPlayerController::ClientShopResult_Implementation(
+	ETDShopResult Result, FName ItemId, int32 Count, int32 TotalPrice)
+{
+	OnShopResult.Broadcast(Result, ItemId, Count, TotalPrice);
+
+	UE_LOG(LogTemp, Log, TEXT("상점 결과: %s ('%s' %d개, %d골드)"),
+		*UEnum::GetDisplayValueAsText(Result).ToString(), *ItemId.ToString(), Count, TotalPrice);
 }
 
 void ATDPlayerController::ClientMarketSearchResult_Implementation(

@@ -25,6 +25,10 @@ public class TD_Project : ModuleRules
 			"Paper2D",
 			"PaperZD",
 
+			// FTDSkillRow.VFX 가 TSoftObjectPtr<UNiagaraSystem> 을 갖는다.
+			// 헤더는 전방 선언뿐이지만 리플렉션 생성 코드가 UClass 심볼을 요구한다.
+			"Niagara",
+
 			// 옵션의 볼륨 조절. Control Bus 에 값을 밀어넣는 데만 쓴다.
 			"AudioModulation",
 

@@ -199,42 +199,12 @@ TArray<AActor*> UTDCombatComponent::GatherTargets(const FTDAttackSpec& Spec) con
 	// 전방 박스. "마지막 이동 방향" 기준 — 스프라이트 방향(SetDirectionality ← Velocity)과 같은 출처.
 	const FQuat BoxRotation = FRotationMatrix::MakeFromX(FacingDirection).ToQuat();
 	const FVector Center = Owner->GetActorLocation() + FacingDirection * Spec.HitBoxForwardOffset;
-	const FCollisionShape Box = FCollisionShape::MakeBox(Spec.HitBoxExtent);
 
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(Owner);
-
-	TArray<FOverlapResult> Overlaps;
-	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, BoxRotation,
-		FCollisionObjectQueryParams(ECC_Pawn), Box, Params);
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebugHitBox)
+	for (ATDCharacterBase* Enemy : UTDCombatStatics::GatherEnemiesInBox(
+		Owner, Center, BoxRotation, Spec.HitBoxExtent, bDrawDebugHitBox))
 	{
-		DrawDebugBox(GetWorld(), Center, Spec.HitBoxExtent, BoxRotation, FColor::Red, false, 0.5f);
+		Targets.Add(Enemy);
 	}
-#endif
-
-	// 한 번의 공격에 같은 대상이 두 번 잡히지 않도록 걸러 담는다.
-	TSet<AActor*> Seen;
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		ATDCharacterBase* Candidate = Cast<ATDCharacterBase>(Overlap.GetActor());
-		if (Candidate == nullptr || Candidate->IsDead() || Seen.Contains(Candidate))
-		{
-			continue;
-		}
-
-		// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
-		if (Candidate->GetGenericTeamId() == Owner->GetGenericTeamId())
-		{
-			continue;
-		}
-
-		Seen.Add(Candidate);
-		Targets.Add(Candidate);
-	}
-
 	return Targets;
 }
 

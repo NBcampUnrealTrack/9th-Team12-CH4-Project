@@ -13,9 +13,13 @@
 #include "Stats/TDStatComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "Character/TDBossCharacter.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
-	const FGameplayTagContainer& ContextTags)
+	const FGameplayTagContainer& ContextTags, float DamageScale)
 {
 	const FTDDamageResult NoDamage;
 
@@ -35,6 +39,12 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 
 	// 시체는 때릴 수 없고, 시체가 때릴 수도 없다.
 	if (AttackerChar->IsDead() || TargetChar->IsDead())
+	{
+		return NoDamage;
+	}
+	
+	// 입장·페이즈 전환·잠수 같은 무적 구간. 치트(ApplyRawDamage)는 통한다.
+	if (TargetChar->IsInvulnerable())
 	{
 		return NoDamage;
 	}
@@ -81,6 +91,16 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	const float Physical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Physical, ContextTags);
 	const float Magical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Magical, ContextTags);
 	Input.AttackDamage = FMath::Max(Physical, Magical);
+	
+	// 패턴·스킬 배율 × 대상의 상태 배율(보스 빈틈 1.5). 방어 계산 전에 곱한다.
+	Input.AttackDamage *= FMath::Max(0.f, DamageScale) * TargetChar->GetIncomingDamageMultiplier();
+
+	// 보스 추가 피해 스탯. 대상이 보스일 때만 적용한다.
+	if (Cast<ATDBossCharacter>(TargetChar) != nullptr)
+	{
+		const float BossDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_BossDamage, ContextTags);
+		Input.AttackDamage *= 1.f + FMath::Max(0.f, BossDamage);
+	}
 
 	Input.CritChance = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritChance, ContextTags);
 	Input.CritDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritDamage, ContextTags);
@@ -233,4 +253,76 @@ bool UTDCombatStatics::IsInSafeZone(const AActor* Actor)
 
 	const FTDZoneEnvironmentRow* Row = GameMode->FindZoneRow(PlayerState->GetCurrentZoneId());
 	return Row != nullptr && Row->bIsSafeZone;
+}
+
+namespace
+{
+	TArray<ATDCharacterBase*> FilterEnemies(const ATDCharacterBase* Attacker, const TArray<FOverlapResult>& Overlaps)
+	{
+		TArray<ATDCharacterBase*> Result;
+		TSet<AActor*> Seen;
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			ATDCharacterBase* Candidate = Cast<ATDCharacterBase>(Overlap.GetActor());
+			if (Candidate == nullptr || Candidate == Attacker || Candidate->IsDead() || Seen.Contains(Candidate))
+			{
+				continue;
+			}
+			if (Attacker != nullptr && Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
+			{
+				continue;   // 같은 팀은 때리지 않는다(§10-④ 임시 규칙)
+			}
+			Seen.Add(Candidate);
+			Result.Add(Candidate);
+		}
+		return Result;
+	}
+}
+
+TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInBox(const ATDCharacterBase* Attacker,
+	const FVector& Center, const FQuat& Rotation, const FVector& Extent, bool bDrawDebug)
+{
+	if (Attacker == nullptr || Attacker->GetWorld() == nullptr)
+	{
+		return {};
+	}
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(Attacker);
+
+	TArray<FOverlapResult> Overlaps;
+	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, Rotation,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(Extent), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		DrawDebugBox(Attacker->GetWorld(), Center, Extent, Rotation, FColor::Red, false, 0.5f);
+	}
+#endif
+	return FilterEnemies(Attacker, Overlaps);
+}
+
+TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInSphere(const ATDCharacterBase* Attacker,
+	const FVector& Center, float Radius, bool bDrawDebug)
+{
+	if (Attacker == nullptr || Attacker->GetWorld() == nullptr)
+	{
+		return {};
+	}
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(Attacker);
+
+	TArray<FOverlapResult> Overlaps;
+	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		DrawDebugSphere(Attacker->GetWorld(), Center, Radius, 24, FColor::Red, false, 0.5f);
+	}
+#endif
+	return FilterEnemies(Attacker, Overlaps);
 }

@@ -101,6 +101,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsStaggered() const;
 	
+	/** 맞으면 경직되는가. 보스는 false(슈퍼아머). */
+	virtual bool CanBeStaggered() const { return HitStaggerDuration > 0.f; }
+
+	/** 공격이 통하지 않는 상태인가(입장·페이즈 전환·잠수 등). ApplyDamage 가 검사한다. */
+	virtual bool IsInvulnerable() const { return false; }
+
+	/** 받는 피해 배율. 보스가 후딜(빈틈) 중 1.5 를 돌려준다. */
+	virtual float GetIncomingDamageMultiplier() const { return 1.f; }
+	
 	// ── 사망 ──────────────────────────────────────────────
 
 	/**

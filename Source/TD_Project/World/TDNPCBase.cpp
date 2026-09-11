@@ -453,53 +453,82 @@ FName ATDNPCBase::FindInProgressDialogueRow(
 		return NAME_None;
 	}
 
-	/*
-	 * GetQuestViews는 진행 중인 퀘스트를
-	 * 메인 우선, 이후 수락 순서로 반환한다.
-	 *
-	 * 여기서는 메인을 제외하고
-	 * 서브/일일 퀘스트의 진행 안내만 찾는다.
-	 */
+	const FName CurrentNpcId = GetNPCId();
+
 	const TArray<FTDQuestViewData> Views =
 		Quest->GetQuestViews();
 
-	for (const FTDQuestViewData& View : Views)
+	/*
+	 * 첫 번째 검사: 서브/일일 퀘스트의 반복 안내.
+	 * 두 번째 검사: 메인 퀘스트의 반복 안내.
+	 *
+	 * 메인 목표 대화, 완료 보고, 서브 특별 대화 등의
+	 * 기존 우선순위는 ResolveDialogueStartRow에서 유지한다.
+	 */
+	for (int32 PassIndex = 0; PassIndex < 2; ++PassIndex)
 	{
-		/*
-		 * 메인의 실제 대화 목표와 완료 보고는
-		 * ResolveDialogueStartRow에서 별도로 처리한다.
-		 *
-		 * 이곳에서 메인을 다시 선택하면
-		 * 사냥 대기 멘트가 서브 대화를 막게 된다.
-		 */
-		if (View.QuestTypeTag ==
-			TDTags::Quest_Type_Main.GetTag())
+		const bool bFindMain = PassIndex == 1;
+
+		for (const FTDQuestViewData& View : Views)
 		{
-			continue;
-		}
+			const bool bIsMain =
+				View.QuestTypeTag ==
+				TDTags::Quest_Type_Main.GetTag();
 
-		const FTDQuestRow* Definition =
-			Quest->GetQuestDefinition(View.QuestId);
+			if (bIsMain != bFindMain)
+			{
+				continue;
+			}
 
-		if (Definition == nullptr
-			|| Definition->InProgressDialogueRow.IsNone())
-		{
-			continue;
-		}
+			const FTDQuestRow* Definition =
+				Quest->GetQuestDefinition(View.QuestId);
 
-		const bool bMatchesAcceptTarget =
-			Definition->AcceptTargetType ==
-				ETDQuestTargetType::NPC
-			&& Definition->AcceptTargetId == GetNPCId();
+			if (Definition == nullptr
+				|| Definition->bWaitForFutureContent)
+			{
+				continue;
+			}
 
-		const bool bMatchesTurnInTarget =
-			Definition->TurnInTargetType ==
-				ETDQuestTargetType::NPC
-			&& Definition->TurnInTargetId == GetNPCId();
+			/*
+			 * 현재 NPC에게 연결된 반복 안내가 있으면 사용한다.
+			 *
+			 * 예:
+			 * N1/N2를 찾아가는 중에도
+			 * 김희진에게 반지 안내를 들을 수 있다.
+			 */
+			for (const FTDQuestProgressDialogueRule& Rule :
+				Definition->ProgressDialogueRules)
+			{
+				if (Rule.NPCId == CurrentNpcId
+					&& !Rule.StartDialogueRow.IsNone())
+				{
+					return Rule.StartDialogueRow;
+				}
+			}
 
-		if (bMatchesAcceptTarget || bMatchesTurnInTarget)
-		{
-			return Definition->InProgressDialogueRow;
+			/*
+			 * 추가 안내 배열에 해당 NPC가 없으면
+			 * 기존 수락/완료 대상과 InProgressDialogueRow를 사용한다.
+			 */
+			if (Definition->InProgressDialogueRow.IsNone())
+			{
+				continue;
+			}
+
+			const bool bMatchesAccept =
+				Definition->AcceptTargetType ==
+					ETDQuestTargetType::NPC
+				&& Definition->AcceptTargetId == CurrentNpcId;
+
+			const bool bMatchesTurnIn =
+				Definition->TurnInTargetType ==
+					ETDQuestTargetType::NPC
+				&& Definition->TurnInTargetId == CurrentNpcId;
+
+			if (bMatchesAccept || bMatchesTurnIn)
+			{
+				return Definition->InProgressDialogueRow;
+			}
 		}
 	}
 

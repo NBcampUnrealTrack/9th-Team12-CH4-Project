@@ -273,4 +273,12 @@ namespace TDTags
 
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
 		Quest_Sub_LunchMenu02_Completed);
+	
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+	Quest_Event_Talk_N1);
+
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(
+		Quest_Event_Talk_N2);
+	
+	
 }

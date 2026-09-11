@@ -82,6 +82,7 @@ void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
 	case ETDNavMenuType::Skill:
 	case ETDNavMenuType::Character:
 	case ETDNavMenuType::System:
+	case ETDNavMenuType::Quest:
 		ToggleWindow(MenuType);
 		break;
 
@@ -158,6 +159,11 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 		SettingName = TEXT("System Window Class");
 		break;
 
+	case ETDNavMenuType::Quest:
+		MenuName = TEXT("퀘스트");
+		SettingName = TEXT("Quest Window Class");
+		break;
+		
 	default:
 		break;
 	}
@@ -301,6 +307,12 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 		}
 		return nullptr;
 
+	case ETDNavMenuType::Quest:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>()){
+			return UISettings->QuestWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+		
 	default:
 		return nullptr;
 	}

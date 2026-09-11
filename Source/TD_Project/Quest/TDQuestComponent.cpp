@@ -1065,11 +1065,14 @@ ETDQuestActionResult UTDQuestComponent::ReportQuestEventForQuest(
 	return ETDQuestActionResult::Success;
 }
 
-int32 UTDQuestComponent::ReportMonsterKilled(
-	FName MonsterId)
+int32 UTDQuestComponent::ReportMonsterKilled(FName MonsterId)
 {
 	AActor* OwnerActor = GetOwner();
 
+	/*
+	 * 퀘스트 진행도는 서버에서만 변경한다.
+	 * 실제 처치 이벤트의 MonsterId는 반드시 있어야 한다.
+	 */
 	if (OwnerActor == nullptr
 		|| !OwnerActor->HasAuthority()
 		|| MonsterId.IsNone())
@@ -1077,10 +1080,17 @@ int32 UTDQuestComponent::ReportMonsterKilled(
 		return 0;
 	}
 
+	const ATDPlayerState* OwnerPlayerState =
+		Cast<ATDPlayerState>(OwnerActor);
+
+	const FGameplayTag PlayerZoneId =
+		OwnerPlayerState != nullptr
+			? OwnerPlayerState->GetCurrentZoneId()
+			: FGameplayTag();
+
 	int32 ChangedQuestCount = 0;
 
-	for (FTDQuestRuntimeData& Entry :
-		QuestEntries)
+	for (FTDQuestRuntimeData& Entry : QuestEntries)
 	{
 		if (!IsActiveState(Entry.StateTag))
 		{
@@ -1105,36 +1115,75 @@ int32 UTDQuestComponent::ReportMonsterKilled(
 				Definition->Objectives[Index];
 
 			if (Objective.ObjectiveType !=
-					ETDQuestObjectiveType::KillMonster
-				|| Objective.TargetId != MonsterId)
+				ETDQuestObjectiveType::KillMonster)
+			{
+				continue;
+			}
+
+			/*
+			 * 목표의 TargetId가 비어 있으면 아무 몬스터를 인정한다.
+			 *
+			 * TargetId가 지정되어 있으면
+			 * 실제 처치한 MonsterId와 같아야 한다.
+			 */
+			if (!Objective.TargetId.IsNone()
+				&& Objective.TargetId != MonsterId)
+			{
+				continue;
+			}
+
+			/*
+			 * TargetZone이 지정되어 있으면
+			 * 서버에 저장된 플레이어의 현재 존을 검사한다.
+			 *
+			 * MatchesTag를 사용하므로
+			 * Zone.Region1.Boss를 지정하면
+			 * Zone.Region1.Boss.Room01 같은 하위 방도 인정한다.
+			 */
+			if (Objective.TargetZone.IsValid()
+				&& (!PlayerZoneId.IsValid()
+					|| !PlayerZoneId.MatchesTag(
+						Objective.TargetZone)))
+			{
+				continue;
+			}
+
+			/*
+			 * 저장된 진행도 배열에 해당 목표가 있는지 확인한다.
+			 * 잘못된 인덱스로 배열에 접근하지 않도록 한다.
+			 */
+			if (!Entry.ObjectiveProgress.IsValidIndex(Index))
 			{
 				continue;
 			}
 
 			const int32 Required =
-				FMath::Max(
-					1,
-					Objective.RequiredCount);
+				FMath::Max(1, Objective.RequiredCount);
 
 			const int32 Previous =
 				Entry.ObjectiveProgress[Index];
 
-			Entry.ObjectiveProgress[Index] =
-				FMath::Min(
-					Previous + 1,
-					Required);
+			/*
+			 * 진행도는 0부터 목표 수량까지만 유지한다.
+			 * 더하기 중 정수 범위를 넘지 않도록 int64로 계산한다.
+			 */
+			const int32 Updated =
+				static_cast<int32>(
+					FMath::Clamp<int64>(
+						static_cast<int64>(Previous) + 1,
+						static_cast<int64>(0),
+						static_cast<int64>(Required)));
 
-			bChanged |=
-				Entry.ObjectiveProgress[Index]
-				!= Previous;
+			if (Updated != Previous)
+			{
+				Entry.ObjectiveProgress[Index] = Updated;
+				bChanged = true;
+			}
 		}
 
 		if (bChanged)
 		{
-			RefreshQuestState(
-				Entry,
-				*Definition);
-
+			RefreshQuestState(Entry, *Definition);
 			++ChangedQuestCount;
 		}
 	}

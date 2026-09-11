@@ -2,8 +2,9 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "Character/TDBossCharacter.h"
 #include "Character/TDCharacterBase.h"
-#include "Character/TDEnemyBase.h" 
+#include "Character/TDEnemyBase.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDZoneEnvironmentRow.h"
 #include "DrawDebugHelpers.h"
@@ -12,10 +13,10 @@
 #include "Game/TDGameMode.h"
 #include "GameplayEffect.h"
 #include "GameFramework/Pawn.h"
-#include "Player/TDPlayerState.h"
-#include "Stats/TDStatComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "Player/TDPlayerState.h"
+#include "Stats/TDStatComponent.h"
 
 FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	const FGameplayTagContainer& ContextTags, float DamageMultiplier)
@@ -49,22 +50,23 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		return NoDamage;
 	}
 
+	// 입장·페이즈 전환·잠수 같은 무적 구간. 치트(ApplyRawDamage)는 통한다.
+	if (TargetChar->IsInvulnerable())
+	{
+		return NoDamage;
+	}
+
 	// 플레이어가 대화창이나 컷씬 등으로 게임플레이가 잠겨있는 동안에는, 몬스터나 다른 캐릭터의 공격이 들어와도 데미지를 받지 않는다
-	if (APlayerController* TargetController =
-	Cast<APlayerController>(
-		TargetChar->GetController()))
+	if (APlayerController* TargetController = Cast<APlayerController>(TargetChar->GetController()))
 	{
 		const UTDInteractionFlowComponent* Flow =
-			TargetController->FindComponentByClass<
-				UTDInteractionFlowComponent>();
-
-		if (Flow != nullptr
-			&& Flow->IsGameplayLocked())
+			TargetController->FindComponentByClass<UTDInteractionFlowComponent>();
+		if (Flow != nullptr && Flow->IsGameplayLocked())
 		{
 			return NoDamage;
 		}
 	}
-	
+
 	// 안전지대에서는 전투가 일어나지 않는다(DT_ZoneEnvironment.bIsSafeZone).
 	//
 	// **맞는 쪽 기준**이다. 때리는 쪽을 보면 안전지대 밖에서 마을 안으로 원거리
@@ -97,7 +99,16 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	// 더하고 여기로 넘긴다.
 	const float Physical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Physical, ContextTags);
 	const float Magical = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_Damage_Magical, ContextTags);
-	Input.AttackDamage = FMath::Max(Physical, Magical) * DamageMultiplier;
+
+	// 스킬·패턴 배율 × 대상의 상태 배율(보스 빈틈 1.5). 방어 계산 전에 곱한다.
+	Input.AttackDamage = FMath::Max(Physical, Magical) * DamageMultiplier * TargetChar->GetIncomingDamageMultiplier();
+
+	// 보스 추가 피해 스탯. 대상이 보스일 때만 적용한다.
+	if (Cast<ATDBossCharacter>(TargetChar) != nullptr)
+	{
+		const float BossDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_BossDamage, ContextTags);
+		Input.AttackDamage *= 1.f + FMath::Max(0.f, BossDamage);
+	}
 
 	Input.CritChance = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritChance, ContextTags);
 	Input.CritDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_CritDamage, ContextTags);
@@ -125,7 +136,7 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		// 살아남았으면 "맞았다" — 경직·어그로·피격 연출은 대상 쪽 일이다.
 		TargetChar->ReceiveHit(AttackerChar, Result.FinalDamage, Result.bCritical);
 	}
-	
+
 	return Result;
 }
 
@@ -136,22 +147,18 @@ void UTDCombatStatics::ApplyRawDamage(AActor* Target, float Amount)
 	{
 		return;
 	}
+
 	// 플레이어가 대화/컷씬 등으로 게임플레이가 잠긴 동안엔 노 데미지
-	if (APlayerController* TargetController =
-	Cast<APlayerController>(
-		TargetChar->GetController()))
+	if (APlayerController* TargetController = Cast<APlayerController>(TargetChar->GetController()))
 	{
 		const UTDInteractionFlowComponent* Flow =
-			TargetController->FindComponentByClass<
-				UTDInteractionFlowComponent>();
-
-		if (Flow != nullptr
-			&& Flow->IsGameplayLocked())
+			TargetController->FindComponentByClass<UTDInteractionFlowComponent>();
+		if (Flow != nullptr && Flow->IsGameplayLocked())
 		{
 			return;
 		}
 	}
-	
+
 	UAbilitySystemComponent* TargetASC = TargetChar->GetAbilitySystemComponent();
 	if (TargetASC == nullptr)
 	{
@@ -170,8 +177,10 @@ void UTDCombatStatics::ApplyRawDamage(AActor* Target, float Amount)
 	Effect->Modifiers.Add(Mod);
 
 	TargetASC->ApplyGameplayEffectToSelf(Effect, 1.f, TargetASC->MakeEffectContext());
-	// → 이 호출이 2단계에서 만든 PostGameplayEffectExecute 를 발동시킨다.
+	// → 이 호출이 PostGameplayEffectExecute 를 발동시킨다.
 }
+
+// ── 회복·마나 ─────────────────────────────────────────────
 
 namespace
 {
@@ -266,6 +275,8 @@ float UTDCombatStatics::GetMana(const AActor* Actor)
 	return ASC ? ASC->GetNumericAttribute(UTDAttributeSet::GetManaAttribute()) : 0.f;
 }
 
+// ── 대상 수집 ─────────────────────────────────────────────
+
 namespace
 {
 	/**
@@ -274,32 +285,93 @@ namespace
 	 * 모양(상자·구)이 달라도 이 규칙은 같아야 하므로 한 곳에 둔다.
 	 * 같은 액터가 콜리전 여러 개로 두 번 잡히는 것도 여기서 거른다.
 	 */
-	TArray<AActor*> FilterHostileTargets(const ATDCharacterBase* Attacker,
+	TArray<ATDCharacterBase*> FilterEnemies(const ATDCharacterBase* Attacker,
 		const TArray<FOverlapResult>& Overlaps)
 	{
-		TArray<AActor*> Targets;
+		TArray<ATDCharacterBase*> Result;
 		TSet<AActor*> Seen;
 
 		for (const FOverlapResult& Overlap : Overlaps)
 		{
 			ATDCharacterBase* Candidate = Cast<ATDCharacterBase>(Overlap.GetActor());
-			if (Candidate == nullptr || Candidate->IsDead() || Seen.Contains(Candidate))
+			if (Candidate == nullptr || Candidate == Attacker || Candidate->IsDead() || Seen.Contains(Candidate))
 			{
 				continue;
 			}
 
 			// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
-			if (Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
+			if (Attacker != nullptr && Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
 			{
 				continue;
 			}
 
 			Seen.Add(Candidate);
-			Targets.Add(Candidate);
+			Result.Add(Candidate);
 		}
-
-		return Targets;
+		return Result;
 	}
+
+	/** 저수준판 결과를 스킬이 쓰는 AActor* 배열로. */
+	TArray<AActor*> ToActors(const TArray<ATDCharacterBase*>& Characters)
+	{
+		TArray<AActor*> Actors;
+		Actors.Reserve(Characters.Num());
+		for (ATDCharacterBase* Character : Characters)
+		{
+			Actors.Add(Character);
+		}
+		return Actors;
+	}
+}
+
+TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInBox(const ATDCharacterBase* Attacker,
+	const FVector& Center, const FQuat& Rotation, const FVector& Extent, bool bDrawDebug)
+{
+	if (Attacker == nullptr || Attacker->GetWorld() == nullptr)
+	{
+		return {};
+	}
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(Attacker);
+
+	TArray<FOverlapResult> Overlaps;
+	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, Rotation,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(Extent), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		// 질의와 같은 회전으로 그린다. 다른 값을 쓰면 눈에 보이는 상자와 실제로
+		// 맞는 범위가 달라져, 사거리를 맞추려다 엉뚱한 곳을 고치게 된다.
+		DrawDebugBox(Attacker->GetWorld(), Center, Extent, Rotation, FColor::Red, false, 0.5f);
+	}
+#endif
+	return FilterEnemies(Attacker, Overlaps);
+}
+
+TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInSphere(const ATDCharacterBase* Attacker,
+	const FVector& Center, float Radius, bool bDrawDebug)
+{
+	if (Attacker == nullptr || Attacker->GetWorld() == nullptr || Radius <= 0.f)
+	{
+		return {};
+	}
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(Attacker);
+
+	TArray<FOverlapResult> Overlaps;
+	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebug)
+	{
+		DrawDebugSphere(Attacker->GetWorld(), Center, Radius, 24, FColor::Red, false, 0.5f);
+	}
+#endif
+	return FilterEnemies(Attacker, Overlaps);
 }
 
 TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVector Direction,
@@ -307,12 +379,6 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVe
 {
 	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
 	if (AttackerChar == nullptr)
-	{
-		return TArray<AActor*>();
-	}
-
-	UWorld* World = AttackerChar->GetWorld();
-	if (World == nullptr)
 	{
 		return TArray<AActor*>();
 	}
@@ -332,58 +398,21 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVe
 	const FQuat BoxRotation = FRotationMatrix::MakeFromX(Facing).ToQuat();
 	const FVector Center = AttackerChar->GetActorLocation() + Facing * ForwardOffset;
 
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(AttackerChar);
-
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(Overlaps, Center, BoxRotation,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(HalfExtent), Params);
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebug)
-	{
-		// 질의와 같은 회전으로 그린다. 다른 값을 쓰면 눈에 보이는 상자와 실제로
-		// 맞는 범위가 달라져, 사거리를 맞추려다 엉뚱한 곳을 고치게 된다.
-		DrawDebugBox(World, Center, HalfExtent, BoxRotation, FColor::Red, false, 0.5f);
-	}
-#endif
-
-	return FilterHostileTargets(AttackerChar, Overlaps);
+	return ToActors(GatherEnemiesInBox(AttackerChar, Center, BoxRotation, HalfExtent, bDrawDebug));
 }
 
 TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(const AActor* Attacker,
 	float Radius, bool bDrawDebug)
 {
 	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
-	if (AttackerChar == nullptr || Radius <= 0.f)
+	if (AttackerChar == nullptr)
 	{
 		return TArray<AActor*>();
 	}
-
-	UWorld* World = AttackerChar->GetWorld();
-	if (World == nullptr)
-	{
-		return TArray<AActor*>();
-	}
-
-	const FVector Center = AttackerChar->GetActorLocation();
-
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(AttackerChar);
-
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebug)
-	{
-		DrawDebugSphere(World, Center, Radius, 16, FColor::Red, false, 0.5f);
-	}
-#endif
-
-	return FilterHostileTargets(AttackerChar, Overlaps);
+	return ToActors(GatherEnemiesInSphere(AttackerChar, AttackerChar->GetActorLocation(), Radius, bDrawDebug));
 }
+
+// ── 존 ───────────────────────────────────────────────────
 
 bool UTDCombatStatics::IsInSafeZone(const AActor* Actor)
 {

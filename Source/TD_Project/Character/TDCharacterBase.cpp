@@ -154,7 +154,7 @@ void ATDCharacterBase::ReceiveHit(AActor* Attacker, float Damage, bool bCritical
 		return;
 	}
 
-	if (HitStaggerDuration > 0.f)
+	if (CanBeStaggered())
 	{
 		StaggerEndTime = GetWorld()->GetTimeSeconds() + HitStaggerDuration;
 

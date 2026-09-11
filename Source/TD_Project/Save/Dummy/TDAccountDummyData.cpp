@@ -1,94 +1,121 @@
 #include "Save/Dummy/TDAccountDummyData.h"
-#include "Misc/Optional.h"
+#include "Engine/DataTable.h"
+#include "Settings/TDCharacterClassSettings.h"
 
-#if !UE_BUILD_SHIPPING
 namespace
 {
-	// 공통 아이템/퀵슬롯 구성. 계정별 초기값은 아래 CreateAccounts에서 직접 수정한다.
-	FTDDummyCharacterRecord MakeCharacter(uint32 AccountNumber, uint32 CharacterNumber,
-	                                      const TCHAR* Name, const TCHAR* ClassId, int32 Level,
-	                                      int32 Exp, int32 Gold,
-	                                      float HealthRatio, int32 PotionCount, bool bEquipRing,
-	                                      const TCHAR* ZoneId, TOptional<FVector> Location)
-	{
-		FTDDummyCharacterRecord Character;
-		Character.CharacterId = FGuid(0x54444443, 0, AccountNumber, CharacterNumber);
-		Character.CharacterName = Name;
-		FTDPlayerSaveData& Data = Character.Data;
-		Data.ClassId = FName(ClassId);
-		Data.Level = Level;
-		Data.Exp = Exp;
-		Data.Gold = Gold;
-		Data.HealthRatio = HealthRatio;
-		Data.ManaRatio = 1.f;
-		Data.LastZoneId = FGameplayTag::RequestGameplayTag(FName(ZoneId));
-		Data.bHasSavedLocation = Location.IsSet();
-		Data.LastLocation = Location.Get(FVector::ZeroVector);
-
-		FTDItemInstance& Potion = Data.InventoryItems.AddDefaulted_GetRef();
-		Potion.ItemId = TEXT("HPotion_Low");
-		Potion.SlotIndex = 0;
-		Potion.Count = PotionCount;
-		if (bEquipRing){
-			FTDItemInstance& Ring = Data.EquippedItems.AddDefaulted_GetRef();
-			Ring.ItemId = TEXT("FireRing_Low");
-			Ring.SlotIndex = 0;
-		}
-		Data.QuickSlots.SetNum(6);
-		Data.QuickSlots[0].Type = ETDQuickSlotType::Item;
-		Data.QuickSlots[0].Id = Potion.ItemId;
-		return Character;
-	}
+    TArray<FString> RowOptions(UDataTable* Table)
+    {
+        TArray<FString> Result;
+        if (Table)
+            for (FName Name : Table->GetRowNames()) Result.Add(Name.ToString());
+        Result.Sort();
+        Result.Insert(TEXT("None"), 0);
+        return Result;
+    }
 }
-#endif
 
-TArray<FTDDummyAccountRecord> TDAccountDummyData::CreateAccounts()
+TArray<FString> UTDAccountDummyData::GetClassOptions()
 {
-	TArray<FTDDummyAccountRecord> Accounts;
-#if !UE_BUILD_SHIPPING
-	// 계정 1. 비밀번호는 공개된 개발용 값이다.
-	FTDDummyAccountRecord Test01;
-	Test01.AccountId = FGuid(0x54444441, 0, 0, 1);
-	Test01.LoginId = TEXT("t1");
-	Test01.Password = TEXT("t1");
-	// 계정 번호, 캐릭터 번호, 이름, 직업, 레벨, 경험치, 골드, 체력 비율, 포션 수, 반지 장착, 마지막 존, 마지막 좌표
-	// 좌표 {}는 미저장(존 시작점). FVector(100.f, 200.f, 96.f)를 넣으면 해당 좌표로 복원한다.
-	Test01.Characters = {
-		MakeCharacter(1, 1, TEXT("테스트1_1"), TEXT("Warrior"), 1, 0, 10000, 1.00f, 10, false,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(1, 2, TEXT("테스트1_2"), TEXT("Mage"), 2, 80, 11000, 0.95f, 11, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(1, 3, TEXT("테스트1_3"), TEXT("Archer"), 3, 310, 12000, 0.90f, 12, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(1, 4, TEXT("테스트1_4"), TEXT("Warrior"), 4, 750, 13000, 0.85f, 13, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(1, 5, TEXT("테스트1_5"), TEXT("Mage"), 5, 1440, 14000, 0.80f, 14, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(1, 6, TEXT("테스트1_6"), TEXT("Archer"), 6, 2410, 15000, 0.75f, 15, true,
-		              TEXT("Zone.Region1.Town"), {}),
-	};
-	Accounts.Add(MoveTemp(Test01));
-
-	// 계정 2. test01과 별개로 수정할 수 있다.
-	FTDDummyAccountRecord Test02;
-	Test02.AccountId = FGuid(0x54444441, 0, 0, 2);
-	Test02.LoginId = TEXT("t2");
-	Test02.Password = TEXT("t2");
-	Test02.Characters = {
-		MakeCharacter(2, 1, TEXT("테스트2_1"), TEXT("Warrior"), 1, 0, 20000, 1.00f, 10, false,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(2, 2, TEXT("테스트2_2"), TEXT("Mage"), 2, 80, 21000, 0.95f, 11, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(2, 3, TEXT("테스트2_3"), TEXT("Archer"), 3, 310, 22000, 0.90f, 12, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(2, 4, TEXT("테스트2_4"), TEXT("Warrior"), 4, 750, 23000, 0.85f, 13, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(2, 5, TEXT("테스트2_5"), TEXT("Mage"), 5, 1440, 24000, 0.80f, 14, true,
-		              TEXT("Zone.Region1.Town"), {}),
-		MakeCharacter(2, 6, TEXT("테스트2_6"), TEXT("Archer"), 6, 2410, 25000, 0.75f, 15, true,
-		              TEXT("Zone.Region1.Town"), {}),
-	};
-	Accounts.Add(MoveTemp(Test02));
-#endif
-	return Accounts;
+    return RowOptions(GetDefault<UTDCharacterClassSettings>()->ClassTable.LoadSynchronous());
 }
+
+TArray<FString> UTDAccountDummyData::GetItemOptions()
+{
+    return RowOptions(GetDefault<UTDAccountDummySettings>()->ItemTable.LoadSynchronous());
+}
+
+TArray<FString> UTDAccountDummyData::GetLocationPresetOptions() const
+{
+    TArray<FString> Result;
+    for (const auto& Preset : LocationPresets)
+        if (!Preset.Id.IsNone()) Result.AddUnique(Preset.Id.ToString());
+    Result.Sort();
+    Result.Insert(TEXT("None"), 0);
+    return Result;
+}
+
+TArray<FTDDummyAccountRecord> UTDAccountDummyData::BuildInitialAccounts() const
+{
+    TArray<FTDDummyAccountRecord> Result = Accounts;
+    for (auto& Account : Result)
+        for (auto& Character : Account.Characters)
+        {
+            if (Character.InitialLocationPreset.IsNone()) continue;
+            const auto* Preset = LocationPresets.FindByPredicate([&](const FTDDummyLocationPreset& Entry)
+            { return Entry.Id == Character.InitialLocationPreset; });
+            if (Preset && Preset->ZoneId.IsValid() && !Preset->Location.ContainsNaN())
+            {
+                Character.Data.LastZoneId = Preset->ZoneId;
+                Character.Data.LastLocation = Preset->Location;
+                Character.Data.bHasSavedLocation = true;
+            }
+            else UE_LOG(LogTemp, Warning, TEXT("더미 위치 프리셋 '%s'이 없거나 잘못되었습니다. 캐릭터 Data의 위치를 사용합니다."), *Character.InitialLocationPreset.ToString());
+        }
+    return Result;
+}
+
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+
+void UTDAccountDummyData::PostEditChangeProperty(FPropertyChangedEvent& Event)
+{
+    // 새 계정/캐릭터를 에디터에서 추가하면 빈 ID만 발급한다.
+    for (auto& Account : Accounts)
+    {
+        if (!Account.AccountId.IsValid()) Account.AccountId = FGuid::NewGuid();
+        for (auto& Character : Account.Characters)
+            if (!Character.CharacterId.IsValid()) Character.CharacterId = FGuid::NewGuid();
+    }
+    Super::PostEditChangeProperty(Event);
+}
+
+EDataValidationResult UTDAccountDummyData::IsDataValid(FDataValidationContext& Context) const
+{
+    const auto ParentResult = Super::IsDataValid(Context);
+    bool bValid = ParentResult != EDataValidationResult::Invalid;
+    TSet<FName> PresetIds;
+    for (const auto& Preset : LocationPresets)
+    {
+        if (Preset.Id.IsNone() || PresetIds.Contains(Preset.Id) || !Preset.ZoneId.IsValid() || Preset.Location.ContainsNaN())
+        {
+            Context.AddError(FText::FromString(TEXT("위치 프리셋의 이름 중복, Zone 또는 좌표를 확인하세요.")));
+            bValid = false;
+        }
+        PresetIds.Add(Preset.Id);
+    }
+    TSet<FString> Logins;
+    TSet<FGuid> AccountIds, CharacterIds;
+    for (const auto& Account : Accounts)
+    {
+        if (Account.LoginId.IsEmpty() || Account.Password.IsEmpty()
+            || Account.LoginId.Len() > 64 || Account.Password.Len() > 128
+            || Logins.Contains(Account.LoginId) || !Account.AccountId.IsValid()
+            || AccountIds.Contains(Account.AccountId)
+            || Account.Characters.Num() > UTDAccountSubSystem::MaxCharacters)
+        {
+            Context.AddError(FText::FromString(TEXT("계정 ID/로그인 중복, 빈 로그인 정보 또는 캐릭터 6개 제한을 확인하세요.")));
+            bValid = false;
+        }
+        Logins.Add(Account.LoginId);
+        AccountIds.Add(Account.AccountId);
+        for (const auto& Character : Account.Characters)
+        {
+            if (!Character.CharacterId.IsValid() || CharacterIds.Contains(Character.CharacterId)
+                || Character.CharacterName.IsEmpty() || Character.Data.ClassId.IsNone())
+            {
+                Context.AddError(FText::FromString(TEXT("캐릭터 ID 중복, 이름 또는 직업을 확인하세요.")));
+                bValid = false;
+            }
+            if (!Character.InitialLocationPreset.IsNone() && !PresetIds.Contains(Character.InitialLocationPreset))
+            {
+                Context.AddError(FText::FromString(TEXT("캐릭터가 선택한 위치 프리셋이 목록에 없습니다.")));
+                bValid = false;
+            }
+            CharacterIds.Add(Character.CharacterId);
+        }
+    }
+    return bValid ? EDataValidationResult::Valid : EDataValidationResult::Invalid;
+}
+#endif

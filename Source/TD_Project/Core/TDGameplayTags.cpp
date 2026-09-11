@@ -315,4 +315,13 @@ namespace TDTags
 		"Quest.Sub.LunchMenu02.Completed",
 		"서아영 점심 메뉴 추천 서브 퀘스트 완료 상태");
 	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+	Quest_Event_Talk_N1,
+	"Quest.Event.Talk.N1",
+	"N1과 반지 퀘스트 대화 완료");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_N2,
+		"Quest.Event.Talk.N2",
+		"N2와 반지 퀘스트 대화 완료");
 }

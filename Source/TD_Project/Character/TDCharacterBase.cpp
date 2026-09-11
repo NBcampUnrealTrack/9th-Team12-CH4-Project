@@ -1,6 +1,8 @@
 #include "Character/TDCharacterBase.h"
 #include "Combat/TDCombatComponent.h"
+#include "Combat/TDCombatStatics.h"
 #include "Core/TDGameplayTags.h"
+#include "TimerManager.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "PaperFlipbookComponent.h"
@@ -35,6 +37,41 @@ void ATDCharacterBase::BeginPlay()
 	Super::BeginPlay();
 
 	BindToStatComponent();
+
+	// 재생은 서버가 굴린다. 어트리뷰트를 바꾸는 것은 서버 권한이고,
+	// 결과인 Health/Mana 는 복제로 클라이언트에 전달된다.
+	//
+	// 재생량이 0 인 캐릭터(지금은 대부분의 몬스터)도 타이머는 돈다. 스탯은 장비·버프로
+	// 언제든 붙을 수 있어 시작 시점의 값으로 켜고 끌 수 없기 때문이다 —
+	// 값이 0 이면 TickRegen 안에서 즉시 빠져나간다.
+	if (HasAuthority() && RegenIntervalSeconds > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(RegenTimerHandle, this,
+			&ATDCharacterBase::TickRegen, RegenIntervalSeconds, /*bLoop=*/true);
+	}
+}
+
+void ATDCharacterBase::TickRegen()
+{
+	if (!HasAuthority() || bIsDead)
+	{
+		return;
+	}
+
+	// 스탯은 "초당" 값이다. 주기를 바꿔도 총 회복량이 같도록 간격만큼 곱한다.
+	const float HealthPerSecond = GetStat(TDTags::Stat_Resource_Health_Regen);
+	const float ManaPerSecond = GetStat(TDTags::Stat_Resource_Mana_Regen);
+
+	if (HealthPerSecond > 0.f)
+	{
+		// 가득 찼으면 RestoreHealth 가 false 를 돌려주고 아무 일도 하지 않는다.
+		UTDCombatStatics::RestoreHealth(this, HealthPerSecond * RegenIntervalSeconds);
+	}
+
+	if (ManaPerSecond > 0.f)
+	{
+		UTDCombatStatics::RestoreMana(this, ManaPerSecond * RegenIntervalSeconds);
+	}
 }
 
 void ATDCharacterBase::BindToStatComponent()
@@ -178,4 +215,21 @@ void ATDCharacterBase::MulticastOnDamaged_Implementation(AActor* Attacker, float
 bool ATDCharacterBase::IsStaggered() const
 {
 	return GetWorld() != nullptr && GetWorld()->GetTimeSeconds() < StaggerEndTime;
+}
+
+void ATDCharacterBase::SetInvulnerable(float Duration)
+{
+	if (!HasAuthority() || Duration <= 0.f || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	// 이미 걸린 무적이 더 길면 그대로 둔다. 덮어쓰면 짧은 무적이 긴 무적을 끊는다.
+	const float EndTime = GetWorld()->GetTimeSeconds() + Duration;
+	InvulnerableEndTime = FMath::Max(InvulnerableEndTime, EndTime);
+}
+
+bool ATDCharacterBase::IsInvulnerable() const
+{
+	return GetWorld() != nullptr && GetWorld()->GetTimeSeconds() < InvulnerableEndTime;
 }

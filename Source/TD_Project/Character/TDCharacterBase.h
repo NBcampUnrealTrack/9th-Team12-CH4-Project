@@ -100,16 +100,32 @@ public:
 	/** 경직 중인가. 경직 중엔 공격 불가(CanAttack). 서버 값이다 — 클라에선 항상 false. */
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsStaggered() const;
-	
+
 	/** 맞으면 경직되는가. 보스는 false(슈퍼아머). */
 	virtual bool CanBeStaggered() const { return HitStaggerDuration > 0.f; }
 
-	/** 공격이 통하지 않는 상태인가(입장·페이즈 전환·잠수 등). ApplyDamage 가 검사한다. */
-	virtual bool IsInvulnerable() const { return false; }
+	/**
+	 * 무적을 Duration 초 동안 건다. 이미 걸려 있으면 **더 긴 쪽이 남는다.**
+	 *
+	 * 짧은 무적이 긴 무적을 덮어써 끊기면 "방벽을 썼는데 오히려 빨리 풀리는" 상황이 된다.
+	 *
+	 * 경직(StaggerEndTime)과 같은 방식이다. 스탯으로 두지 않은 이유는
+	 * Stat.Defense.DamageReduction 에 1.0 미만 상한이 걸려 있어서다 — 그 상한은
+	 * 무적 버그를 막는 옳은 설정이라 100% 를 표현할 수 없다.
+	 */
+	void SetInvulnerable(float Duration);
+
+	/**
+	 * 공격이 통하지 않는 상태인가. ApplyDamage 가 검사한다. 서버 값이다 — 클라에선 항상 false.
+	 *
+	 * 기본은 SetInvulnerable 로 건 시간 무적(방벽)이다. 보스는 재정의해 입장·페이즈 전환·잠수를
+	 * 더한다 — 재정의에서 Super 를 함께 보면 보스에게도 시간 무적이 걸린다.
+	 */
+	virtual bool IsInvulnerable() const;
 
 	/** 받는 피해 배율. 보스가 후딜(빈틈) 중 1.5 를 돌려준다. */
 	virtual float GetIncomingDamageMultiplier() const { return 1.f; }
-	
+
 	// ── 사망 ──────────────────────────────────────────────
 
 	/**
@@ -179,6 +195,23 @@ protected:
 	void BindToStatComponent();
 
 	/**
+	 * 재생 주기(초). Stat.Resource.*.Regen 은 **초당** 값이라 이 간격만큼 곱해 적용된다.
+	 *
+	 * 1초보다 촘촘하게 둘 이유가 없다. 회복량은 간격에 비례해 보정되므로 총량은 같고,
+	 * 짧게 잡으면 어트리뷰트 복제만 늘어난다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Stats", meta = (ClampMin = "0.1"))
+	float RegenIntervalSeconds = 1.f;
+
+	/**
+	 * 재생 한 번. 서버 타이머가 부른다.
+	 *
+	 * 전투 중에도 돈다. 멈추려면 "전투 중" 을 판정할 기준이 필요한데, 마지막 피격
+	 * 시각이든 어그로든 지금은 그 개념이 없다. 필요해지면 여기에 조건 하나를 더한다.
+	 */
+	void TickRegen();
+
+	/**
 	 * 소속 팀. 값 배정(플레이어 0 / 몬스터 1 등)은 AI 담당과 맞춰야 하므로
 	 * 코드에 박지 않고 블루프린트에서 지정한다.
 	 */
@@ -197,6 +230,9 @@ private:
 	/** 중복 구독을 막기 위한 표시. 플레이어는 PlayerState 복제 시점이 일정하지 않아 여러 번 시도된다. */
 	bool bBoundToStatComponent = false;
 
+	/** 재생 타이머. 서버에서만 돈다 — 어트리뷰트를 바꾸는 것은 서버 권한이다. */
+	FTimerHandle RegenTimerHandle;
+
 	UFUNCTION()
 	void OnRep_IsDead();
 
@@ -212,6 +248,9 @@ private:
 	
 	/** 경직이 끝나는 서버 월드시간. 판정(공격 금지·AI 정지)은 서버 일이라 복제하지 않는다. */
 	float StaggerEndTime = -1.f;
+
+	/** 무적이 끝나는 서버 월드시간. 위와 같은 이유로 복제하지 않는다 — 연출은 스킬 시전 방송이 맡는다. */
+	float InvulnerableEndTime = -1.f;
 	
 	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Combat")

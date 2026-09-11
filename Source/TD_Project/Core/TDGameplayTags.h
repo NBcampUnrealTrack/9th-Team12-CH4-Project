@@ -107,6 +107,16 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Effect_Heal);
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Effect_RestoreMana);
 
+	/**
+	 * 지속 효과. 위 셋과 달리 Duration 이 지나야 끝난다.
+	 *
+	 * Buff 는 스탯 모디파이어를 시간 제한으로 붙이는 것이고(장비와 같은 경로),
+	 * Invulnerable 은 스탯이 아니다 — Stat.Defense.DamageReduction 은 1.0 미만으로
+	 * 상한이 걸려 있어(무적 버그를 막는 옳은 설정) 100% 를 표현할 수 없다.
+	 */
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Effect_Buff);
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Effect_Invulnerable);
+
 
 	// ── 존(맵) ────────────────────────────────────────────
 	/**

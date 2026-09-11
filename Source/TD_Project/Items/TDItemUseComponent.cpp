@@ -12,7 +12,9 @@
 #include "GameFramework/PlayerState.h"
 #include "Items/TDEnhanceStatics.h"
 #include "Items/TDInventoryComponent.h"
+#include "Items/TDItemOptionStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "Settings/TDItemOptionSettings.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
 
@@ -592,6 +594,215 @@ void UTDItemUseComponent::RefreshEquipmentModifiers()
 	// 제거와 등록을 따로 부르면 그 사이의 "장비 효과가 없는 순간" 이 알림으로 새어 나간다.
 	EquipmentSourceHandle = StatComponent->ReplaceSource(
 		EquipmentSourceHandle, TDTags::Source_Equipment, MoveTemp(Modifiers));
+}
+
+// ── 추가 옵션 (잠재능력) ──────────────────────────────────
+
+ETDRerollResult UTDItemUseComponent::PrepareReroll(int32 SlotIndex, bool bEquipped,
+	const FTDItemInstance*& OutItem, const FTDItemRow*& OutDefinition,
+	TArray<FTDOptionRarityRow>& OutSortedRarities, int32& OutCost) const
+{
+	OutItem = nullptr;
+	OutDefinition = nullptr;
+	OutCost = 0;
+
+	const UTDItemOptionSettings* Settings = UTDItemOptionSettings::Get();
+	if (Settings == nullptr || OptionDefinitionTable == nullptr)
+	{
+		return ETDRerollResult::InternalError;
+	}
+
+	// 대상을 찾는다. 장착 아이템은 인벤토리에 없으므로 칸 번호만으로는 구분할 수 없다.
+	if (bEquipped)
+	{
+		OutItem = GetEquipped(SlotIndex);
+	}
+	else
+	{
+		const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
+		const UTDInventoryComponent* Inventory =
+			OwnerState ? OwnerState->FindComponentByClass<UTDInventoryComponent>() : nullptr;
+
+		OutItem = Inventory ? Inventory->FindBySlot(SlotIndex) : nullptr;
+	}
+
+	if (OutItem == nullptr)
+	{
+		return ETDRerollResult::ItemNotFound;
+	}
+
+	OutDefinition = FindItemRow(OutItem->ItemId);
+	if (OutDefinition == nullptr)
+	{
+		return ETDRerollResult::InternalError;
+	}
+
+	// 추가 옵션은 장신구만 가진다. 소비 아이템에 붙여봐야 쓰는 순간 사라진다.
+	if (OutDefinition->ItemType != TDTags::Item_Type_Accessory.GetTag())
+	{
+		return ETDRerollResult::NotAccessory;
+	}
+
+	if (OutDefinition->OptionPoolId.IsNone())
+	{
+		// 장신구인데 풀이 지정되지 않았다. 데이터 누락이라 플레이어 잘못이 아니다.
+		return ETDRerollResult::InternalError;
+	}
+
+	const UDataTable* RarityTable = Settings->OptionRarityTable.LoadSynchronous();
+	OutSortedRarities = TDItemOption::GetSortedRarities(RarityTable);
+
+	if (OutSortedRarities.Num() == 0)
+	{
+		return ETDRerollResult::InternalError;
+	}
+
+	// 아직 한 번도 안 굴린 아이템은 등급이 비어 있다. 가장 낮은 등급에서 시작한다 —
+	// DT_ItemDefinition 의 InitialOptionRarity 가 있으면 그쪽이 이긴다.
+	FGameplayTag CurrentRarity = OutItem->OptionRarity;
+	if (!CurrentRarity.IsValid())
+	{
+		CurrentRarity = OutDefinition->InitialOptionRarity.IsValid()
+			? OutDefinition->InitialOptionRarity
+			: OutSortedRarities[0].Rarity;
+	}
+
+	const FTDOptionRarityRow* RarityRow = TDItemOption::FindRarity(OutSortedRarities, CurrentRarity);
+	if (RarityRow == nullptr)
+	{
+		return ETDRerollResult::InternalError;
+	}
+
+	OutCost = TDItemOption::GetRerollCost(RarityRow->RerollCost, OutDefinition->RequiredLevel);
+	return ETDRerollResult::Success;
+}
+
+int32 UTDItemUseComponent::GetRerollCost(int32 SlotIndex, bool bEquipped) const
+{
+	const FTDItemInstance* Item = nullptr;
+	const FTDItemRow* Definition = nullptr;
+	TArray<FTDOptionRarityRow> Sorted;
+	int32 Cost = 0;
+
+	// 실패해도 0 을 돌려주면 된다. UI 는 "굴릴 수 없다" 를 CanReroll 이 아니라
+	// 비용이 0 인지로 판단해도 무방하다.
+	PrepareReroll(SlotIndex, bEquipped, Item, Definition, Sorted, Cost);
+	return Cost;
+}
+
+void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bool bEquipped)
+{
+	const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
+	UTDInventoryComponent* Inventory =
+		OwnerState ? OwnerState->FindComponentByClass<UTDInventoryComponent>() : nullptr;
+
+	if (Inventory == nullptr)
+	{
+		ClientOptionsRerolled(ETDRerollResult::InternalError, FGameplayTag());
+		return;
+	}
+
+	const FTDItemInstance* Item = nullptr;
+	const FTDItemRow* Definition = nullptr;
+	TArray<FTDOptionRarityRow> Sorted;
+	int32 Cost = 0;
+
+	const ETDRerollResult Prepared =
+		PrepareReroll(SlotIndex, bEquipped, Item, Definition, Sorted, Cost);
+
+	if (Prepared != ETDRerollResult::Success)
+	{
+		ClientOptionsRerolled(Prepared, FGameplayTag());
+		return;
+	}
+
+	if (!Inventory->SpendGold(Cost))
+	{
+		ClientOptionsRerolled(ETDRerollResult::NotEnoughGold, Item->OptionRarity);
+		return;
+	}
+
+	// 아직 등급이 없으면 여기서 정해진다(PrepareReroll 과 같은 규칙).
+	FGameplayTag Rarity = Item->OptionRarity;
+	if (!Rarity.IsValid())
+	{
+		Rarity = Definition->InitialOptionRarity.IsValid()
+			? Definition->InitialOptionRarity
+			: Sorted[0].Rarity;
+	}
+
+	// ── 승급 판정 ──
+	// 굴릴 때마다 낮은 확률로 한 단계 오른다. 이것이 재굴림의 목표다(D31) —
+	// 없으면 수치만 반복해 뽑는 일이 된다.
+	const FTDOptionRarityRow* RarityRow = TDItemOption::FindRarity(Sorted, Rarity);
+	bool bUpgraded = false;
+
+	if (RarityRow != nullptr && FMath::FRand() < RarityRow->UpgradeChance)
+	{
+		const FGameplayTag Next = TDItemOption::GetNextRarity(Sorted, Rarity);
+		bUpgraded = (Next != Rarity);   // 최고 등급이면 자기 자신이 돌아온다
+		Rarity = Next;
+	}
+
+	const UTDItemOptionSettings* Settings = UTDItemOptionSettings::Get();
+	const int32 LineCount = Settings->OptionLineCount;
+
+	// 줄마다 세 개씩 미리 굴린다 — [등급판정, 옵션선택, 수치].
+	// 계산 함수를 순수하게 두려고 주사위를 밖에서 넣는다(TDEnhance 와 같은 이유).
+	TArray<float> Rolls;
+	Rolls.Reserve(LineCount * 3);
+	for (int32 Index = 0; Index < LineCount * 3; ++Index)
+	{
+		Rolls.Add(FMath::FRand());
+	}
+
+	const TArray<FTDItemOption> NewOptions = TDItemOption::RollLines(
+		Settings->OptionPoolTable.LoadSynchronous(), OptionDefinitionTable,
+		Sorted, Definition->OptionPoolId, Rarity, LineCount, Rolls);
+
+	// 적어 넣고 복제시킨다. 컨테이너가 다르므로 경로도 갈린다.
+	if (bEquipped)
+	{
+		// 장착 배열은 내 것이라 직접 고친다. 칸 번호로 다시 찾는 이유는 PrepareReroll 이
+		// const 포인터만 돌려주기 때문이다 — 조회와 수정을 섞지 않으려는 것이다.
+		FTDItemInstance* Mutable = EquippedContainer.Items.FindByPredicate(
+			[SlotIndex](const FTDItemInstance& Entry) { return Entry.SlotIndex == SlotIndex; });
+
+		if (Mutable == nullptr)
+		{
+			ClientOptionsRerolled(ETDRerollResult::InternalError, Rarity);
+			return;
+		}
+
+		Mutable->OptionRarity = Rarity;
+		Mutable->Options = NewOptions;
+		EquippedContainer.MarkItemDirty(*Mutable);
+
+		// 착용 중이면 스탯을 다시 등록해야 한다. RefreshEquipmentModifiers 가
+		// Options 를 읽어 모디파이어로 만드므로 그것만 부르면 반영된다.
+		RefreshEquipmentModifiers();
+		BroadcastEquipmentChanged();
+	}
+	else if (!Inventory->SetItemOptions(SlotIndex, Rarity, NewOptions))
+	{
+		ClientOptionsRerolled(ETDRerollResult::InternalError, Rarity);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("재굴림: %s 칸 %d '%s' — 등급 %s%s, 옵션 %d줄, 비용 %d"),
+		bEquipped ? TEXT("장착") : TEXT("인벤"), SlotIndex, *Definition->DisplayName.ToString(),
+		*Rarity.ToString(), bUpgraded ? TEXT(" (상승!)") : TEXT(""),
+		NewOptions.Num(), Cost);
+
+	ClientOptionsRerolled(
+		bUpgraded ? ETDRerollResult::SuccessUpgraded : ETDRerollResult::Success, Rarity);
+}
+
+void UTDItemUseComponent::ClientOptionsRerolled_Implementation(
+	ETDRerollResult Result, FGameplayTag NewRarity)
+{
+	// 문구는 만들지 않는다. UI 가 이 델리게이트를 받아 자기 형식으로 표시한다.
+	OnOptionsRerolled.Broadcast(Result, NewRarity);
 }
 
 void UTDItemUseComponent::WriteSaveData(FTDPlayerSaveData& Out) const

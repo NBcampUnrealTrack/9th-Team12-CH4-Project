@@ -278,6 +278,27 @@ void UTDInventoryComponent::ClientItemEnhanced_Implementation(int32 SlotIndex,
 		SlotIndex, *UEnum::GetDisplayValueAsText(Result).ToString(), NewEnhanceLevel);
 }
 
+bool UTDInventoryComponent::SetItemOptions(int32 SlotIndex, FGameplayTag OptionRarity,
+	const TArray<FTDItemOption>& Options)
+{
+	if (!HasAuthorityToModify())
+	{
+		return false;
+	}
+
+	FTDItemInstance* Item = FindMutableBySlot(SlotIndex);
+	if (Item == nullptr)
+	{
+		return false;
+	}
+
+	Item->OptionRarity = OptionRarity;
+	Item->Options = Options;
+
+	MarkItemDirty(*Item);
+	return true;
+}
+
 const FTDItemInstance* UTDInventoryComponent::FindBySlot(int32 SlotIndex) const
 {
 	return ItemContainer.Items.FindByPredicate(

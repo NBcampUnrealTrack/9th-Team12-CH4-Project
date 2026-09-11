@@ -9,6 +9,8 @@
 class ATDCharacterBase;
 class UTDProgressionComponent;
 struct FTDSkillRow;
+struct FTDSkillEffectRow;
+class UNiagaraComponent;
 
 /**
  * 시전이 시작됐을 때. 캐스팅 바·시전 애니메이션·이펙트가 구독한다. 전 머신에서 불린다.
@@ -152,6 +154,17 @@ protected:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnCastEnded(FName SkillId, bool bFired, float Cooldown);
 
+	/**
+	 * 첫 판정 순간. 이펙트를 띄운다(DT_Skill.VFX).
+	 *
+	 * 위 둘과 달리 Unreliable 이다 — 연출뿐이라 놓쳐도 판정은 서버가 이미 끝냈다.
+	 *
+	 * 위치와 방향을 서버가 정해 보내는 이유는, 클라이언트마다 바라보는 방향을 조금씩
+	 * 다르게 알고 있어서 각자 계산하면 이펙트가 판정과 어긋나기 때문이다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastOnSkillFired(FName SkillId, FVector Location, FRotator Facing);
+
 private:
 	ATDCharacterBase* GetOwnerCharacter() const;
 	UTDProgressionComponent* GetProgression() const;
@@ -182,11 +195,21 @@ private:
 	/** 시전 상태를 지우고 전 머신에 끝을 알린다. bFired 가 false 면 쿨도 마나도 없다. */
 	void EndCast(bool bFired);
 
-	/** 모양에 따라 대상을 모은다. Skill.Shape.Self 는 빈 배열이다. */
-	TArray<AActor*> GatherTargets(const FTDSkillRow& Row) const;
+	/**
+	 * 모양과 대상 팀에 따라 대상을 모은다.
+	 *
+	 * Skill.Shape.Self 는 아군일 때 시전자 하나, 적일 때 빈 배열이다 —
+	 * 자기에게만 거는 스킬은 시트에서 TargetTeam=Ally 로 적어야 한다.
+	 */
+	TArray<AActor*> GatherTargets(const FTDSkillRow& Row, ETDSkillTarget TargetTeam) const;
 
-	/** 효과 하나를 적용한다. 피해는 대상에게, 회복은 시전자에게 간다. */
-	void ApplyEffect(FGameplayTag EffectTag, float Value,
+	/**
+	 * 효과 하나를 대상들에게 적용한다.
+	 *
+	 * 행을 통째로 받는 이유는 지속 효과 때문이다 — 버프는 StatTag·Op·Duration 을
+	 * 함께 봐야 하고, 그걸 인자로 풀면 매개변수가 여섯 개가 된다.
+	 */
+	void ApplyEffect(const FTDSkillEffectRow& Effect, float Value,
 		const FTDSkillRow& Row, const TArray<AActor*>& Targets);
 
 	void ClearCastTimers();
@@ -194,8 +217,13 @@ private:
 	/** 지금 스킬 레벨에서의 마나 소모량. */
 	float GetManaCost(const FTDSkillRow& Row, int32 SkillLevel) const;
 
-	/** 쿨다운회복률을 반영한 실제 쿨타임. 평타와 같은 규칙이다. */
-	float GetActualCooldown(const FTDSkillRow& Row) const;
+	/**
+	 * 실제로 걸리는 쿨타임. 두 가지가 함께 반영된다.
+	 *
+	 *   레벨   Cooldown + CooldownPerLevel × (SkillLevel - 1)   시트가 정한다
+	 *   스탯   ÷ (1 + Stat.Utility.CooldownRecoveryRate)        평타와 같은 규칙
+	 */
+	float GetActualCooldown(const FTDSkillRow& Row, int32 SkillLevel) const;
 
 	// ── 시전 상태 ─────────────────────────────────────────
 	// 복제하지 않는다. Multicast 두 개가 전 머신의 값을 맞춰 준다 —
@@ -220,4 +248,15 @@ private:
 	 * 표시용으로는 충분하고, 실제 거부는 언제나 서버가 자기 값으로 한다.
 	 */
 	TMap<FName, float> CooldownEndTimes;
+
+	/** 정신집중 이펙트를 끈다. 시전이 끝나거나 끊길 때 부른다. */
+	void StopChannelVFX();
+
+	/**
+	 * 지금 떠 있는 정신집중 이펙트. 각 머신이 자기가 띄운 것을 들고 있다.
+	 *
+	 * 정신집중은 끝나는 시점을 미리 알 수 없어서(끊길 수 있다) 들고 있다가
+	 * 시전 종료 방송에서 끈다. 약한 참조인 이유는 이펙트가 스스로 사라질 수 있어서다.
+	 */
+	TWeakObjectPtr<UNiagaraComponent> ActiveChannelVFX;
 };

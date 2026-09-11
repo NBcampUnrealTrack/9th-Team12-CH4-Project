@@ -28,6 +28,16 @@ struct FTDMonsterRow : public FTableRowBase
 	FText DisplayName;
 
 	/**
+	 * 보스인가. `Stat.Offense.BossDamage` 가 이 몬스터에게만 붙는다.
+	 *
+	 * ArchetypeTag 로 표현하지 않은 이유는 축이 다르기 때문이다 — 아키타입은
+	 * "어떻게 싸우는가"(Brute/Caster)이고, 보스는 그와 무관하게 정해진다.
+	 * 힘형 보스도 마법형 보스도 있을 수 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Monster")
+	bool bIsBoss = false;
+
+	/**
 	 * 분류 태그. 예: Monster.Type.Brute
 	 *
 	 * 스탯을 공유하는 필드가 아니다. 같은 아키타입이어도 스탯은 행마다 개별이며,

@@ -48,6 +48,15 @@ public:
 	void InitializeFromDefinition(FName InMonsterId, int32 InLevel);
 
 	int32 GetLevel() const { return Level; }
+
+	/**
+	 * 보스인가. DT_MonsterDefinition 에서 읽어 둔 값이다.
+	 *
+	 * 공격자의 Stat.Offense.BossDamage 가 이 대상에게만 적용된다
+	 * (UTDCombatStatics::ApplyDamage). UI 가 보스 체력바를 크게 그릴 때도 쓸 수 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Monster")
+	bool IsBoss() const { return bIsBoss; }
 	
 	/** 처치 보상 지급. 죽인 쪽의 성장 컴포넌트에 경험치를 넣는다. 서버 전용. */
 	void GrantRewards(ATDCharacterBase* Killer);
@@ -110,6 +119,14 @@ private:
 	 */
 	int32 GoldMinReward = 0;
 	int32 GoldMaxReward = 0;
+
+	/**
+	 * ApplyDefinition 때 테이블에서 읽어둔 보스 여부.
+	 *
+	 * 복제하지 않는다 — 피해 계산은 서버만 하고, 클라이언트가 알아야 할 일이 생기면
+	 * 그때 UI 용으로 복제를 붙이면 된다.
+	 */
+	bool bIsBoss = false;
 
 	/** 마지막 프레임에 여럿이 동시 타격해도 보상은 한 번만 나가게 하는 표시. */
 	bool bRewardsGranted = false;

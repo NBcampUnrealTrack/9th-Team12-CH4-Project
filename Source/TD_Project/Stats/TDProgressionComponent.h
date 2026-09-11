@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Data/TDSkillEffectRow.h"
+#include "Data/TDSkillPassiveRow.h"
 #include "Data/TDSkillRow.h"
 #include "Save/TDPlayerSaveData.h"
 #include "Stats/TDStatTypes.h"
@@ -137,6 +138,15 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "TD|Skill")
 	TArray<FTDSkillEffectRow> GetSkillEffects(FName SkillId) const;
+
+	/**
+	 * 그 패시브가 올려주는 스탯들. 위와 대칭이고 보는 테이블만 다르다.
+	 *
+	 * 스탯 적용은 RefreshSkillModifiers 가 알아서 하므로 게임플레이에는 필요 없다.
+	 * 툴팁이 "방어력이 몇 오르는가" 를 말하려면 있어야 한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Skill")
+	TArray<FTDSkillPassiveRow> GetSkillPassives(FName SkillId) const;
 
 	/**
 	 * 지금 이 스킬을 한 단계 올릴 수 있는가.

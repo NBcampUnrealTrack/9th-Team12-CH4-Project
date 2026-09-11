@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
+#include "Interaction/TDInteractable.h"
 #include "TDPortal.generated.h"
 
 class UBoxComponent;
 class APlayerController;
+class ATDPlayerCharacter;
 
 /**
  * 존과 존을 잇는 문. 레벨에 배치해서 쓴다.
@@ -24,16 +26,26 @@ class APlayerController;
  * 캐릭터 이동 복제를 타고 자연히 클라이언트에 반영된다.
  */
 UCLASS()
-class TD_PROJECT_API ATDPortal : public AActor
+class TD_PROJECT_API ATDPortal : public AActor, public ITDInteractable
 {
 	GENERATED_BODY()
 
 public:
 	ATDPortal();
 
-	/** 상호작용형 포탈을 실제로 발동시킨다. 입력 처리가 붙으면 그쪽에서 부른다. */
+	/** 상호작용형 포탈을 실제로 발동시킨다. F 키 경로(Interact)와 블루프린트가 부른다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Portal")
 	void Activate(APlayerController* Player);
+
+	// ── ITDInteractable ───────────────────────────────────
+	//
+	// bRequiresInteraction 인 포탈은 겹침을 구독하지 않으므로(BeginPlay) F 키 말고는
+	// 발동시킬 방법이 없다. 이 인터페이스가 없으면 UTDInteractionComponent 가
+	// 후보 목록에서 걸러내 **밟아도 눌러도 아무 일이 없는** 포탈이 된다.
+
+	virtual bool CanInteract_Implementation(ATDPlayerCharacter* Player) const override;
+	virtual void Interact_Implementation(ATDPlayerCharacter* Player) override;
+	virtual FText GetInteractionText_Implementation(ATDPlayerCharacter* Player) const override;
 
 	/** 상호작용형인가. UI 가 "F 키로 입장" 안내를 띄울지 판단하는 데 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "TD|Portal")
@@ -95,6 +107,16 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Portal")
 	bool bRequiresInteraction = false;
+
+	/**
+	 * F 키 안내에 뜰 문구. bRequiresInteraction 일 때만 쓰인다.
+	 *
+	 * 포탈마다 다르게 적을 수 있도록 프로퍼티로 둔다 — 보스방은 "보스방 입장",
+	 * 마을 관문은 "마을로" 처럼 어디로 가는지 알려주는 편이 친절하다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Portal",
+		meta = (EditCondition = "bRequiresInteraction"))
+	FText InteractionText = NSLOCTEXT("TDPortal", "DefaultInteract", "입장");
 
 	/**
 	 * 같은 플레이어가 다시 발동하기까지의 최소 간격(초).

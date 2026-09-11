@@ -146,6 +146,9 @@ void ATDEnemyBase::ApplyDefinition()
 	GoldMinReward = FMath::RoundToInt(Row->GoldMin.GetValueAtLevel(LevelAsFloat));
 	GoldMaxReward = FMath::RoundToInt(Row->GoldMax.GetValueAtLevel(LevelAsFloat));
 
+	// 공격자의 보스 추가 피해가 이 대상에게 붙을지 정하는 값이다.
+	bIsBoss = Row->bIsBoss;
+
 	// 시트에서 상하한이 뒤집혀 들어와도 난수가 깨지지 않게 한다.
 	if (GoldMaxReward < GoldMinReward)
 	{

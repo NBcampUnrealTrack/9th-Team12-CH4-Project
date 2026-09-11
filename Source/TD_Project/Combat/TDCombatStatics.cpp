@@ -50,7 +50,9 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		return NoDamage;
 	}
 
-	// 입장·페이즈 전환·잠수 같은 무적 구간. 치트(ApplyRawDamage)는 통한다.
+	// 무적 구간. 방벽(Skill.Effect.Invulnerable)의 시간 무적과, 보스가 재정의하는
+	// 입장·페이즈 전환·잠수가 전부 여기로 온다. ApplyRawDamage 가 아니라 이쪽인 이유는
+	// 안전지대와 같다 — 저쪽은 치트와 환경 피해가 함께 쓰는 통로라 치트는 통해야 한다.
 	if (TargetChar->IsInvulnerable())
 	{
 		return NoDamage;
@@ -104,7 +106,12 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	Input.AttackDamage = FMath::Max(Physical, Magical) * DamageMultiplier * TargetChar->GetIncomingDamageMultiplier();
 
 	// 보스 추가 피해 스탯. 대상이 보스일 때만 적용한다.
-	if (Cast<ATDBossCharacter>(TargetChar) != nullptr)
+	//
+	// 보스는 두 갈래로 정해진다 — 보스 전용 클래스(ATDBossCharacter)이거나, 일반 몬스터지만
+	// 몬스터 테이블에서 bIsBoss 로 지정된 필드 보스이거나. 계산은 이 한 곳에서만 한다.
+	// 두 곳에서 곱하면 보스 피해 20% 가 44% 로 들어간다.
+	const ATDEnemyBase* TargetEnemy = Cast<ATDEnemyBase>(TargetChar);
+	if (Cast<ATDBossCharacter>(TargetChar) != nullptr || (TargetEnemy != nullptr && TargetEnemy->IsBoss()))
 	{
 		const float BossDamage = AttackerStats->GetStatWithContext(TDTags::Stat_Offense_BossDamage, ContextTags);
 		Input.AttackDamage *= 1.f + FMath::Max(0.f, BossDamage);
@@ -276,20 +283,30 @@ float UTDCombatStatics::GetMana(const AActor* Actor)
 }
 
 // ── 대상 수집 ─────────────────────────────────────────────
+//
+// 두 층이다. 저수준판(GatherEnemiesIn*)은 중심·회전을 직접 받아 보스 패턴이 쓰고,
+// 편의판(GatherTargetsIn*)은 "공격자 기준 정면/자기중심" 으로 평타·스킬이 쓴다.
+// 질의(Overlap*)와 팀 판정(FilterByTeam)은 두 층이 공유한다 — 한쪽에만 고쳐지면
+// "스킬로는 아군이 맞는" 같은 일이 생긴다.
 
 namespace
 {
 	/**
-	 * 겹친 것들 중 실제로 때릴 수 있는 대상만 골라낸다.
+	 * 겹친 것들 중 실제로 대상이 되는 것만 골라낸다.
 	 *
-	 * 모양(상자·구)이 달라도 이 규칙은 같아야 하므로 한 곳에 둔다.
+	 * 모양(상자·구)도 부르는 쪽(평타·스킬·보스 패턴)도 이 규칙은 같아야 하므로 한 곳에 둔다.
 	 * 같은 액터가 콜리전 여러 개로 두 번 잡히는 것도 여기서 거른다.
+	 *
+	 * 팀은 §10-④ 임시 규칙으로 가른다 — Enemy 면 다른 팀, Ally 면 같은 팀.
+	 * 공격자가 없으면 팀을 가리지 않는다. 시전자 자신은 여기서 넣지 않는다(WithCasterIfAlly).
 	 */
-	TArray<ATDCharacterBase*> FilterEnemies(const ATDCharacterBase* Attacker,
-		const TArray<FOverlapResult>& Overlaps)
+	TArray<ATDCharacterBase*> FilterByTeam(const ATDCharacterBase* Attacker,
+		const TArray<FOverlapResult>& Overlaps, ETDSkillTarget TargetTeam)
 	{
 		TArray<ATDCharacterBase*> Result;
 		TSet<AActor*> Seen;
+
+		const bool bWantAlly = TargetTeam == ETDSkillTarget::Ally;
 
 		for (const FOverlapResult& Overlap : Overlaps)
 		{
@@ -299,16 +316,80 @@ namespace
 				continue;
 			}
 
-			// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
-			if (Attacker != nullptr && Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
+			if (Attacker != nullptr)
 			{
-				continue;
+				const bool bSameTeam = Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId();
+				if (bSameTeam != bWantAlly)
+				{
+					continue;
+				}
 			}
 
 			Seen.Add(Candidate);
 			Result.Add(Candidate);
 		}
 		return Result;
+	}
+
+	/**
+	 * 아군을 모을 때는 **시전자 자신을 맨 앞에 넣는다.** 오버랩 질의가 시전자를
+	 * 무시하도록 되어 있어서(AddIgnoredActor) 여기서 넣지 않으면 "파티원 회복" 이
+	 * 자기만 빼고 도는 스킬이 된다. 혼자 있을 때 아무 일도 없는 것도 곤란하다.
+	 */
+	TArray<ATDCharacterBase*> WithCasterIfAlly(ATDCharacterBase* Attacker,
+		TArray<ATDCharacterBase*> Targets, ETDSkillTarget TargetTeam)
+	{
+		if (TargetTeam == ETDSkillTarget::Ally && !Attacker->IsDead())
+		{
+			Targets.Insert(Attacker, 0);
+		}
+		return Targets;
+	}
+
+	/** 상자 질의. 부르는 쪽이 Attacker 와 월드가 유효한지 먼저 확인한다. */
+	TArray<FOverlapResult> OverlapBox(const ATDCharacterBase* Attacker,
+		const FVector& Center, const FQuat& Rotation, const FVector& Extent, bool bDrawDebug)
+	{
+		UWorld* World = Attacker->GetWorld();
+
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(Attacker);
+
+		TArray<FOverlapResult> Overlaps;
+		World->OverlapMultiByObjectType(Overlaps, Center, Rotation,
+			FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(Extent), Params);
+
+#if ENABLE_DRAW_DEBUG
+		if (bDrawDebug)
+		{
+			// 질의와 같은 회전으로 그린다. 다른 값을 쓰면 눈에 보이는 상자와 실제로
+			// 맞는 범위가 달라져, 사거리를 맞추려다 엉뚱한 곳을 고치게 된다.
+			DrawDebugBox(World, Center, Extent, Rotation, FColor::Red, false, 0.5f);
+		}
+#endif
+		return Overlaps;
+	}
+
+	/** 구 질의. 부르는 쪽이 Attacker 와 월드가 유효한지 먼저 확인한다. */
+	TArray<FOverlapResult> OverlapSphere(const ATDCharacterBase* Attacker,
+		const FVector& Center, float Radius, bool bDrawDebug)
+	{
+		UWorld* World = Attacker->GetWorld();
+
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(Attacker);
+
+		TArray<FOverlapResult> Overlaps;
+		World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
+			FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+#if ENABLE_DRAW_DEBUG
+		if (bDrawDebug)
+		{
+			DrawDebugSphere(World, Center, Radius, 24, FColor::Red, false, 0.5f);
+		}
+#endif
+		return Overlaps;
 	}
 
 	/** 저수준판 결과를 스킬이 쓰는 AActor* 배열로. */
@@ -332,22 +413,8 @@ TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInBox(const ATDCharacte
 		return {};
 	}
 
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(Attacker);
-
-	TArray<FOverlapResult> Overlaps;
-	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, Rotation,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(Extent), Params);
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebug)
-	{
-		// 질의와 같은 회전으로 그린다. 다른 값을 쓰면 눈에 보이는 상자와 실제로
-		// 맞는 범위가 달라져, 사거리를 맞추려다 엉뚱한 곳을 고치게 된다.
-		DrawDebugBox(Attacker->GetWorld(), Center, Extent, Rotation, FColor::Red, false, 0.5f);
-	}
-#endif
-	return FilterEnemies(Attacker, Overlaps);
+	return FilterByTeam(Attacker, OverlapBox(Attacker, Center, Rotation, Extent, bDrawDebug),
+		ETDSkillTarget::Enemy);
 }
 
 TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInSphere(const ATDCharacterBase* Attacker,
@@ -358,27 +425,15 @@ TArray<ATDCharacterBase*> UTDCombatStatics::GatherEnemiesInSphere(const ATDChara
 		return {};
 	}
 
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(Attacker);
-
-	TArray<FOverlapResult> Overlaps;
-	Attacker->GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
-
-#if ENABLE_DRAW_DEBUG
-	if (bDrawDebug)
-	{
-		DrawDebugSphere(Attacker->GetWorld(), Center, Radius, 24, FColor::Red, false, 0.5f);
-	}
-#endif
-	return FilterEnemies(Attacker, Overlaps);
+	return FilterByTeam(Attacker, OverlapSphere(Attacker, Center, Radius, bDrawDebug),
+		ETDSkillTarget::Enemy);
 }
 
-TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVector Direction,
-	FVector HalfExtent, float ForwardOffset, bool bDrawDebug)
+TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(AActor* Attacker, FVector Direction,
+	FVector HalfExtent, float ForwardOffset, bool bDrawDebug, ETDSkillTarget TargetTeam)
 {
-	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
-	if (AttackerChar == nullptr)
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr || AttackerChar->GetWorld() == nullptr)
 	{
 		return TArray<AActor*>();
 	}
@@ -398,18 +453,25 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVe
 	const FQuat BoxRotation = FRotationMatrix::MakeFromX(Facing).ToQuat();
 	const FVector Center = AttackerChar->GetActorLocation() + Facing * ForwardOffset;
 
-	return ToActors(GatherEnemiesInBox(AttackerChar, Center, BoxRotation, HalfExtent, bDrawDebug));
+	const TArray<ATDCharacterBase*> Found = FilterByTeam(AttackerChar,
+		OverlapBox(AttackerChar, Center, BoxRotation, HalfExtent, bDrawDebug), TargetTeam);
+
+	return ToActors(WithCasterIfAlly(AttackerChar, Found, TargetTeam));
 }
 
-TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(const AActor* Attacker,
-	float Radius, bool bDrawDebug)
+TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(AActor* Attacker, float Radius,
+	bool bDrawDebug, ETDSkillTarget TargetTeam)
 {
-	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
-	if (AttackerChar == nullptr)
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	if (AttackerChar == nullptr || AttackerChar->GetWorld() == nullptr || Radius <= 0.f)
 	{
 		return TArray<AActor*>();
 	}
-	return ToActors(GatherEnemiesInSphere(AttackerChar, AttackerChar->GetActorLocation(), Radius, bDrawDebug));
+
+	const TArray<ATDCharacterBase*> Found = FilterByTeam(AttackerChar,
+		OverlapSphere(AttackerChar, AttackerChar->GetActorLocation(), Radius, bDrawDebug), TargetTeam);
+
+	return ToActors(WithCasterIfAlly(AttackerChar, Found, TargetTeam));
 }
 
 // ── 존 ───────────────────────────────────────────────────

@@ -421,6 +421,28 @@ TArray<FTDSkillEffectRow> UTDProgressionComponent::GetSkillEffects(FName SkillId
 	return Result;
 }
 
+TArray<FTDSkillPassiveRow> UTDProgressionComponent::GetSkillPassives(FName SkillId) const
+{
+	TArray<FTDSkillPassiveRow> Result;
+	if (SkillPassiveTable == nullptr || SkillId.IsNone())
+	{
+		return Result;
+	}
+
+	TArray<FTDSkillPassiveRow*> Rows;
+	SkillPassiveTable->GetAllRows<FTDSkillPassiveRow>(SkillPassiveContext, Rows);
+
+	for (const FTDSkillPassiveRow* Row : Rows)
+	{
+		if (Row != nullptr && Row->SkillId == SkillId)
+		{
+			Result.Add(*Row);
+		}
+	}
+
+	return Result;
+}
+
 bool UTDProgressionComponent::CanUpgradeSkill(FName SkillId) const
 {
 	const FTDSkillRow* Row = FindSkillRow(SkillId);

@@ -1,5 +1,6 @@
 #include "World/TDPortal.h"
 
+#include "Character/TDPlayerCharacter.h"
 #include "Components/BoxComponent.h"
 #include "Engine/World.h"
 #include "Game/TDGameMode.h"
@@ -72,6 +73,34 @@ void ATDPortal::Activate(APlayerController* Player)
 	{
 		TryTravel(Player);
 	}
+}
+
+// ── ITDInteractable ───────────────────────────────────────
+
+bool ATDPortal::CanInteract_Implementation(ATDPlayerCharacter* Player) const
+{
+	// 자동 포탈은 F 대상이 아니다. 밟는 것만으로 넘어가므로 안내를 띄울 이유가 없고,
+	// 후보에 넣으면 포탈 위에 선 채로 F 를 눌렀을 때 옆의 NPC 대신 포탈이 잡힌다.
+	if (!bRequiresInteraction)
+	{
+		return false;
+	}
+
+	// 목적지가 없는 포탈은 눌러도 아무 일이 없다. BeginPlay 에서 경고를 남기지만
+	// 안내까지 띄우면 플레이어가 고장으로 받아들인다.
+	return TargetZoneId.IsValid() && Player != nullptr && !Player->IsDead();
+}
+
+void ATDPortal::Interact_Implementation(ATDPlayerCharacter* Player)
+{
+	// 서버에서만 불린다(UTDInteractionComponent::ServerRequestInteract).
+	// 레벨 제한·좌표 결정은 그대로 GameMode 가 한다 — 여기는 통로다.
+	Activate(Player != nullptr ? Cast<APlayerController>(Player->GetController()) : nullptr);
+}
+
+FText ATDPortal::GetInteractionText_Implementation(ATDPlayerCharacter* Player) const
+{
+	return InteractionText;
 }
 
 void ATDPortal::TryTravel(APlayerController* Player)

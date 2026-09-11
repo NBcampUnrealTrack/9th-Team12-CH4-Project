@@ -4,6 +4,7 @@
 #include "Combat/TDCombatCalculation.h"
 #include "GameplayTagContainer.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Skill/TDSkillTypes.h"
 #include "TDCombatStatics.generated.h"
 
 class ATDCharacterBase;
@@ -32,13 +33,20 @@ public:
 
 	// ── 대상 수집 ─────────────────────────────────────────
 	//
-	// 평타·스킬·보스 패턴이 같은 규칙으로 대상을 고른다. 같은 팀 제외·시체 제외·중복 제거를
+	// 평타·스킬·보스 패턴이 같은 규칙으로 대상을 고른다. 팀 판정·시체 제외·중복 제거를
 	// 여러 곳에 적으면 한쪽만 고쳐졌을 때 "스킬로는 아군이 맞는" 같은 일이 생긴다.
 	// 아래 두 개는 "공격자 기준 정면/자기중심" 편의판(스킬·평타), 그 아래 두 개는
 	// 중심·회전을 직접 주는 저수준판(보스 패턴)이다. 필터는 한 곳을 공유한다.
+	//
+	// 편의판은 TargetTeam 을 받는다. Ally 면 **시전자 자신이 목록에 들어간다**(오버랩은
+	// 시전자를 무시하므로 여기서 넣는다). 기본값이 Enemy 라 적만 모으던 호출부는 그대로다.
+	// 저수준판은 적만 모은다 — 보스 패턴에는 아군 대상이 없다.
+	//
+	// 서버 전용은 아니지만 판정에 쓰는 것은 서버뿐이다. 클라이언트가 불러도 되는 이유는
+	// 조준 표시처럼 화면에만 쓰는 용도가 있어서다.
 
 	/**
-	 * 캐릭터 앞쪽 상자 안의 적.
+	 * 캐릭터 앞쪽 상자 안의 대상.
 	 *
 	 * @param Direction      상자가 뻗는 방향. **액터 회전이 아니라 부르는 쪽이 정한다** —
 	 *                       스프라이트는 마지막 이동 방향을 따라가므로(UTDCombatComponent::
@@ -47,12 +55,13 @@ public:
 	 * @param HalfExtent     상자 절반 크기. 전체 크기가 아니다
 	 * @param ForwardOffset  몸 중심에서 상자 중심까지의 거리
 	 */
-	static TArray<AActor*> GatherTargetsInBox(const AActor* Attacker, FVector Direction,
-		FVector HalfExtent, float ForwardOffset, bool bDrawDebug = false);
+	static TArray<AActor*> GatherTargetsInBox(AActor* Attacker, FVector Direction,
+		FVector HalfExtent, float ForwardOffset, bool bDrawDebug = false,
+		ETDSkillTarget TargetTeam = ETDSkillTarget::Enemy);
 
-	/** 캐릭터를 중심으로 한 구 안의 적. 앞뒤를 가리지 않는다. */
-	static TArray<AActor*> GatherTargetsInSphere(const AActor* Attacker,
-		float Radius, bool bDrawDebug = false);
+	/** 캐릭터를 중심으로 한 구 안의 대상. 앞뒤를 가리지 않는다. */
+	static TArray<AActor*> GatherTargetsInSphere(AActor* Attacker, float Radius,
+		bool bDrawDebug = false, ETDSkillTarget TargetTeam = ETDSkillTarget::Enemy);
 
 	/** 중심·회전을 직접 주는 박스 판정. 보스 패턴처럼 "찍어둔 그 자리"를 때릴 때. */
 	static TArray<ATDCharacterBase*> GatherEnemiesInBox(const ATDCharacterBase* Attacker,

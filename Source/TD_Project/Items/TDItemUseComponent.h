@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Data/TDOptionRarityRow.h"
+#include "GameplayTagContainer.h"
 #include "Items/TDItemTypes.h"
 #include "Save/TDPlayerSaveData.h"
 #include "Stats/TDStatTypes.h"
@@ -14,6 +16,35 @@ class UTDStatComponent;
 struct FTDItemRow;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnEquipmentChanged);
+
+/** 추가 옵션 재굴림의 결과. */
+UENUM(BlueprintType)
+enum class ETDRerollResult : uint8
+{
+	Success				UMETA(DisplayName = "성공"),
+
+	/** 성공했고 등급까지 올랐다. 연출을 다르게 낼 자리다. */
+	SuccessUpgraded		UMETA(DisplayName = "성공(등급 상승)"),
+
+	ItemNotFound		UMETA(DisplayName = "아이템 없음"),
+
+	/** 장신구가 아니다. 추가 옵션은 장신구만 가진다. */
+	NotAccessory		UMETA(DisplayName = "장신구 아님"),
+
+	NotEnoughGold		UMETA(DisplayName = "골드 부족"),
+
+	/** DT_ItemDefinition 의 OptionPoolId 가 비었거나, 테이블·설정이 지정되지 않았다. */
+	InternalError		UMETA(DisplayName = "내부 오류")
+};
+
+/**
+ * 재굴림 결과 알림. **UI 가 구독할 지점이다.**
+ *
+ * 굴려진 옵션은 아이템에 들어가 복제되므로 따로 싣지 않는다 — 인벤토리·장착 갱신
+ * 알림을 받고 그 아이템을 다시 읽으면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnOptionsRerolled,
+	ETDRerollResult, Result, FGameplayTag, NewRarity);
 
 /**
  * 아이템을 장착하고 사용하는 컴포넌트.
@@ -97,6 +128,59 @@ public:
 
 	void BroadcastEquipmentChanged();
 
+	// ── 추가 옵션 (잠재능력) ──────────────────────────────
+	//
+	// 굴리기가 여기 있는 이유는 장착 중인 아이템도 굴릴 수 있어야 하기 때문이다.
+	// 장착 아이템은 인벤토리가 아니라 이 컴포넌트의 EquippedContainer 에 들어 있고,
+	// 굴린 뒤 스탯을 다시 등록하는 RefreshEquipmentModifiers 도 여기 있다.
+	//
+	// 강화(UTDInventoryComponent::ServerEnhanceItem)와 짝이지만 자리가 다른 것은
+	// 강화가 인벤토리 아이템만 대상으로 하기 때문이다.
+
+	/**
+	 * 추가 옵션을 다시 굴린다. 골드를 치르고 세 줄을 통째로 새로 뽑는다.
+	 *
+	 * **줄 하나만 남기는 기능은 없다.** 그래서 2·3번째 줄이 현재 등급에서 나올 확률
+	 * (DT_OptionRarity.SameTierLineChance)을 넉넉하게 잡아야 한다.
+	 *
+	 * 굴릴 때마다 낮은 확률로 **등급이 오른다**(D31). 일반 반지도 계속 굴리면 언젠가
+	 * 전설이 되며, 이것이 재굴림의 목표다.
+	 *
+	 * @param SlotIndex   bEquipped 면 장착 칸(0~5), 아니면 인벤토리 칸.
+	 * @param bEquipped   착용 중인 것을 굴리는가. 장착 아이템은 인벤토리에 없으므로
+	 *                    칸 번호만으로는 어느 쪽인지 알 수 없다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Equipment")
+	void ServerRerollOptions(int32 SlotIndex, bool bEquipped);
+
+	/**
+	 * 재굴림에 드는 골드. 버튼 옆에 값을 띄우는 데 쓴다.
+	 *
+	 * 등급 기본값(DT_OptionRarity.RerollCost)에 아이템의 착용 레벨제한 배율이 붙는다.
+	 * 굴릴 수 없는 아이템이면 0.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
+	int32 GetRerollCost(int32 SlotIndex, bool bEquipped) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Equipment")
+	FTDOnOptionsRerolled OnOptionsRerolled;
+
+	UFUNCTION(Client, Reliable)
+	void ClientOptionsRerolled(ETDRerollResult Result, FGameplayTag NewRarity);
+
+	/**
+	 * DT_OptionDefinition. 툴팁이 굴려진 옵션을 글자로 만들 때 쓴다.
+	 *
+	 * 같은 테이블 참조를 UI 가 따로 들지 않게 하려고 열어 둔다 — 두 곳에 두면
+	 * 한쪽만 지정해 놓고 왜 옵션이 안 보이는지 찾게 된다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
+	UDataTable* GetOptionDefinitionTable() const { return OptionDefinitionTable; }
+
+	/** DT_ItemStat. 위와 같은 이유로 열어 둔다 — 툴팁이 강화된 스탯을 보여줄 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
+	UDataTable* GetItemStatTable() const { return ItemStatTable; }
+
 	// ── 세이브 구조체 ─────────────────────────────────────
 
 	void WriteSaveData(FTDPlayerSaveData& Out) const;
@@ -122,6 +206,17 @@ protected:
 	TObjectPtr<UDataTable> UseEffectTable;
 
 private:
+	/**
+	 * 굴리기에 필요한 것을 한 번에 모은다. 굴리기와 비용 조회가 같은 판단을 두 번
+	 * 하지 않도록 나눠 둔 것이다.
+	 *
+	 * @param OutItem     굴릴 대상. 비용 조회에서는 읽기만 한다.
+	 * @return            굴릴 수 없는 이유. Success 면 나머지 출력이 전부 유효하다.
+	 */
+	ETDRerollResult PrepareReroll(int32 SlotIndex, bool bEquipped,
+		const FTDItemInstance*& OutItem, const FTDItemRow*& OutDefinition,
+		TArray<FTDOptionRarityRow>& OutSortedRarities, int32& OutCost) const;
+
 	/**
 	 * 장착 중인 모든 것에서 모디파이어를 다시 만들어 스탯 컴포넌트에 등록한다.
 	 *

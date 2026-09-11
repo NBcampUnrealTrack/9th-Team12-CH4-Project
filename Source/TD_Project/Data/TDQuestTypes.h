@@ -183,6 +183,29 @@ struct TD_PROJECT_API FTDQuestAffectionReward
 	int32 Amount = 0;
 };
 
+/**
+ * 진행 중인 퀘스트에서 들을 수 있는 반복 안내 대사.
+ *
+ * 예:
+ * N1에게 반지를 물어보는 단계에서도
+ * 김희진에게 돌아가면 반지 관련 안내를 들을 수 있다.
+ *
+ * 이 데이터 자체는 퀘스트 진행도나 NPC 마커를 변경하지 않는다.
+ */
+USTRUCT(BlueprintType)
+struct TD_PROJECT_API FTDQuestProgressDialogueRule
+{
+	GENERATED_BODY()
+
+	/** 안내 대사를 하는 NPC의 DT_NPC RowName */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest|Dialogue")
+	FName NPCId;
+
+	/** 안내 대화가 시작되는 DT_Dialogue RowName */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest|Dialogue")
+	FName StartDialogueRow;
+};
+
 /** DT_Quest의 한 행 */
 USTRUCT(BlueprintType)
 struct TD_PROJECT_API FTDQuestRow : public FTableRowBase
@@ -278,6 +301,20 @@ struct TD_PROJECT_API FTDQuestRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest|Dialogue")
 	FName TurnInDialogueRow;
+
+	/**
+	 * 이 퀘스트가 진행 중일 때 NPC별로 들을 수 있는 반복 안내.
+	 *
+	 * NPCId:
+	 *     안내 대사를 하는 NPC의 ID.
+	 *
+	 * StartDialogueRow:
+	 *     안내 대화의 첫 번째 DT_Dialogue RowName.
+	 *
+	 * 여러 NPC를 등록할 수 있으며 배열 순서대로 검사한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest|Dialogue")
+	TArray<FTDQuestProgressDialogueRule> ProgressDialogueRules;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Quest")
 	TArray<FTDQuestObjectiveDefinition> Objectives;

@@ -90,3 +90,35 @@ enum class ETDSkillCastMovement : uint8
 	/** 이동·회전 모두 막힌다. 시전 시작 시점의 방향으로 고정된다. */
 	Locked		UMETA(DisplayName = "고정")
 };
+
+/**
+ * 효과 하나가 **누구에게** 가는가.
+ *
+ * ── 스킬이 아니라 효과의 속성인 이유 ──
+ * 한 스킬이 아군과 적을 동시에 다룰 수 있다. 마법사의 장판이 그렇다 —
+ * 같은 시전으로 팀원은 회복하고 적은 피해를 입는다. 게다가 **회복량과 피해 배율이
+ * 서로 다른 값이어야 한다.**
+ *
+ *   RowName          SkillId     EffectTag           TargetTeam  BaseValue
+ *   Mage_Field_Heal  Mage_Field  Skill.Effect.Heal   Ally        80
+ *   Mage_Field_Dmg   Mage_Field  Skill.Effect.Damage Enemy       0.8
+ *
+ * DT_Skill 에 두면 스킬 하나에 값이 하나뿐이라 이걸 표현할 수 없다.
+ *
+ * enum 인 이유는 ETDSkillType 과 같다(D82). 대상을 고르는 코드가 완전히 갈리고,
+ * 데이터가 늘어도 종류는 둘이다.
+ */
+UENUM(BlueprintType)
+enum class ETDSkillTarget : uint8
+{
+	/** 적만. 팀이 다른 살아 있는 캐릭터를 모은다. 기본값이다. */
+	Enemy		UMETA(DisplayName = "적"),
+
+	/**
+	 * 같은 팀만. **시전자 자신도 포함한다.**
+	 *
+	 * 빼면 "파티원 회복" 이 자기만 빼고 도는 이상한 스킬이 된다. 혼자 있을 때
+	 * 아무 일도 일어나지 않는 것도 곤란하다.
+	 */
+	Ally		UMETA(DisplayName = "아군")
+};

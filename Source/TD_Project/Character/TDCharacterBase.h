@@ -100,7 +100,22 @@ public:
 	/** 경직 중인가. 경직 중엔 공격 불가(CanAttack). 서버 값이다 — 클라에선 항상 false. */
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsStaggered() const;
-	
+
+	/**
+	 * 무적을 Duration 초 동안 건다. 이미 걸려 있으면 **더 긴 쪽이 남는다.**
+	 *
+	 * 짧은 무적이 긴 무적을 덮어써 끊기면 "방벽을 썼는데 오히려 빨리 풀리는" 상황이 된다.
+	 *
+	 * 경직(StaggerEndTime)과 같은 방식이다. 스탯으로 두지 않은 이유는
+	 * Stat.Defense.DamageReduction 에 1.0 미만 상한이 걸려 있어서다 — 그 상한은
+	 * 무적 버그를 막는 옳은 설정이라 100% 를 표현할 수 없다.
+	 */
+	void SetInvulnerable(float Duration);
+
+	/** 무적인가. ApplyDamage 가 확인한다. 서버 값이다 — 클라에선 항상 false. */
+	UFUNCTION(BlueprintPure, Category = "TD|Combat")
+	bool IsInvulnerable() const;
+
 	// ── 사망 ──────────────────────────────────────────────
 
 	/**
@@ -223,6 +238,9 @@ private:
 	
 	/** 경직이 끝나는 서버 월드시간. 판정(공격 금지·AI 정지)은 서버 일이라 복제하지 않는다. */
 	float StaggerEndTime = -1.f;
+
+	/** 무적이 끝나는 서버 월드시간. 위와 같은 이유로 복제하지 않는다 — 연출은 스킬 시전 방송이 맡는다. */
+	float InvulnerableEndTime = -1.f;
 	
 	/** 플레이어와 몬스터가 같은 공격 경로를 쓴다. 쿨타임·히트박스는 아바타 소유라 Pawn 에 둔다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Combat")

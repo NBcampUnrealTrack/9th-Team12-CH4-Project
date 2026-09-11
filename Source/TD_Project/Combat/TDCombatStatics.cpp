@@ -49,6 +49,13 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 		return NoDamage;
 	}
 
+	// 무적(Skill.Effect.Invulnerable)은 여기서 막는다. ApplyRawDamage 가 아니라
+	// 이쪽인 이유는 안전지대와 같다 — 저쪽은 치트와 환경 피해가 함께 쓰는 통로다.
+	if (TargetChar->IsInvulnerable())
+	{
+		return NoDamage;
+	}
+
 	// 플레이어가 대화창이나 컷씬 등으로 게임플레이가 잠겨있는 동안에는, 몬스터나 다른 캐릭터의 공격이 들어와도 데미지를 받지 않는다
 	if (APlayerController* TargetController =
 	Cast<APlayerController>(
@@ -278,16 +285,28 @@ float UTDCombatStatics::GetMana(const AActor* Actor)
 namespace
 {
 	/**
-	 * 겹친 것들 중 실제로 때릴 수 있는 대상만 골라낸다.
+	 * 겹친 것들 중 실제로 대상이 되는 것만 골라낸다.
 	 *
 	 * 모양(상자·구)이 달라도 이 규칙은 같아야 하므로 한 곳에 둔다.
 	 * 같은 액터가 콜리전 여러 개로 두 번 잡히는 것도 여기서 거른다.
+	 *
+	 * 아군을 모을 때는 **시전자 자신을 맨 앞에 넣는다.** 오버랩 질의가 시전자를
+	 * 무시하도록 되어 있어서(AddIgnoredActor) 여기서 넣지 않으면 "파티원 회복" 이
+	 * 자기만 빼고 도는 스킬이 된다. 혼자 있을 때 아무 일도 없는 것도 곤란하다.
 	 */
-	TArray<AActor*> FilterHostileTargets(const ATDCharacterBase* Attacker,
-		const TArray<FOverlapResult>& Overlaps)
+	TArray<AActor*> FilterTargets(ATDCharacterBase* Attacker,
+		const TArray<FOverlapResult>& Overlaps, ETDSkillTarget TargetTeam)
 	{
 		TArray<AActor*> Targets;
 		TSet<AActor*> Seen;
+
+		const bool bWantAlly = TargetTeam == ETDSkillTarget::Ally;
+
+		if (bWantAlly && !Attacker->IsDead())
+		{
+			Seen.Add(Attacker);
+			Targets.Add(Attacker);
+		}
 
 		for (const FOverlapResult& Overlap : Overlaps)
 		{
@@ -297,8 +316,9 @@ namespace
 				continue;
 			}
 
-			// 같은 팀은 때리지 않는다(§10-④ 임시 규칙).
-			if (Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId())
+			// 팀이 같은가로 갈린다(§10-④ 임시 규칙).
+			const bool bSameTeam = Candidate->GetGenericTeamId() == Attacker->GetGenericTeamId();
+			if (bSameTeam != bWantAlly)
 			{
 				continue;
 			}
@@ -311,10 +331,10 @@ namespace
 	}
 }
 
-TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVector Direction,
-	FVector HalfExtent, float ForwardOffset, bool bDrawDebug)
+TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(AActor* Attacker, FVector Direction,
+	FVector HalfExtent, float ForwardOffset, bool bDrawDebug, ETDSkillTarget TargetTeam)
 {
-	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
 	if (AttackerChar == nullptr)
 	{
 		return TArray<AActor*>();
@@ -357,13 +377,13 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInBox(const AActor* Attacker, FVe
 	}
 #endif
 
-	return FilterHostileTargets(AttackerChar, Overlaps);
+	return FilterTargets(AttackerChar, Overlaps, TargetTeam);
 }
 
-TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(const AActor* Attacker,
-	float Radius, bool bDrawDebug)
+TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(AActor* Attacker, float Radius,
+	bool bDrawDebug, ETDSkillTarget TargetTeam)
 {
-	const ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
+	ATDCharacterBase* AttackerChar = Cast<ATDCharacterBase>(Attacker);
 	if (AttackerChar == nullptr || Radius <= 0.f)
 	{
 		return TArray<AActor*>();
@@ -391,7 +411,7 @@ TArray<AActor*> UTDCombatStatics::GatherTargetsInSphere(const AActor* Attacker,
 	}
 #endif
 
-	return FilterHostileTargets(AttackerChar, Overlaps);
+	return FilterTargets(AttackerChar, Overlaps, TargetTeam);
 }
 
 bool UTDCombatStatics::IsInSafeZone(const AActor* Actor)

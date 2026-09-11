@@ -48,6 +48,23 @@ public:
 	bool RemoveSource(const FTDStatSourceHandle& Handle);
 
 	/**
+	 * Duration 초 뒤에 저절로 걷히는 소스. 버프·디버프용이다.
+	 *
+	 * AddSource 와 완전히 같은 경로를 쓰고 타이머 하나만 얹는다 — 지속 효과를 위한
+	 * 별도 시스템을 만들지 않는 이유가 그것이다. 장비가 스탯을 올리는 방식과
+	 * 버프가 올리는 방식이 갈리면 "장비로는 되는데 버프로는 안 되는" 스탯이 생긴다.
+	 *
+	 * **같은 버프를 다시 걸면 소스가 하나 더 쌓인다.** 중첩을 막지 않는 이유는
+	 * 파티원 여럿이 같은 버프를 걸어 주는 경우가 정상이기 때문이다. 겹치면 안 되는
+	 * 버프가 생기면 SourceTag 로 기존 것을 찾아 ReplaceSource 를 쓰면 된다.
+	 *
+	 * @param Duration  0 이하면 아무것도 하지 않는다 — 즉발 효과가 잘못 들어온 것이다.
+	 * @return 등록된 소스의 핸들. 시간이 되기 전에 손으로 걷어야 할 때 쓴다.
+	 */
+	FTDStatSourceHandle AddTimedSource(FGameplayTag SourceTag,
+		TArray<FTDStatModifier> Modifiers, float Duration);
+
+	/**
 	 * 기존 소스를 걷어내고 새 묶음으로 갈아 끼운다. 갱신이 필요한 곳은 이걸 써야 한다.
 	 *
 	 * RemoveSource 후 AddSource 를 부르면 결과는 같지만 그 사이에 "모디파이어가 없는 순간"이
@@ -187,6 +204,9 @@ private:
 	bool HasAuthorityToModify() const;
 
 	TMap<FTDStatSourceHandle, FSource> Sources;
+
+	/** AddTimedSource 가 건 타이머들. 걷힐 때 자기 항목을 지우므로 쌓이지 않는다. */
+	TMap<FTDStatSourceHandle, FTimerHandle> TimedSourceTimers;
 
 	int32 NextSourceId = 0;
 

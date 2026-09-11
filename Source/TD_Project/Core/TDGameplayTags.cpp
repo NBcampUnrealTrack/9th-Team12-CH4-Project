@@ -89,6 +89,10 @@ namespace TDTags
 		"체력을 Value 만큼 회복한다. 이쪽은 배율이 아니라 절대값이다.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_RestoreMana, "Skill.Effect.RestoreMana",
 		"마나를 Value 만큼 회복한다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Buff, "Skill.Effect.Buff",
+		"StatTag 를 Op 로 Value 만큼, Duration 초 동안 올린다. 장비와 같은 스탯 소스를 쓰고 시간만 붙는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Invulnerable, "Skill.Effect.Invulnerable",
+		"Duration 초 동안 피해를 받지 않는다. Value 는 쓰지 않는다.");
 
 
 	// ── 존(맵) ────────────────────────────────────────────

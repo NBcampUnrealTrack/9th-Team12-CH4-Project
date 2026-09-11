@@ -216,3 +216,20 @@ bool ATDCharacterBase::IsStaggered() const
 {
 	return GetWorld() != nullptr && GetWorld()->GetTimeSeconds() < StaggerEndTime;
 }
+
+void ATDCharacterBase::SetInvulnerable(float Duration)
+{
+	if (!HasAuthority() || Duration <= 0.f || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	// 이미 걸린 무적이 더 길면 그대로 둔다. 덮어쓰면 짧은 무적이 긴 무적을 끊는다.
+	const float EndTime = GetWorld()->GetTimeSeconds() + Duration;
+	InvulnerableEndTime = FMath::Max(InvulnerableEndTime, EndTime);
+}
+
+bool ATDCharacterBase::IsInvulnerable() const
+{
+	return GetWorld() != nullptr && GetWorld()->GetTimeSeconds() < InvulnerableEndTime;
+}

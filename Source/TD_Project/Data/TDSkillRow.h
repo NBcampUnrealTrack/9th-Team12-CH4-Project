@@ -96,13 +96,26 @@ struct FTDSkillRow : public FTableRowBase
 	float ManaCostPerLevel = 0.f;
 
 	/**
-	 * 기본 쿨타임(초). 레벨과 무관하다.
+	 * 스킬 레벨 1 의 쿨타임(초).
 	 *
-	 * 실제 쿨타임은 평타와 같은 규칙으로 Stat.Utility.CooldownRecoveryRate 로 나뉜다.
-	 * 레벨마다 쿨이 줄어야 한다면 그때 열을 하나 더 만든다.
+	 * 실제 쿨타임은 평타와 같은 규칙으로 Stat.Utility.CooldownRecoveryRate 로 한 번 더 나뉜다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast", meta = (ClampMin = "0"))
 	float Cooldown = 1.f;
+
+	/**
+	 * 레벨 한 칸당 쿨타임 변화(초). 레벨 L 의 쿨 = Cooldown + CooldownPerLevel × (L - 1).
+	 *
+	 * **줄이려면 음수를 넣는다.** ManaCostPerLevel 과 부호 규칙이 같아서, 시트에서
+	 * "레벨당 얼마씩 변하는가" 를 같은 방식으로 읽을 수 있다.
+	 *
+	 * 수치가 오르지 않는 스킬(전사의 방벽처럼 무적 시간이 고정인 것)에 레벨을 올릴
+	 * 이유를 주기 위한 열이다. 0 으로 두면 레벨과 무관한 예전 동작 그대로다.
+	 *
+	 * 0 아래로는 내려가지 않는다 — 값을 잘못 넣어도 쿨이 사라지지는 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
+	float CooldownPerLevel = 0.f;
 
 	/** Skill.Shape.* — 어디를 때리는가. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
@@ -196,4 +209,35 @@ struct FTDSkillRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	TSoftObjectPtr<UNiagaraSystem> VFX;
+
+	/**
+	 * 이펙트 에셋이 **원래 몇 cm 짜리로 만들어졌는가**. 0 이면 크기를 건드리지 않는다.
+	 *
+	 * 코드는 에셋의 원래 크기를 알 방법이 없다. 이 값을 적어 두면 Range / VFXBaseSize 로
+	 * 키워서, 판정 범위와 이펙트가 같은 크기가 된다 — 기획이 Range 를 바꾸면 이펙트가
+	 * 저절로 따라온다.
+	 *
+	 * 모양에 따라 무엇을 재는지가 다르다.
+	 *   ForwardBox   이펙트의 길이 (앞으로 뻗는 거리)
+	 *   SelfRadius   이펙트의 반경
+	 *   Self         쓰지 않는다 (Range 가 0 이라 키울 기준이 없다)
+	 *
+	 * 균등하게 키운다. 상자의 폭(Width)까지 따로 늘리면 이펙트가 찌그러진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast", meta = (ClampMin = "0"))
+	float VFXBaseSize = 0.f;
+
+	/**
+	 * ForwardBox 에서만 쓴다. 이펙트가 **몸에서 몇 cm 앞에서 시작하는가**.
+	 *
+	 * 앞으로 뻗는 이펙트는 대개 원점이 시작점에 있다. 몸 한가운데(0)에서 나오면 이상해
+	 * 보이므로 캡슐 반경쯤(40~60)을 주면 칼끝·손 근처에서 시작한다.
+	 *
+	 * 앞쪽에서 **터지는** 이펙트라면 Range 의 절반을 주면 판정 상자 중심에 놓인다.
+	 * 한 열로 두 경우를 다 덮기 위해 "상자 중심" 을 따로 두지 않았다.
+	 *
+	 * 맞출 때는 UTDSkillComponent 의 bDrawDebugShape 를 켜서 판정 상자와 겹쳐 본다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
+	float VFXOffset = 0.f;
 };

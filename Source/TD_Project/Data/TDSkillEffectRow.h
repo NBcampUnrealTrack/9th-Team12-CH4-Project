@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
+#include "Skill/TDSkillTypes.h"
+#include "Stats/TDStatTypes.h"
 #include "TDSkillEffectRow.generated.h"
 
 /**
@@ -55,4 +57,40 @@ struct FTDSkillEffectRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Effect")
 	float ValuePerLevel = 0.f;
+
+	/**
+	 * 이 효과가 누구에게 가는가. 스킬이 아니라 **효과마다** 정한다.
+	 *
+	 * 마법사의 장판처럼 한 시전으로 아군은 회복하고 적은 피해를 입는 스킬이 있고,
+	 * 그때 회복량과 피해 배율이 서로 다른 값이어야 한다. 행을 둘로 나누면
+	 * 각자 BaseValue 를 가지므로 저절로 해결된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Effect")
+	ETDSkillTarget TargetTeam = ETDSkillTarget::Enemy;
+
+	// ── 지속 효과 전용 ────────────────────────────────────
+	// Damage·Heal·RestoreMana 는 아래 세 칸을 쓰지 않는다.
+
+	/**
+	 * 효과가 유지되는 시간(초). 0 이면 즉발이다.
+	 *
+	 * Skill.Effect.Buff 와 Skill.Effect.Invulnerable 만 쓴다. 레벨을 따라 늘지 않는데,
+	 * 시간이 길어지는 것보다 수치가 커지는 편이 체감이 분명하기 때문이다.
+	 * 레벨마다 지속시간이 달라야 하는 스킬이 생기면 그때 열을 하나 더 만든다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Effect|Duration", meta = (ClampMin = "0"))
+	float Duration = 0.f;
+
+	/**
+	 * 올려 줄 스탯. **Skill.Effect.Buff 에서만** 쓴다.
+	 *
+	 * DT_SkillPassive 와 같은 구조다. 다른 점은 Duration 이 지나면 걷힌다는 것뿐이라,
+	 * 등록 경로도 그쪽과 같은 스탯 소스를 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Effect|Duration")
+	FGameplayTag StatTag;
+
+	/** Skill.Effect.Buff 에서만 쓴다. Increased/More 는 비율이라 20% 증가는 0.2 다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Effect|Duration")
+	ETDModOp Op = ETDModOp::Added;
 };

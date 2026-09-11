@@ -85,9 +85,12 @@ ENUMS = [
     ("Skill", "CastType",     {"Instant", "Cast", "Channel"}),
     ("Skill", "CastMovement", {"Free", "TurnOnly", "Locked"}),
 
+    ("SkillEffect", "TargetTeam", {"Enemy", "Ally"}),
+
     ("ItemStat",     "Op", {"Base", "Added", "Increased", "More"}),
     ("SkillPassive", "Op", {"Base", "Added", "Increased", "More"}),
     ("ItemSetBonus", "Op", {"Base", "Added", "Increased", "More"}),
+    ("SkillEffect",  "Op", {"Base", "Added", "Increased", "More"}),
 ]
 
 
@@ -702,6 +705,38 @@ def collect_by_skill(alias, tag_column, prefix, report):
     return result
 
 
+def collect_effect_arguments(report):
+    """
+    액티브 효과가 만드는 인자 이름. 위와 달리 행마다 어느 열을 보는지가 갈린다.
+
+    **버프는 EffectTag 가 아니라 StatTag 를 따른다.** 효과 태그로 이름을 만들면
+    한 스킬의 버프가 여럿일 때 전부 {Buff} 가 되어 서로 덮어쓴다 — 마법사의
+    전열 강화가 물리·마법을 따로 올리는 것이 그 경우다.
+    UTDTooltipStatics::FormatSkillDescription 이 같은 규칙으로 갈린다.
+    """
+    table = load_table("SkillEffect", report)
+    if table is None:
+        return {}
+
+    rows = read_columns(table, "SkillEffect", ["SkillId", "EffectTag", "StatTag"], report)
+    if rows is None:
+        return {}
+
+    result = {}
+    for row in rows:
+        skill = row["SkillId"].strip()
+        tag = as_tag(row["EffectTag"])
+
+        if tag == "Skill.Effect.Buff":
+            names = tag_argument_names(as_tag(row["StatTag"]), "Stat.")
+        else:
+            names = tag_argument_names(tag, "Skill.Effect.")
+
+        result.setdefault(skill, set()).update(names)
+
+    return result
+
+
 def check_format_arguments(report):
     table = load_table("Skill", report)
     if table is None:
@@ -711,7 +746,7 @@ def check_format_arguments(report):
     if rows is None:
         return
 
-    effects = collect_by_skill("SkillEffect", "EffectTag", "Skill.Effect.", report)
+    effects = collect_effect_arguments(report)
     passives = collect_by_skill("SkillPassive", "StatTag", "Stat.", report)
 
     for row in rows:
@@ -792,7 +827,13 @@ def check_option_rules(report):
 
     for item_name, value in item_pools:
         pool_id = value.strip()
-        if pool_id and pool_id not in known:
+
+        # 빈 FName 은 에디터가 'None' 이라는 글자로 넘긴다. 포션처럼 옵션이 없는 아이템은
+        # 풀을 비워 두는 게 정상이므로 "없는 풀" 로 잡으면 안 된다.
+        if pool_id in ("", "None"):
+            continue
+
+        if pool_id not in known:
             report.error("옵션",
                          f"[{item_name}] 의 OptionPoolId '{pool_id}' 가 DT_OptionPool 에 없다. "
                          f"굴려도 옵션이 하나도 붙지 않는다.")
@@ -876,6 +917,60 @@ def check_reference_max_level(report):
                          f"{relative_path} 의 ReferenceMaxLevel={found} 인데 "
                          f"DT_LevelExp 의 만렙은 {expected} 다 ({purpose}). "
                          f"보간 기준이 어긋나 고레벨 장비가 제 값을 못 받는다.")
+
+
+def check_skill_effect_rules(report):
+    table = load_table("SkillEffect", report)
+    if table is None:
+        return
+
+    rows = read_columns(table, "SkillEffect",
+                        ["SkillId", "EffectTag", "BaseValue", "TargetTeam",
+                         "Duration", "StatTag"], report)
+    if rows is None:
+        return
+
+    for row in rows:
+        name = row["__name__"]
+        tag = as_tag(row["EffectTag"])
+        duration = as_float(row["Duration"])
+        stat = as_tag(row["StatTag"])
+        team = clean_enum(row["TargetTeam"])
+
+        if tag == "Skill.Effect.Buff":
+            # 셋 중 하나만 빠져도 버프가 조용히 아무 일도 하지 않는다.
+            if duration <= 0.0:
+                report.error("스킬 효과",
+                             f"[{name}] 은 버프인데 Duration 이 0 이다. 걸자마자 걷힌다.")
+            if not stat:
+                report.error("스킬 효과",
+                             f"[{name}] 은 버프인데 StatTag 가 비어 있다. 올릴 스탯이 없다.")
+            if as_float(row["BaseValue"]) == 0.0:
+                report.warn("스킬 효과",
+                            f"[{name}] 은 버프인데 BaseValue 가 0 이다. 1레벨에서 효과가 없다.")
+
+        elif tag == "Skill.Effect.Invulnerable":
+            if duration <= 0.0:
+                report.error("스킬 효과",
+                             f"[{name}] 은 무적인데 Duration 이 0 이다. 아무 일도 일어나지 않는다.")
+
+        else:
+            # 즉발 효과가 지속 열을 채우고 있으면 적은 사람이 오해한 것이다.
+            if duration > 0.0:
+                report.warn("스킬 효과",
+                            f"[{name}] 은 즉발({tag})인데 Duration={duration} 이 들어 있다. 쓰이지 않는 값이다.")
+            if stat:
+                report.warn("스킬 효과",
+                            f"[{name}] 은 즉발({tag})인데 StatTag 가 들어 있다. 쓰이지 않는 값이다.")
+
+        # 회복을 적에게 주면 적을 살린다. 반대로 피해를 아군에게 주면 팀킬이다.
+        if tag in ("Skill.Effect.Heal", "Skill.Effect.RestoreMana") and team == "Enemy":
+            report.error("스킬 효과",
+                         f"[{name}] 은 회복인데 TargetTeam=Enemy 다. 적을 회복시킨다.")
+
+        if tag == "Skill.Effect.Damage" and team == "Ally":
+            report.warn("스킬 효과",
+                        f"[{name}] 은 피해인데 TargetTeam=Ally 다. 아군을 때린다 — 의도한 것인지 확인할 것.")
 
 
 def get_max_character_level(report):
@@ -998,6 +1093,7 @@ def main():
     check_stat_rules(report)
     check_curve_rules(report)
     check_skill_rules(report)
+    check_skill_effect_rules(report)
     check_shop_rules(report)
     check_monster_rules(report)
     check_format_arguments(report)

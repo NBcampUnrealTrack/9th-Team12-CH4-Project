@@ -10,7 +10,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Stats/TDProgressionComponent.h"
+#include "Stats/TDStatComponent.h"
 #include "TimerManager.h"
 
 namespace
@@ -72,6 +76,9 @@ void UTDSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		Owner->OnDamagedServer.Remove(DamagedHandle);
 	}
+
+	// 캐릭터가 사라지는데 장판 이펙트만 남으면 안 된다.
+	StopChannelVFX();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -135,17 +142,21 @@ float UTDSkillComponent::GetManaCost(const FTDSkillRow& Row, int32 SkillLevel) c
 	return FMath::Max(0.f, Row.ManaCost + Row.ManaCostPerLevel * (SkillLevel - 1));
 }
 
-float UTDSkillComponent::GetActualCooldown(const FTDSkillRow& Row) const
+float UTDSkillComponent::GetActualCooldown(const FTDSkillRow& Row, int32 SkillLevel) const
 {
+	// 레벨을 따라 줄어드는 쿨(CooldownPerLevel 이 음수)이 있다. 0 아래로는 내려가지 않는다.
+	const float BaseCooldown =
+		FMath::Max(0.f, Row.Cooldown + Row.CooldownPerLevel * (SkillLevel - 1));
+
 	const ATDCharacterBase* Owner = GetOwnerCharacter();
 	if (Owner == nullptr)
 	{
-		return Row.Cooldown;
+		return BaseCooldown;
 	}
 
 	// 실제 쿨타임 = 기본 ÷ (1 + 회복률). 평타(UTDCombatComponent::CanAttack)와 같은 규칙이다.
 	const float Recovery = FMath::Max(0.f, Owner->GetStat(TDTags::Stat_Utility_CooldownRecoveryRate));
-	return Row.Cooldown / (1.f + Recovery);
+	return BaseCooldown / (1.f + Recovery);
 }
 
 // ── 시전 시작 ─────────────────────────────────────────────
@@ -329,18 +340,42 @@ void UTDSkillComponent::FireOnce()
 		}
 
 		bCostPaid = true;
+
+		// 이펙트는 첫 판정에서 한 번만 띄운다. 시전 시작에 띄우면 캐스팅이 끝나기 전에
+		// 먼저 터지고, 이동으로 끊긴 캐스팅도 이펙트는 나가 버린다.
+		//
+		// 방향은 판정과 같은 출처(스프라이트가 보는 쪽)를 쓴다. 다른 값을 쓰면
+		// 이펙트가 날아가는 곳과 실제로 맞는 곳이 갈린다.
+		const UTDCombatComponent* Combat = Owner->GetCombatComponent();
+		FVector Facing = Combat ? Combat->GetFacingDirection().GetSafeNormal2D() : FVector::ZeroVector;
+		if (Facing.IsNearlyZero())
+		{
+			Facing = Owner->GetActorForwardVector().GetSafeNormal2D();
+		}
+
+		MulticastOnSkillFired(CastingSkillId,
+			Owner->GetActorLocation() + Facing * Row->VFXOffset, Facing.Rotation());
 	}
 
-	const TArray<AActor*> Targets = GatherTargets(*Row);
+	// 효과마다 대상이 다를 수 있다 — 마법사 장판은 아군을 회복하면서 적을 때린다.
+	// 같은 팀을 두 번 훑지 않도록 한 번 모은 것을 재사용한다.
+	TMap<ETDSkillTarget, TArray<AActor*>> GatheredByTeam;
 
 	for (const FTDSkillEffectRow& Effect : Progression->GetSkillEffects(CastingSkillId))
 	{
+		const TArray<AActor*>* Targets = GatheredByTeam.Find(Effect.TargetTeam);
+		if (Targets == nullptr)
+		{
+			Targets = &GatheredByTeam.Add(Effect.TargetTeam, GatherTargets(*Row, Effect.TargetTeam));
+		}
+
 		const float Value = Effect.BaseValue + Effect.ValuePerLevel * (SkillLevel - 1);
-		ApplyEffect(Effect.EffectTag, Value, *Row, Targets);
+		ApplyEffect(Effect, Value, *Row, *Targets);
 	}
 }
 
-TArray<AActor*> UTDSkillComponent::GatherTargets(const FTDSkillRow& Row) const
+TArray<AActor*> UTDSkillComponent::GatherTargets(const FTDSkillRow& Row,
+	ETDSkillTarget TargetTeam) const
 {
 	ATDCharacterBase* Owner = GetOwnerCharacter();
 
@@ -355,19 +390,23 @@ TArray<AActor*> UTDSkillComponent::GatherTargets(const FTDSkillRow& Row) const
 		// 몸에서 정확히 Range 만큼 뻗은 상자가 된다.
 		const FVector HalfExtent(Row.Range * 0.5f, Row.Width * 0.5f, SkillBoxHalfHeight);
 		return UTDCombatStatics::GatherTargetsInBox(
-			Owner, Facing, HalfExtent, Row.Range * 0.5f, bDrawDebugShape);
+			Owner, Facing, HalfExtent, Row.Range * 0.5f, bDrawDebugShape, TargetTeam);
 	}
 
 	if (Row.ShapeTag == TDTags::Skill_Shape_SelfRadius)
 	{
-		return UTDCombatStatics::GatherTargetsInSphere(Owner, Row.Range, bDrawDebugShape);
+		return UTDCombatStatics::GatherTargetsInSphere(
+			Owner, Row.Range, bDrawDebugShape, TargetTeam);
 	}
 
-	// Skill.Shape.Self — 대상을 찾지 않는다. 회복·버프는 아래에서 시전자에게 간다.
-	return TArray<AActor*>();
+	// Skill.Shape.Self — 범위를 훑지 않고 시전자에게만 간다.
+	// 아군 대상이 생기면서 이 경우도 목록으로 표현할 수 있게 됐다 —
+	// 예전처럼 빈 배열을 돌려주고 ApplyEffect 가 따로 분기할 필요가 없다.
+	return Owner != nullptr && TargetTeam == ETDSkillTarget::Ally
+		? TArray<AActor*>{ Owner } : TArray<AActor*>();
 }
 
-void UTDSkillComponent::ApplyEffect(FGameplayTag EffectTag, float Value,
+void UTDSkillComponent::ApplyEffect(const FTDSkillEffectRow& Effect, float Value,
 	const FTDSkillRow& Row, const TArray<AActor*>& Targets)
 {
 	ATDCharacterBase* Owner = GetOwnerCharacter();
@@ -375,6 +414,8 @@ void UTDSkillComponent::ApplyEffect(FGameplayTag EffectTag, float Value,
 	{
 		return;
 	}
+
+	const FGameplayTag EffectTag = Effect.EffectTag;
 
 	if (EffectTag == TDTags::Skill_Effect_Damage)
 	{
@@ -402,17 +443,75 @@ void UTDSkillComponent::ApplyEffect(FGameplayTag EffectTag, float Value,
 		return;
 	}
 
-	// 회복은 언제나 시전자에게 간다. 파티원 회복은 아군을 모으는 다른 수집이 필요하고
-	// (지금 GatherTargets 는 적만 모은다) 그런 스킬이 아직 없다.
+	// 회복은 대상 목록을 그대로 돈다. 자기만 회복하는 스킬은 시트에서
+	// ShapeTag=Skill.Shape.Self + TargetTeam=Ally 로 적으면 목록에 자기만 들어온다.
 	if (EffectTag == TDTags::Skill_Effect_Heal)
 	{
-		UTDCombatStatics::RestoreHealth(Owner, Value);
+		for (AActor* Target : Targets)
+		{
+			UTDCombatStatics::RestoreHealth(Target, Value);
+		}
 		return;
 	}
 
 	if (EffectTag == TDTags::Skill_Effect_RestoreMana)
 	{
-		UTDCombatStatics::RestoreMana(Owner, Value);
+		for (AActor* Target : Targets)
+		{
+			UTDCombatStatics::RestoreMana(Target, Value);
+		}
+		return;
+	}
+
+	// ── 지속 효과 ──
+
+	if (EffectTag == TDTags::Skill_Effect_Buff)
+	{
+		if (Effect.Duration <= 0.f || !Effect.StatTag.IsValid())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("스킬 '%s': 버프인데 Duration(%.2f) 이나 StatTag('%s') 가 비었다. "
+					 "DT_SkillEffect 를 확인할 것."),
+				*CastingSkillId.ToString(), Effect.Duration, *Effect.StatTag.ToString());
+			return;
+		}
+
+		// 장비·패시브가 쓰는 것과 같은 스탯 소스다. 시간만 붙는다.
+		TArray<FTDStatModifier> Modifiers;
+		Modifiers.Emplace(Effect.StatTag, Effect.Op, Value);
+
+		for (AActor* Target : Targets)
+		{
+			ATDCharacterBase* TargetChar = Cast<ATDCharacterBase>(Target);
+			UTDStatComponent* Stats = TargetChar ? TargetChar->GetStatComponent() : nullptr;
+
+			if (Stats != nullptr)
+			{
+				Stats->AddTimedSource(TDTags::Source_Skill, Modifiers, Effect.Duration);
+			}
+		}
+
+		return;
+	}
+
+	if (EffectTag == TDTags::Skill_Effect_Invulnerable)
+	{
+		if (Effect.Duration <= 0.f)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("스킬 '%s': 무적인데 Duration 이 0 이다. 아무 일도 일어나지 않는다."),
+				*CastingSkillId.ToString());
+			return;
+		}
+
+		for (AActor* Target : Targets)
+		{
+			if (ATDCharacterBase* TargetChar = Cast<ATDCharacterBase>(Target))
+			{
+				TargetChar->SetInvulnerable(Effect.Duration);
+			}
+		}
+
 		return;
 	}
 
@@ -441,7 +540,10 @@ void UTDSkillComponent::EndCast(bool bFired)
 	{
 		if (const FTDSkillRow* Row = GetCastingRow())
 		{
-			Cooldown = GetActualCooldown(*Row);
+			const UTDProgressionComponent* Progression = GetProgression();
+			const int32 SkillLevel = Progression ? Progression->GetSkillLevel(SkillId) : 1;
+
+			Cooldown = GetActualCooldown(*Row, SkillLevel);
 		}
 	}
 
@@ -582,10 +684,111 @@ void UTDSkillComponent::MulticastOnCastStarted_Implementation(
 	OnCastStarted.Broadcast(SkillId, CastTime, CastType);
 }
 
+void UTDSkillComponent::MulticastOnSkillFired_Implementation(
+	FName SkillId, FVector Location, FRotator Facing)
+{
+	// 전용 서버는 화면이 없다. 이펙트를 만들어 봐야 아무도 보지 않는다.
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	ATDCharacterBase* Owner = GetOwnerCharacter();
+	const UTDProgressionComponent* Progression = GetProgression();
+	const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
+
+	if (Owner == nullptr || Row == nullptr || Row->VFX.IsNull())
+	{
+		return;
+	}
+
+	// 소프트 참조라 처음 쓸 때 읽힌다. 스킬 이펙트는 몇 개뿐이고 작아서 동기로 읽는다 —
+	// 첫 시전에 끊김이 보이면 그때 미리 읽어 두는 쪽으로 바꾼다.
+	UNiagaraSystem* System = Row->VFX.LoadSynchronous();
+	if (System == nullptr)
+	{
+		return;
+	}
+
+	// 판정 범위와 같은 크기로 키운다. 기준 크기를 모르면(0) 에셋 그대로 둔다.
+	const float Scale = Row->VFXBaseSize > 0.f && Row->Range > 0.f
+		? Row->Range / Row->VFXBaseSize : 1.f;
+
+	UNiagaraComponent* Spawned = nullptr;
+
+	if (Row->ShapeTag == TDTags::Skill_Shape_ForwardBox)
+	{
+		// 앞으로 뻗는 이펙트는 월드에 둔다. 시전자에 붙이면 날아가던 검기가 몸을 따라 휜다.
+		// Location 에는 서버가 이미 VFXOffset 을 더해 보냈다.
+		Spawned = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this, System, Location, Facing, FVector(Scale));
+	}
+	else
+	{
+		// 자기 주변 이펙트는 시전자에 붙인다. 이동하며 쓰는 정신집중(마력 폭풍)이
+		// 월드에 고정되면 뛰어가는 동안 이펙트만 제자리에 남는다.
+		Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			System, Owner->GetRootComponent(), NAME_None,
+			FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale),
+			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None);
+	}
+
+	if (Spawned == nullptr)
+	{
+		return;
+	}
+
+	// 언제 끌지. 한 번 터지고 끝나는 이펙트는 에셋이 알아서 사라지므로 손대지 않는다.
+	// 반복하는 이펙트(장판)는 스킬이 지속되는 만큼만 보여야 한다.
+	if (Row->CastType == ETDSkillCastType::Channel)
+	{
+		// 정신집중은 끝나는 시점을 모른다 — 끊길 수 있다. 시전 종료 방송이 끈다.
+		StopChannelVFX();
+		ActiveChannelVFX = Spawned;
+		return;
+	}
+
+	// 지속 효과가 있으면 그 시간만큼 보인다 — 방벽의 무적 1초, 전열 강화의 버프 5초.
+	float Lifetime = 0.f;
+	for (const FTDSkillEffectRow& Effect : Progression->GetSkillEffects(SkillId))
+	{
+		Lifetime = FMath::Max(Lifetime, Effect.Duration);
+	}
+
+	if (Lifetime > 0.f && GetWorld() != nullptr)
+	{
+		TWeakObjectPtr<UNiagaraComponent> WeakSpawned = Spawned;
+		FTimerHandle Handle;
+		GetWorld()->GetTimerManager().SetTimer(Handle,
+			FTimerDelegate::CreateWeakLambda(this, [WeakSpawned]()
+			{
+				if (WeakSpawned.IsValid())
+				{
+					WeakSpawned->Deactivate();
+				}
+			}),
+			Lifetime, /*bLoop=*/false);
+	}
+}
+
+void UTDSkillComponent::StopChannelVFX()
+{
+	if (ActiveChannelVFX.IsValid())
+	{
+		// Deactivate 는 새 입자만 멈추고 남은 입자는 마저 사라지게 둔다. 뚝 끊기지 않는다.
+		ActiveChannelVFX->Deactivate();
+	}
+
+	ActiveChannelVFX.Reset();
+}
+
 void UTDSkillComponent::MulticastOnCastEnded_Implementation(
 	FName SkillId, bool bFired, float Cooldown)
 {
 	CastingSkillId = NAME_None;
+
+	// 정신집중이 끝나거나 끊겼다. 장판을 걷는다.
+	StopChannelVFX();
 
 	if (bFired && Cooldown > 0.f)
 	{

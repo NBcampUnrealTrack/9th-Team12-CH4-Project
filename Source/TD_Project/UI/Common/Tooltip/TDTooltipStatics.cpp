@@ -20,7 +20,7 @@ namespace
 	const TCHAR* TooltipContext = TEXT("TDTooltipStatics");
 
 	/** 후행 0 을 붙이지 않는다. 12.00% 가 아니라 12% 로 보여야 한다. */
-	FText Number(float Value, int32 Decimals)
+	FText FormatAmount(float Value, int32 Decimals)
 	{
 		FNumberFormattingOptions Options;
 		Options.MinimumFractionalDigits = 0;
@@ -127,7 +127,7 @@ FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, floa
 	//
 	// DT_StatDefinition 이 0 을 지정한 스탯은 0 으로 둔다 — 정수로 보여 달라는 뜻이다.
 	const int32 Decimals = FMath::Min(Meta != nullptr ? Meta->DecimalPlaces : 1, 1);
-	const FText Amount = Number(DisplayValue, Decimals);
+	const FText Amount = FormatAmount(DisplayValue, Decimals);
 	const FText Sign = bSigned && DisplayValue > 0.f ? FText::FromString(TEXT("+")) : FText::GetEmpty();
 
 	return FText::Format(bPercent ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"), Sign, Amount);
@@ -272,13 +272,13 @@ FText UTDTooltipStatics::FormatSkillDescription(const UTDProgressionComponent* P
 
 	// ── 시전 ──
 	Args.Add(TEXT("Level"), FText::AsNumber(EffectiveLevel));
-	Args.Add(TEXT("Mana"), Number(Row->ManaCost + Row->ManaCostPerLevel * (EffectiveLevel - 1), 0));
-	Args.Add(TEXT("Cooldown"), Number(Row->Cooldown, 1));
-	Args.Add(TEXT("CastTime"), Number(Row->CastDelay, 1));
-	Args.Add(TEXT("Duration"), Number(Row->ChannelDuration, 1));
-	Args.Add(TEXT("Interval"), Number(Row->ChannelInterval, 2));
-	Args.Add(TEXT("Range"), Number(Row->Range, 0));
-	Args.Add(TEXT("Width"), Number(Row->Width, 0));
+	Args.Add(TEXT("Mana"), FormatAmount(Row->ManaCost + Row->ManaCostPerLevel * (EffectiveLevel - 1), 0));
+	Args.Add(TEXT("Cooldown"), FormatAmount(Row->Cooldown, 1));
+	Args.Add(TEXT("CastTime"), FormatAmount(Row->CastDelay, 1));
+	Args.Add(TEXT("Duration"), FormatAmount(Row->ChannelDuration, 1));
+	Args.Add(TEXT("Interval"), FormatAmount(Row->ChannelInterval, 2));
+	Args.Add(TEXT("Range"), FormatAmount(Row->Range, 0));
+	Args.Add(TEXT("Width"), FormatAmount(Row->Width, 0));
 
 	// 정신집중이 몇 번 때리는가. 첫 판정이 시작과 동시에 들어가고 지속시간에 끝나므로
 	// UTDSkillComponent 의 타이머와 같은 셈이 된다. 정신집중이 아니면 한 번이다.
@@ -294,12 +294,32 @@ FText UTDTooltipStatics::FormatSkillDescription(const UTDProgressionComponent* P
 	{
 		const float Value = Effect.BaseValue + Effect.ValuePerLevel * (EffectiveLevel - 1);
 
+		// 지속 효과의 시간도 {Duration} 으로 쓴다. 정신집중이 아닌 스킬은 ChannelDuration 이
+		// 0 이라 "0초 동안" 이 되어 버리기 때문이다 — 방벽의 무적 1초, 전열 강화의 버프 5초가
+		// 그 경우다. 정신집중 스킬은 ChannelDuration 이 이미 맞는 값이라 건드리지 않는다.
+		if (Effect.Duration > 0.f && Row->ChannelDuration <= 0.f)
+		{
+			Args.Add(TEXT("Duration"), FormatAmount(Effect.Duration, 1));
+		}
+
+		// 버프는 이름도 값도 **스탯 쪽**을 따라간다.
+		//
+		// 효과 태그로 이름을 만들면 한 스킬의 버프가 여럿일 때 전부 {Buff} 가 되어
+		// 서로 덮어쓴다 — 마법사의 전열 강화가 물리·마법을 따로 올리는 것이 그 경우다.
+		// 값도 마찬가지로, 0.3 은 스탯의 표시 규칙을 거쳐야 "30%" 가 된다.
+		if (Effect.EffectTag == TDTags::Skill_Effect_Buff && Effect.StatTag.IsValid())
+		{
+			AddTagArgument(Args, Effect.StatTag, TEXT("Stat."),
+				FormatStatValue(Effect.StatTag, Effect.Op, Value, /*bSigned=*/false));
+			continue;
+		}
+
 		// 피해만 공격력 배율이다(D94). 1.5 를 "150%" 로 내보낸다 — 스탯 태그가 아니라
 		// 표시 규칙을 찾을 곳이 없으므로 곱셈 계열이라고 알려 주고 맡긴다.
 		// 회복은 절대값이라 숫자만 나간다.
 		const FText Text = Effect.EffectTag == TDTags::Skill_Effect_Damage
 			? FormatStatValue(FGameplayTag(), ETDModOp::Increased, Value, /*bSigned=*/false)
-			: Number(Value, 0);
+			: FormatAmount(Value, 0);
 
 		AddTagArgument(Args, Effect.EffectTag, TEXT("Skill.Effect."), Text);
 	}
@@ -369,19 +389,19 @@ FTDTooltipData UTDTooltipStatics::MakeSkillTooltip(const UTDProgressionComponent
 
 	if (Mana > 0.f)
 	{
-		AddLine(LOCTEXT("SkillMana", "마나 소모"), Number(Mana, 0));
+		AddLine(LOCTEXT("SkillMana", "마나 소모"), FormatAmount(Mana, 0));
 	}
 
 	if (Row->Cooldown > 0.f)
 	{
 		AddLine(LOCTEXT("SkillCooldown", "재사용 대기"),
-			FText::Format(LOCTEXT("Seconds", "{0}초"), Number(Row->Cooldown, 1)));
+			FText::Format(LOCTEXT("Seconds", "{0}초"), FormatAmount(Row->Cooldown, 1)));
 	}
 
 	// 범위가 없는 스킬(자기 자신에게 거는 것)은 사거리를 말할 것이 없다.
 	if (Row->Range > 0.f)
 	{
-		AddLine(LOCTEXT("SkillRange", "사거리"), Number(Row->Range, 0));
+		AddLine(LOCTEXT("SkillRange", "사거리"), FormatAmount(Row->Range, 0));
 	}
 
 	return Data;

@@ -3,6 +3,7 @@
 #include "UI/ViewModel/TDPlayerStatsSubsystem.h"
 #include "UI/Common/TDProgressBarStyleDA.h"
 #include "Components/Image.h"
+#include "Components/Border.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/LocalPlayer.h"
@@ -15,7 +16,8 @@ namespace
 		using F = UTDPlayerStatsViewModel::FFieldNotificationClassDescriptor;
 		return {
 			F::LevelNameText, F::HealthPercent, F::ManaPercent, F::HealthText, F::ManaText,
-			F::Health, F::MaxHealth, F::Mana, F::MaxMana, F::HasPlayerState
+			F::Health, F::MaxHealth, F::Mana, F::MaxMana, F::HasPlayerState,
+			F::CharacterClassName, F::CharacterPortrait, F::CharacterClassIcon
 		};
 	}
 
@@ -85,6 +87,7 @@ void UTDPlayerStatusWidget::SetViewModel(UTDPlayerStatsViewModel* InViewModel)
 {
 	UnbindViewModel();
 	ViewModel = InViewModel;
+	RefreshClassVisuals();
 	HealthAnimation.Reset();
 	ManaAnimation.Reset();
 	if (ViewModel){
@@ -117,7 +120,9 @@ void UTDPlayerStatusWidget::RefreshField(UE::FieldNotification::FFieldId Field)
 {
 	if (!ViewModel) return;
 	using F = UTDPlayerStatsViewModel::FFieldNotificationClassDescriptor;
-	if (Field == F::LevelNameText && LevelNameText) LevelNameText->
+	if (Field == F::CharacterClassName || Field == F::CharacterPortrait || Field == F::CharacterClassIcon)
+        RefreshClassVisuals();
+    else if (Field == F::LevelNameText && LevelNameText) LevelNameText->
 			SetText(ViewModel->LevelNameText);
 	else if (Field == F::HealthPercent || Field == F::ManaPercent || Field == F::Health
 		|| Field == F::MaxHealth || Field == F::Mana || Field == F::MaxMana)
@@ -177,10 +182,31 @@ void UTDPlayerStatusWidget::ApplyVitalVisuals()
 void UTDPlayerStatusWidget::SetMainPortrait(UTexture2D* Texture, FVector2D UVScale,
                                             FVector2D UVOffset)
 {
-	if (!MainPortrait || !Texture) return;
+	if (!MainPortrait) return;
+    MainPortrait->SetVisibility(Texture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+    if (!Texture) return;
 	if (UMaterialInstanceDynamic* Material = MainPortrait->GetDynamicMaterial()){
 		Material->SetTextureParameterValue(TEXT("Portrait"), Texture);
 		Material->SetVectorParameterValue(
 				TEXT("PortraitUV"), FLinearColor(UVScale.X, UVScale.Y, UVOffset.X, UVOffset.Y));
 	}
+	else MainPortrait->SetBrushFromTexture(Texture);
+}
+void UTDPlayerStatusWidget::RefreshClassVisuals()
+{
+ const FText ClassName = ViewModel ? ViewModel->CharacterClassName
+  : NSLOCTEXT("TDPlayerStatus", "ClassUnselected", "미선택");
+ UTexture2D* Portrait = ViewModel ? ViewModel->CharacterPortrait.Get() : nullptr;
+ UTexture2D* Icon = ViewModel ? ViewModel->CharacterClassIcon.Get() : nullptr;
+ SetMainPortrait(Portrait, FVector2D(1.f, 1.f), FVector2D::ZeroVector);
+ if (MainPortraitClassText) MainPortraitClassText->SetText(ClassName);
+ if (MainPortraitFallback) MainPortraitFallback->SetVisibility(Portrait ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+ if (SubPortraitPlaceholder)
+ {
+  SubPortraitPlaceholder->SetBrushFromTexture(Icon);
+  SubPortraitPlaceholder->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+ }
+ if (ClassIconText) ClassIconText->SetText(FText::Format(
+  NSLOCTEXT("TDPlayerStatus", "ClassIconPlaceholder", "{0}\n아이콘"), ClassName));
+ if (ClassIconFallback) ClassIconFallback->SetVisibility(Icon ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 }

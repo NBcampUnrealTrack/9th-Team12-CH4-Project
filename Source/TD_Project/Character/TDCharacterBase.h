@@ -101,6 +101,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Combat")
 	bool IsStaggered() const;
 
+	/** 맞으면 경직되는가. 보스는 false(슈퍼아머). */
+	virtual bool CanBeStaggered() const { return HitStaggerDuration > 0.f; }
+
 	/**
 	 * 무적을 Duration 초 동안 건다. 이미 걸려 있으면 **더 긴 쪽이 남는다.**
 	 *
@@ -112,9 +115,16 @@ public:
 	 */
 	void SetInvulnerable(float Duration);
 
-	/** 무적인가. ApplyDamage 가 확인한다. 서버 값이다 — 클라에선 항상 false. */
-	UFUNCTION(BlueprintPure, Category = "TD|Combat")
-	bool IsInvulnerable() const;
+	/**
+	 * 공격이 통하지 않는 상태인가. ApplyDamage 가 검사한다. 서버 값이다 — 클라에선 항상 false.
+	 *
+	 * 기본은 SetInvulnerable 로 건 시간 무적(방벽)이다. 보스는 재정의해 입장·페이즈 전환·잠수를
+	 * 더한다 — 재정의에서 Super 를 함께 보면 보스에게도 시간 무적이 걸린다.
+	 */
+	virtual bool IsInvulnerable() const;
+
+	/** 받는 피해 배율. 보스가 후딜(빈틈) 중 1.5 를 돌려준다. */
+	virtual float GetIncomingDamageMultiplier() const { return 1.f; }
 
 	// ── 사망 ──────────────────────────────────────────────
 

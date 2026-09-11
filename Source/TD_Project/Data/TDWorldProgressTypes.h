@@ -17,14 +17,14 @@ struct TD_PROJECT_API FTDChestClaimRecord
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Treasure")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Treasure")
 	FName ChestId;
 
 	/**
 	 * OneTime 상자는 0.
 	 * DailyKST 상자는 마지막 획득 날짜(YYYYMMDD).
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Treasure")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Treasure")
 	int32 LastClaimKstDayKey = 0;
 };
 
@@ -33,10 +33,10 @@ struct TD_PROJECT_API FTDNpcGiftRecord
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Affection")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Affection")
 	FName NPCId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Affection")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Affection")
 	int32 LastGiftKstDayKey = 0;
 };
 

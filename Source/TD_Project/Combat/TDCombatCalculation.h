@@ -14,15 +14,6 @@ struct FTDDamageInput
 	float ArmorPenetration = 0.f;
 	float TargetArmor = 0.f;
 	float TargetDamageReduction = 0.f; // DT_StatDefinition 상한 클램프 전제
-
-	/**
-	 * 보스에게 주는 추가 피해. 0.2 면 20% 더 들어간다.
-	 *
-	 * **대상이 보스가 아니면 호출자가 0 을 넣는다.** 여기서 판단하지 않는 이유는
-	 * "보스인가" 가 몬스터 테이블을 읽어야 알 수 있는 것이라, 그것까지 하면
-	 * 이 함수가 더 이상 순수하지 않게 되기 때문이다.
-	 */
-	float BossDamageBonus = 0.f;
 };
 
 struct FTDDamageResult

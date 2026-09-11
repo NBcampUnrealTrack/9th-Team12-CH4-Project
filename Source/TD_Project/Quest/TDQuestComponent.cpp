@@ -789,16 +789,13 @@ void UTDQuestComponent::ServerAbandonQuest_Implementation(
 	AbandonQuest(QuestId);
 }
 
-ETDQuestActionResult UTDQuestComponent::AbandonQuest(
-	FName QuestId)
+ETDQuestActionResult UTDQuestComponent::AbandonQuest(FName QuestId)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (OwnerActor == nullptr
-		|| !OwnerActor->HasAuthority())
+	if (OwnerActor == nullptr || !OwnerActor->HasAuthority())
 	{
-		return ETDQuestActionResult::
-			InvalidDefinition;
+		return ETDQuestActionResult::InvalidDefinition;
 	}
 
 	const int32 Index =
@@ -813,23 +810,26 @@ ETDQuestActionResult UTDQuestComponent::AbandonQuest(
 		return ETDQuestActionResult::NotActive;
 	}
 
-	const FTDQuestRow* Definition =
-		FindQuestDefinition(QuestId);
+	const FTDQuestRow* Definition = FindQuestDefinition(QuestId);
 
 	if (Definition == nullptr)
 	{
-		return ETDQuestActionResult::
-			InvalidDefinition;
+		return ETDQuestActionResult::InvalidDefinition;
 	}
 
 	if (IsMainQuest(*Definition))
 	{
-		return ETDQuestActionResult::
-			CannotAbandonMain;
+		return ETDQuestActionResult::CannotAbandonMain;
 	}
 
-	if (!IsActiveState(
-		QuestEntries[Index].StateTag))
+	// 메인이 아니라는 이유만으로 허용하지 않고,
+	// 정확히 서브 타입인지 확인한다.
+	if (!IsSubQuest(*Definition))
+	{
+		return ETDQuestActionResult::InvalidDefinition;
+	}
+
+	if (!IsActiveState(QuestEntries[Index].StateTag))
 	{
 		return ETDQuestActionResult::NotActive;
 	}
@@ -837,7 +837,9 @@ ETDQuestActionResult UTDQuestComponent::AbandonQuest(
 	RemoveQuestStateTags(*Definition);
 	QuestEntries.RemoveAt(Index);
 
+	// HUD, 퀘스트 창, NPC 표시 등이 기존 변경 알림을 받는다.
 	NotifyQuestListChanged();
+
 	return ETDQuestActionResult::Success;
 }
 

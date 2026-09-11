@@ -23,6 +23,8 @@
 #include "Engine/DataTable.h"
 #include "Quest/TDQuestComponent.h"
 #include "World/TDNPCBase.h"
+#include "Components/InputComponent.h"
+#include "InputCoreTypes.h"
 
 ATDPlayerController::ATDPlayerController()
 {
@@ -30,6 +32,35 @@ ATDPlayerController::ATDPlayerController()
 	// 컴포넌트가 스스로 Tick 을 끈다.
 	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
 		TEXT("ZoneEnvironmentComponent"));
+}
+
+void ATDPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	InputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &ThisClass::ToggleMouseCursor);
+}
+
+void ATDPlayerController::ToggleMouseCursor()
+{
+	if (!IsLocalController() || GetPawn() == nullptr)
+	{
+		return;
+	}
+
+	bShowMouseCursor = !bShowMouseCursor;
+	if (bShowMouseCursor)
+	{
+		FInputModeGameAndUI Mode;
+		Mode.SetHideCursorDuringCapture(false);
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(Mode);
+	}
+	else
+	{
+		FInputModeGameOnly Mode;
+		Mode.SetConsumeCaptureMouseDown(false);
+		SetInputMode(Mode);
+	}
 }
 
 void ATDPlayerController::OnPossess(APawn* InPawn)

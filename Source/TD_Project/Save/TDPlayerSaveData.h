@@ -20,10 +20,10 @@ struct FTDSkillLevel
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	FName SkillId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	int32 Level = 0;
 
 	FTDSkillLevel() = default;
@@ -81,21 +81,21 @@ struct FTDPlayerSaveData
 	 * 저장 형식 버전. 필드가 늘거나 의미가 바뀌었을 때 옛 데이터를 읽는 분기점이 된다.
 	 * 나중에 넣으려면 버전 없는 데이터가 이미 쌓여 있어 구분할 방법이 없으므로 처음부터 둔다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	//~~~~~기존
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 2;
 	
 	/**
 	 * 직업. DT_ClassGrowth 의 ClassId 와 짝이다.
 	 * 아직 직업 선택이 없어 비어 있을 수 있으며, 그때는 Default 성장만 적용된다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save", meta=(GetOptions="TD_Project.TDAccountDummyData.GetClassOptions"))
 	FName ClassId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	int32 Level = 1;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	int32 Exp = 0;
 
 	/**
@@ -103,49 +103,47 @@ struct FTDPlayerSaveData
 	 * 스킬 시스템 자체는 아직 없지만, 나중에 필드를 추가하면 SaveVersion 을 올리고
 	 * 변환 분기를 만들어야 하므로 자리를 미리 잡아둔다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDSkillLevel> SkillLevels;
 
 	// ── 인벤토리 ──────────────────────────────────────────
 
 	/** 확장권으로 늘어나므로 플레이어의 선택이고, 따라서 저장한다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	int32 InventorySlotCapacity = 40;
 
 	/**
 	 * 소지품. 강화 레벨과 추가 옵션이 개체마다 달라 재현할 수 없으므로 통째로 저장한다.
 	 * 아이템의 이름·아이콘·고정 스탯은 담지 않는다 — DT_ItemDefinition 에서 언제든 읽는다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDItemInstance> InventoryItems;
 
 	/** 장착 중인 장신구. SlotIndex 가 장착 칸(0~5) 번호다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDItemInstance> EquippedItems;
 
 	// ── 상태 ──────────────────────────────────────────────
 	// 계산으로 복원할 수 없는 값이라 저장한다. 다만 절대값이 아니라 비율로 담는다. (체력 1200/1000 같은 상황 방지)
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	float HealthRatio = 1.0f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	float ManaRatio = 1.0f;
 
 	
-	/**
-	 * 마지막으로 있던 존. 다시 접속하면 이 존의 시작 지점에서 시작한다.
-	 *
-	 * 좌표를 저장하지 않는 이유는 지형 때문이다. 맵을 수정한 뒤 옛 좌표로 복원하면
-	 * 벽 안이나 허공에 떨어질 수 있다. 존의 시작 지점은 항상 안전한 자리다.
-	 *
-	 * 비어 있으면(신규 캐릭터) 기본 시작 존으로 보낸다.
-	 *
-	 * 런타임의 `ATDPlayerState::CurrentZoneId` 와 짝이다. 이름이 다른 것은 의도적이다 —
-	 * 저장 시점에서는 "마지막으로 있던 곳"이고, 접속하면 그 값이 곧 "지금 있는 곳"이 된다.
-	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
-	FGameplayTag LastZoneId;
+    /** 마지막 존. 비어 있으면 기본 시작 존으로 배치한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
+    FGameplayTag LastZoneId;
+
+    /** 서버 월드 좌표. 원점도 유효한 위치이므로 별도 플래그로 저장 여부를 구분한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
+    FVector LastLocation = FVector::ZeroVector;
+
+    /** false 또는 이전 저장 버전이면 존의 시작점을 사용한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
+    bool bHasSavedLocation = false;
 
 	
 	// ── 퀘스트·개인 월드 상태 ─────────────────────────────
@@ -155,7 +153,7 @@ struct FTDPlayerSaveData
 	 *
 	 * 대화 분기, NPC 표시, 상자 조건을 복원하는 데 사용한다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	FGameplayTagContainer QuestProgressTags;
 
 	/**
@@ -163,16 +161,16 @@ struct FTDPlayerSaveData
 	 *
 	 * 상자 Actor 이름이 아니라 DT_TreasureChest의 RowName을 저장한다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FName> ClaimedChestIds;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDChestClaimRecord> ChestClaimRecords;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FName> SeenChapterIds;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDNpcGiftRecord> NpcGiftRecords;
 	
 	/**
@@ -181,21 +179,21 @@ struct FTDPlayerSaveData
 	 * 어느 키를 누르는지는 여기 없다. 그쪽은 Enhanced Input 이 그 PC 에 저장하며,
 	 * 캐릭터를 바꿔도 손가락 위치는 그대로여야 하기 때문이다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDQuickSlot> QuickSlots;
 
 	/** 소지 골드. 인벤토리와 함께 저장된다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	int32 Gold = 0;
 	
 	/**
 	 * 실제 퀘스트 목록, 상태, 목표별 진행도.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDQuestRuntimeData> QuestStates;
 	
 	/** 캐릭터별 NPC 호감도와 마지막 선물 날짜 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Save")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Save")
 	TArray<FTDAffectionRuntimeData> AffectionStates;
 	
 };

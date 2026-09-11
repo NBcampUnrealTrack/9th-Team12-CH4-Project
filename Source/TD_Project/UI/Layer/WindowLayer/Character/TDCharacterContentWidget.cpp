@@ -1,8 +1,8 @@
-﻿#include "UI/Layer/WindowLayer/Character/TDCharacterContentWidget.h"
+#include "UI/Layer/WindowLayer/Character/TDCharacterContentWidget.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"
-#include "Components/TextBlock.h"
+#include "UI/Common/Typography/TDTextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/LocalPlayer.h"
@@ -31,26 +31,7 @@ void UTDCharacterContentWidget::NativeConstruct()
 	if (BasicTabButton) BasicTabButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBasicTabClicked);
 	if (DetailTabButton) DetailTabButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDetailTabClicked);
 	SetActiveInfoTab(0);
-	// 설명은 WBP 각 행의 Tool Tip Text, 제목은 같은 행의 Label을 그대로 사용한다.
-	// 장착 슬롯의 아이템 툴팁과 준비 중 버튼은 이 변환 대상이 아니다.
-	if (WidgetTree)
-	{
-		const TCHAR* StatNames[] = {
-			TEXT("CombatPower"), TEXT("PhysicalAttack"), TEXT("MagicalAttack"),
-			TEXT("CriticalChance"), TEXT("CriticalDamage"), TEXT("ArmorPenetration"),
-			TEXT("BossDamage"), TEXT("Defense"), TEXT("DamageReduction"),
-			TEXT("MaxHealth"), TEXT("HealthRegen"), TEXT("MaxMana"), TEXT("ManaRegen"),
-			TEXT("MoveSpeed"), TEXT("CooldownRecovery")
-		};
-		for (const TCHAR* StatName : StatNames)
-		{
-			UWidget* Row = WidgetTree->FindWidget(FName(*FString::Printf(TEXT("Detail%sRow"), StatName)));
-			UTextBlock* Label = Cast<UTextBlock>(WidgetTree->FindWidget(
-				FName(*FString::Printf(TEXT("Detail%sLabel"), StatName))));
-			if (Row && Label)
-				UTDItemTooltipWidget::AttachText(this, Row, Label->GetText(), Row->GetToolTipText());
-		}
-	}
+	OnPresentationInitialized();
 	if (ViewModel)
 	{
 		SetViewModel(ViewModel);
@@ -98,7 +79,7 @@ void UTDCharacterContentWidget::SetViewModel(UTDPlayerStatsViewModel* InViewMode
 			F::MaxHealth, F::MaxMana, F::PhysicalAttack, F::MagicalAttack, F::Defense,
 			F::CriticalChance, F::CriticalDamage, F::ArmorPenetration, F::BossDamage,
 			F::DamageReduction, F::HealthRegen, F::ManaRegen, F::MoveSpeed,
-			F::CooldownRecoveryRate, F::CombatPower, F::HasPlayerState
+			F::CooldownRecoveryRate, F::CombatPower, F::HasPlayerState, F::CharacterFullBody
 		};
 		for (const auto Field : Fields)
 		{
@@ -106,101 +87,39 @@ void UTDCharacterContentWidget::SetViewModel(UTDPlayerStatsViewModel* InViewMode
 				INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateUObject(this, &ThisClass::OnFieldChanged));
 		}
 	}
+	SetCharacterPortrait(ViewModel ? ViewModel->CharacterFullBody.Get() : nullptr);
 	RefreshStats();
 }
 
 void UTDCharacterContentWidget::OnFieldChanged(UObject* Object, UE::FieldNotification::FFieldId Field)
 {
+	if (Field == UTDPlayerStatsViewModel::FFieldNotificationClassDescriptor::CharacterFullBody)
+		SetCharacterPortrait(ViewModel ? ViewModel->CharacterFullBody.Get() : nullptr);
 	RefreshStats();
 }
 
 void UTDCharacterContentWidget::RefreshStats()
 {
-	const bool bReady = ViewModel && ViewModel->HasPlayerState;
-	const FText Empty = FText::FromString(TEXT("-"));
-	if (CharacterNameText) CharacterNameText->SetText(bReady ? ViewModel->PlayerName
-		: NSLOCTEXT("TDCharacter", "Waiting", "캐릭터 대기 중"));
-	if (LevelValueText) LevelValueText->SetText(bReady ? FText::AsNumber(ViewModel->Level) : Empty);
-	if (HealthValueText) HealthValueText->SetText(bReady ? ViewModel->HealthText : Empty);
-	if (ManaValueText) ManaValueText->SetText(bReady ? ViewModel->ManaText : Empty);
-	if (AttackValueText)
-	{
-		AttackValueText->SetText(bReady ? FText::AsNumber(FMath::RoundToInt(ViewModel->PhysicalAttack)) : Empty);
-		UTDItemTooltipWidget::AttachText(this, AttackValueText,
-			NSLOCTEXT("TDCharacter", "AttackTooltipTitle", "공격력"), bReady ? FText::Format(
-			NSLOCTEXT("TDCharacter", "AttackDetails", "물리 공격력: {0}\n마법 공격력: {1}"),
-			FText::AsNumber(FMath::RoundToInt(ViewModel->PhysicalAttack)),
-			FText::AsNumber(FMath::RoundToInt(ViewModel->MagicalAttack))) : FText::GetEmpty());
-	}
-	if (DefenseValueText) DefenseValueText->SetText(bReady
-		? FText::AsNumber(FMath::RoundToInt(ViewModel->Defense)) : Empty);
-	if (CriticalValueText)
-	{
-		FNumberFormattingOptions Format;
-		Format.MinimumFractionalDigits = 1;
-		Format.MaximumFractionalDigits = 1;
-		CriticalValueText->SetText(bReady ? FText::AsPercent(
-			FMath::Clamp(ViewModel->CriticalChance, 0.f, 1.f), &Format) : Empty);
-	}
-
-	auto SetNumber = [bReady, &Empty](UTextBlock* Target, float Value, int32 FractionalDigits = 0)
-	{
-		if (!Target) return;
-		if (!bReady)
-		{
-			Target->SetText(Empty);
-			return;
-		}
-		FNumberFormattingOptions Format;
-		Format.MinimumFractionalDigits = FractionalDigits;
-		Format.MaximumFractionalDigits = FractionalDigits;
-		Target->SetText(FText::AsNumber(Value, &Format));
-	};
-	auto SetPercent = [bReady, &Empty](UTextBlock* Target, float Value)
-	{
-		if (!Target) return;
-		if (!bReady)
-		{
-			Target->SetText(Empty);
-			return;
-		}
-		FNumberFormattingOptions Format;
-		Format.MinimumFractionalDigits = 1;
-		Format.MaximumFractionalDigits = 1;
-		Target->SetText(FText::AsPercent(Value, &Format));
-	};
-
-	if (DetailCombatPowerValueText)
-		DetailCombatPowerValueText->SetText(bReady ? FText::AsNumber(ViewModel->CombatPower) : Empty);
-	SetNumber(DetailPhysicalAttackValueText, bReady ? ViewModel->PhysicalAttack : 0.f);
-	SetNumber(DetailMagicalAttackValueText, bReady ? ViewModel->MagicalAttack : 0.f);
-	SetPercent(DetailCriticalChanceValueText, bReady ? ViewModel->CriticalChance : 0.f);
-	SetPercent(DetailCriticalDamageValueText, bReady ? ViewModel->CriticalDamage : 0.f);
-	SetPercent(DetailArmorPenetrationValueText, bReady ? ViewModel->ArmorPenetration : 0.f);
-	SetPercent(DetailBossDamageValueText, bReady ? ViewModel->BossDamage : 0.f);
-	SetNumber(DetailDefenseValueText, bReady ? ViewModel->Defense : 0.f);
-	SetPercent(DetailDamageReductionValueText, bReady ? ViewModel->DamageReduction : 0.f);
-	SetNumber(DetailMaxHealthValueText, bReady ? ViewModel->MaxHealth : 0.f);
-	SetNumber(DetailHealthRegenValueText, bReady ? ViewModel->HealthRegen : 0.f, 1);
-	SetNumber(DetailMaxManaValueText, bReady ? ViewModel->MaxMana : 0.f);
-	SetNumber(DetailManaRegenValueText, bReady ? ViewModel->ManaRegen : 0.f, 1);
-	SetNumber(DetailMoveSpeedValueText, bReady ? ViewModel->MoveSpeed : 0.f);
-	SetPercent(DetailCooldownRecoveryValueText, bReady ? ViewModel->CooldownRecoveryRate : 0.f);
+ OnStatsPresentation(ViewModel, ViewModel && ViewModel->HasPlayerState);
 }
 
 void UTDCharacterContentWidget::SetActiveInfoTab(int32 TabIndex)
 {
-	const int32 SafeIndex = FMath::Clamp(TabIndex, 0, 1);
-	if (InfoSwitcher) InfoSwitcher->SetActiveWidgetIndex(SafeIndex);
-	if (BasicTabButton) BasicTabButton->SetIsEnabled(SafeIndex != 0);
-	if (DetailTabButton) DetailTabButton->SetIsEnabled(SafeIndex != 1);
+ ActiveInfoTab = FMath::Clamp(TabIndex, 0, 1);
+ OnInfoTabChanged(ActiveInfoTab);
 }
 
 int32 UTDCharacterContentWidget::GetActiveInfoTab() const
 {
-	return InfoSwitcher ? InfoSwitcher->GetActiveWidgetIndex() : 0;
+ return ActiveInfoTab;
 }
 
+void UTDCharacterContentWidget::ConfigureTextTooltip(FName HostName, const FText& Title, const FText& Description)
+{
+ if (WidgetTree)
+  if (UWidget* Host = WidgetTree->FindWidget(HostName))
+   UTDItemTooltipWidget::AttachText(this, Host, Title, Description);
+}
 void UTDCharacterContentWidget::HandleBasicTabClicked()
 {
 	SetActiveInfoTab(0);
@@ -214,11 +133,7 @@ void UTDCharacterContentWidget::HandleDetailTabClicked()
 void UTDCharacterContentWidget::SetCharacterPortrait(UTexture2D* InTexture)
 {
 	PortraitTexture = InTexture;
-	if (CharacterPortrait)
-	{
-		CharacterPortrait->SetBrushFromTexture(InTexture);
-		CharacterPortrait->SetVisibility(InTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
-	}
+	OnPortraitChanged(InTexture, IsValid(InTexture));
 }
 
 void UTDCharacterContentWidget::SetEquipmentVisual(int32 EquipmentSlotIndex, const FTDItemSlotVisualData& Data)
@@ -303,7 +218,7 @@ void UTDCharacterContentWidget::RefreshEquipment()
 		// 교체 전 아이템 ID로 툴팁이 잠깐 갱신되지 않도록 소스부터 교체한다.
 		Visual->SetItemTooltipSource(NAME_None, FText::GetEmpty());
 		Visual->SetSlotVisualData(Data);
-		Visual->SetItemTooltipSource(Item->ItemId, NSLOCTEXT("TDCharacter", "EquippedActionHint", "착용 중 · 우클릭: 장착 해제"));
+		Visual->SetItemTooltipSource(Item->ItemId, EquippedActionHint);
 	}
 }
 

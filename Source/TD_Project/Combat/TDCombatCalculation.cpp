@@ -17,10 +17,6 @@ namespace TDCombat
 			Damage *= Input.CritDamage;   // 크리면 1.5배 (기본값 기준)
 		}
 
-		// 2-1. 보스 추가 피해. 대상이 보스가 아니면 호출자가 0 을 넣으므로 1배가 된다.
-		//      방어 계산 앞뒤 어디에 두어도 전부 곱셈이라 결과는 같다 — 크리 옆이 읽기 쉽다.
-		Damage *= 1.f + FMath::Max(0.f, Input.BossDamageBonus);
-
 		// 2. 유효 방어 = 방어력 - 방어무시. 0 밑으로는 못 내려간다.
 		const float EffectiveArmor = FMath::Max(0.f, Input.TargetArmor - Input.ArmorPenetration);
 

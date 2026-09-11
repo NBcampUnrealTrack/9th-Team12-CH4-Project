@@ -32,6 +32,7 @@
 #include "Stats/TDStatComponent.h"
 #include "Combat/TDCombatStatics.h"
 #include "Combat/TDCombatComponent.h"
+#include "Character/TDBossCharacter.h"
 
 /**
  * 개발용 콘솔 명령.
@@ -2085,6 +2086,62 @@ namespace TDDebugCommands
 		});
 	}
 	
+	/**
+	* 보스 디버그. 서버(리슨) 창에서 칠 것 — 패턴 실행은 서버 권한이다.
+	* 사용법: TD.Boss fight | pattern <n> | phase2 | enrage | summon | reset
+	*/
+	static void Boss(const TArray<FString>& Args, UWorld* World)
+	{
+		if (World == nullptr || !Args.IsValidIndex(0))
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("사용법: TD.Boss fight | pattern <n> | phase2 | enrage | summon | reset"));
+			return;
+		}
+		if (World->GetNetMode() == NM_Client)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Boss 는 서버 창에서 쳐야 한다."));
+			return;
+		}
+
+		const FString Sub = Args[0].ToLower();
+		APlayerController* PC = World->GetFirstPlayerController();
+		ATDCharacterBase* Player = PC ? Cast<ATDCharacterBase>(PC->GetPawn()) : nullptr;
+
+		int32 Found = 0;
+		for (TActorIterator<ATDBossCharacter> It(World); It; ++It)
+		{
+			ATDBossCharacter* Boss = *It;
+			++Found;
+
+			if (Sub == TEXT("fight"))
+			{
+				Boss->BeginFight(Player);
+				UE_LOG(LogTDDebug, Log, TEXT("%s: 전투 시작(입장 연출)."), *Boss->GetName());
+			}
+			else if (Sub == TEXT("pattern"))
+			{
+				const int32 Index = Args.IsValidIndex(1) ? FCString::Atoi(*Args[1]) : 0;
+				Boss->SetPatternTarget(Player);
+				const bool bStarted = Boss->StartPattern(Index);
+				UE_LOG(LogTDDebug, Log, TEXT("%s: 패턴 %d %s"), *Boss->GetName(), Index,
+					bStarted ? TEXT("시작") : TEXT("거부(바쁨·범위 밖·사망)"));
+			}
+			else if (Sub == TEXT("phase2"))  { Boss->EnterPhase2(); }
+			else if (Sub == TEXT("enrage"))  { Boss->TriggerEnrage(); }
+			else if (Sub == TEXT("summon"))  { Boss->SummonMinions(); }
+			else if (Sub == TEXT("reset"))   { Boss->ResetFight(); }
+			else
+			{
+				UE_LOG(LogTDDebug, Warning, TEXT("모르는 하위 명령: %s"), *Sub);
+			}
+		}
+
+		if (Found == 0)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.Boss: 레벨에 보스가 없다."));
+		}
+	}
+	
 	static void Attack(const TArray<FString>& Args, UWorld* World)
 	{
 		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
@@ -2374,6 +2431,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDHit(
 	TEXT("TD.Hit"),
 	TEXT("플레이어가 대상을 공격한다(스탯·공식 경유). 사용법: TD.Hit [이름필터]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Hit));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDBoss(
+	TEXT("TD.Boss"),
+	TEXT("보스 디버그(서버 창). 사용법: TD.Boss fight | pattern <n> | phase2 | enrage | summon | reset"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Boss));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDAttack(
 	TEXT("TD.Attack"),

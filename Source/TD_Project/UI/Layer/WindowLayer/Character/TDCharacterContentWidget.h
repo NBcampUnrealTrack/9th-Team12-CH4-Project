@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -9,7 +9,7 @@
 
 class UTDPlayerStatsViewModel;
 class UButton;
-class UTextBlock;
+class UTDTextBlock;
 class UImage;
 class UTexture2D;
 class UWidgetSwitcher;
@@ -49,6 +49,26 @@ public:
 	int32 GetActiveInfoTab() const;
 
 protected:
+ UFUNCTION(BlueprintImplementableEvent, Category = "TD|Character")
+ void OnStatsPresentation(UTDPlayerStatsViewModel* Data, bool bReady);
+
+ UFUNCTION(BlueprintImplementableEvent, Category = "TD|Character")
+ void OnInfoTabChanged(int32 TabIndex);
+
+ UFUNCTION(BlueprintImplementableEvent, Category = "TD|Character")
+ void OnPresentationInitialized();
+
+ /** WBP가 지정한 대상과 문구를 기존 공용 툴팁에 연결한다. */
+ UFUNCTION(BlueprintCallable, Category = "TD|Character", meta = (AutoCreateRefTerm = "Title,Description"))
+ void ConfigureTextTooltip(FName HostName, const FText& Title, const FText& Description);
+
+ UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TD|Character|Text")
+ FText EquippedActionHint;
+
+	/** 이미지 표시와 숨김은 WBP에서 처리한다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "TD|Character")
+	void OnPortraitChanged(UTexture2D* Texture, bool bHasPortrait);
+
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -60,19 +80,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UImage> CharacterPortrait;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> CharacterNameText;
+	TObjectPtr<UTDTextBlock> CharacterNameText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> LevelValueText;
+	TObjectPtr<UTDTextBlock> LevelValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> HealthValueText;
+	TObjectPtr<UTDTextBlock> HealthValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> ManaValueText;
+	TObjectPtr<UTDTextBlock> ManaValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> AttackValueText;
+	TObjectPtr<UTDTextBlock> AttackValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DefenseValueText;
+	TObjectPtr<UTDTextBlock> DefenseValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> CriticalValueText;
+	TObjectPtr<UTDTextBlock> CriticalValueText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UButton> BasicTabButton;
@@ -82,35 +102,35 @@ protected:
 	TObjectPtr<UWidgetSwitcher> InfoSwitcher;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailCombatPowerValueText;
+	TObjectPtr<UTDTextBlock> DetailCombatPowerValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailPhysicalAttackValueText;
+	TObjectPtr<UTDTextBlock> DetailPhysicalAttackValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailMagicalAttackValueText;
+	TObjectPtr<UTDTextBlock> DetailMagicalAttackValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailCriticalChanceValueText;
+	TObjectPtr<UTDTextBlock> DetailCriticalChanceValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailCriticalDamageValueText;
+	TObjectPtr<UTDTextBlock> DetailCriticalDamageValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailArmorPenetrationValueText;
+	TObjectPtr<UTDTextBlock> DetailArmorPenetrationValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailBossDamageValueText;
+	TObjectPtr<UTDTextBlock> DetailBossDamageValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailDefenseValueText;
+	TObjectPtr<UTDTextBlock> DetailDefenseValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailDamageReductionValueText;
+	TObjectPtr<UTDTextBlock> DetailDamageReductionValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailMaxHealthValueText;
+	TObjectPtr<UTDTextBlock> DetailMaxHealthValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailHealthRegenValueText;
+	TObjectPtr<UTDTextBlock> DetailHealthRegenValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailMaxManaValueText;
+	TObjectPtr<UTDTextBlock> DetailMaxManaValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailManaRegenValueText;
+	TObjectPtr<UTDTextBlock> DetailManaRegenValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailMoveSpeedValueText;
+	TObjectPtr<UTDTextBlock> DetailMoveSpeedValueText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTextBlock> DetailCooldownRecoveryValueText;
+	TObjectPtr<UTDTextBlock> DetailCooldownRecoveryValueText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTDItemSlotVisualWidget> Slot1;
@@ -127,6 +147,7 @@ protected:
 	TObjectPtr<UTDItemSlotVisualWidget> Slot6;
 
 private:
+ int32 ActiveInfoTab = 0;
 	UPROPERTY(Transient)
 	TObjectPtr<UTDItemUseComponent> EquipmentSource;
 	UPROPERTY(Transient)

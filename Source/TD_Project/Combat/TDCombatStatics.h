@@ -7,8 +7,10 @@
 #include "Skill/TDSkillTypes.h"
 #include "TDCombatStatics.generated.h"
 
+class ATDCharacterBase;
+
 /**
- * 데미지 적용의 단일 진입점. 평타·스킬·몬스터 공격·함정이 전부 여기를 거친다.
+ * 데미지 적용의 단일 진입점. 평타·스킬·몬스터 공격·보스 패턴·함정이 전부 여기를 거친다.
  * 서버 전용 — 클라이언트에서 부르면 아무 일도 하지 않는다.
  */
 UCLASS()
@@ -21,23 +23,27 @@ public:
 	 * 공격자 스탯으로 데미지를 계산해 대상에게 적용한다.
 	 *
 	 * @param ContextTags        시전 상황 태그. 조건부 장비 옵션("화염 스킬 +30%")이 여기서 평가된다.
-	 * @param DamageMultiplier   공격력 배율. 스킬이 DT_SkillEffect 의 값을 그대로 넘긴다.
+	 * @param DamageMultiplier   공격력 배율. 스킬은 DT_SkillEffect 값을, 보스는 패턴 스펙의 DamageScale 을 넘긴다.
 	 *                           1.5 면 공격력의 150%. 평타는 기본값 1 을 쓰므로 호출부가 그대로다.
 	 *                           크리와 방어 계산 **앞**에 곱해지므로 배율이 커도 방어가 정상적으로 깎는다.
+	 *                           0 이하면 "피해 없음" — 바닥값(최소 1)에 걸려 때린 것이 되지 않게 한다.
 	 */
 	static FTDDamageResult ApplyDamage(AActor* Attacker, AActor* Target,
 		const FGameplayTagContainer& ContextTags, float DamageMultiplier = 1.f);
 
 	// ── 대상 수집 ─────────────────────────────────────────
 	//
-	// 평타와 스킬이 같은 규칙으로 대상을 고른다. 팀 판정·시체 제외·중복 제거를
-	// 두 곳에 적으면 한쪽만 고쳐졌을 때 "스킬로는 아군이 맞는" 같은 일이 생긴다.
+	// 평타·스킬·보스 패턴이 같은 규칙으로 대상을 고른다. 팀 판정·시체 제외·중복 제거를
+	// 여러 곳에 적으면 한쪽만 고쳐졌을 때 "스킬로는 아군이 맞는" 같은 일이 생긴다.
+	// 아래 두 개는 "공격자 기준 정면/자기중심" 편의판(스킬·평타), 그 아래 두 개는
+	// 중심·회전을 직접 주는 저수준판(보스 패턴)이다. 필터는 한 곳을 공유한다.
+	//
+	// 편의판은 TargetTeam 을 받는다. Ally 면 **시전자 자신이 목록에 들어간다**(오버랩은
+	// 시전자를 무시하므로 여기서 넣는다). 기본값이 Enemy 라 적만 모으던 호출부는 그대로다.
+	// 저수준판은 적만 모은다 — 보스 패턴에는 아군 대상이 없다.
 	//
 	// 서버 전용은 아니지만 판정에 쓰는 것은 서버뿐이다. 클라이언트가 불러도 되는 이유는
 	// 조준 표시처럼 화면에만 쓰는 용도가 있어서다.
-	//
-	// TargetTeam 이 Ally 면 **시전자 자신이 목록에 들어간다**(오버랩은 시전자를 무시하므로
-	// 여기서 넣는다). 기본값이 Enemy 라 평타 쪽 호출부는 그대로 둔다.
 
 	/**
 	 * 캐릭터 앞쪽 상자 안의 대상.
@@ -56,6 +62,14 @@ public:
 	/** 캐릭터를 중심으로 한 구 안의 대상. 앞뒤를 가리지 않는다. */
 	static TArray<AActor*> GatherTargetsInSphere(AActor* Attacker, float Radius,
 		bool bDrawDebug = false, ETDSkillTarget TargetTeam = ETDSkillTarget::Enemy);
+
+	/** 중심·회전을 직접 주는 박스 판정. 보스 패턴처럼 "찍어둔 그 자리"를 때릴 때. */
+	static TArray<ATDCharacterBase*> GatherEnemiesInBox(const ATDCharacterBase* Attacker,
+		const FVector& Center, const FQuat& Rotation, const FVector& Extent, bool bDrawDebug = false);
+
+	/** 중심을 직접 주는 구 판정. */
+	static TArray<ATDCharacterBase*> GatherEnemiesInSphere(const ATDCharacterBase* Attacker,
+		const FVector& Center, float Radius, bool bDrawDebug = false);
 
 	/**
 	 * 계산 없이 정해진 수치를 그대로 적용한다. 디버그 명령과 낙하 피해 같은

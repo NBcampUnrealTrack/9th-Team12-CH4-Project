@@ -25,6 +25,7 @@ class TD_PROJECT_API UTDUIRootWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	UCommonActivatableWidgetStack* GetScreenStack() const
 	{

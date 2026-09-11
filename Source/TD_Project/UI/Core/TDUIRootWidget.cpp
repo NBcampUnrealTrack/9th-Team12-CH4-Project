@@ -9,6 +9,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/TDPlayerState.h"
+#include "Player/TDPlayerController.h"
+#include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "UI/HUD/TDPlayerStatusWidget.h"
 #include "UI/ViewModel/TDPlayerStatsSubsystem.h"
@@ -19,6 +21,24 @@
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
+
+FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// 입력창에 포커스가 있어도 Alt 처리 
+	if (IsPlayerHUDReady()
+		&& (InKeyEvent.GetKey() == EKeys::LeftAlt)
+	{
+		if (ATDPlayerController* Controller = Cast<ATDPlayerController>(GetOwningPlayer()))
+		{
+			if (!InKeyEvent.IsRepeat())
+			{
+				Controller->ToggleMouseCursor();
+			}
+			return FReply::Handled();
+		}
+	}
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
 
 void UTDUIRootWidget::NativeConstruct()
 {

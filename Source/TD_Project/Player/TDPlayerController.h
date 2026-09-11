@@ -121,6 +121,10 @@ class TD_PROJECT_API ATDPlayerController : public APlayerController
 
 public:
 	ATDPlayerController();
+	virtual void SetupInputComponent() override;
+
+	/** Alt로 UI 조작용 커서와 게임 입력 모드 전환 */
+	void ToggleMouseCursor();
 
 	/**
 	 * Pawn 을 새로 잡았을 때(접속·부활) 존 환경을 다시 적용한다.

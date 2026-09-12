@@ -3,29 +3,26 @@
 #include "CoreMinimal.h"
 #include "Character/TDEnemyBase.h"
 #include "Combat/TDBossPattern.h"
+#include "Stats/TDStatTypes.h"
 #include "TDBossCharacter.generated.h"
 
 class UCameraShakeBase;
+class UNiagaraComponent;
 class ATDBossProjectile;
 struct FOnAttributeChangeData;
 
-/** 보스 사건 방송. 전 머신. BP 가 포효·UI 를 붙인다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnBossEvent, ETDBossEvent, Event, int32, Param);
-/** 패턴 예고. 전 머신. Center/Direction 으로 바닥 표시(데칼·VFX)를 그린다. Duration 은 선딜 길이. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnBossPatternTelegraph,
 	int32, PatternIndex, FVector, Center, FVector, Direction, float, Duration);
-/** 페이즈 변경. 전 머신(복제). 보스 체력바가 색을 바꾸는 지점. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnBossPhaseChanged, int32, NewPhase);
-/** 패턴 종료. 서버 전용(네이티브). BT 실행 태스크가 기다리는 신호. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FTDOnBossPatternFinished, int32 /*PatternIndex*/);
 
 /**
- * 보스 몬스터. 패턴 엔진(선딜→타격→후딜)·페이즈·분노·입장·소환·리시·화면 흔들림.
+ * 보스 몬스터. 패턴 엔진(선딜→타격→후딜)·페이즈·분노·입장·소환·리시 귀환·화면 흔들림·VFX.
  *
- * 두뇌(BT)는 "무엇을 할지"만 정하고 StartPattern 을 부른다. 이동(돌진·잠수·투사체)은
- * OnTelegraphBegin/OnMotionBegin/OnMotionEnd 훅에서 이 클래스가 처리한다.
- * 데미지는 전부 CombatStatics::ApplyDamage, 히트 방송은 CombatComponent::NotifyHit —
- * 평타·스킬과 같은 접점을 쓴다.
+ * 두뇌(BT)는 "무엇을 할지"만 정하고 StartPattern 을 부른다. 이동은 훅에서 이 클래스가 처리한다.
+ * 데미지는 전부 CombatStatics::ApplyDamage, 히트 방송은 CombatComponent::NotifyHit.
+ * 전투 중인 보스는 GameState.ActiveBoss 로 HUD 에 알려진다.
  */
 UCLASS()
 class TD_PROJECT_API ATDBossCharacter : public ATDEnemyBase
@@ -41,9 +38,11 @@ public:
 	// ── 서버 API: BT·치트가 부른다 ────────────────────────
 
 	void BeginFight(ATDCharacterBase* FirstTarget);
-	void ResetFight();
+
+	/** 리시: 집으로 걸어 돌아가 풀피·페이즈 1·쫄 정리. bInstant 면 순간이동(치트·사망 정리용). */
+	void ResetFight(bool bInstant = false);
+
 	bool StartPattern(int32 PatternIndex);
-	/** 진행 중인 패턴을 끊는다. 쿨은 안 건다. BT 가 태스크를 중단할 때·페이즈 전환·사망·리셋에 쓴다. */
 	void CancelPattern();
 	int32 ChoosePattern(float DistanceToTarget) const;
 	void SetPatternTarget(ATDCharacterBase* Target);
@@ -61,6 +60,9 @@ public:
 	bool IsFightActive() const { return bFightActive; }
 
 	UFUNCTION(BlueprintPure, Category = "TD|Boss")
+	bool IsReturning() const { return bReturning; }
+
+	UFUNCTION(BlueprintPure, Category = "TD|Boss")
 	int32 GetPhase() const { return Phase; }
 
 	UFUNCTION(BlueprintPure, Category = "TD|Boss")
@@ -69,12 +71,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Boss")
 	int32 GetPatternCount() const { return Patterns.Num(); }
 
-	/** BP 가 예고 모양(박스/구·크기)을 그릴 때 읽는다. */
 	UFUNCTION(BlueprintPure, Category = "TD|Boss")
 	bool GetPatternSpec(int32 PatternIndex, FTDBossPatternSpec& OutSpec) const;
 
 	UFUNCTION(BlueprintPure, Category = "TD|Boss")
 	ETDBossPatternPhase GetCurrentPatternPhase() const { return CurrentPatternPhase; }
+
+	/** 테이블의 DisplayName. 보스 체력바·타이틀 카드용. 행이 없으면 MonsterId. */
+	UFUNCTION(BlueprintPure, Category = "TD|Boss")
+	FText GetDisplayName() const;
 
 	FVector GetHomeLocation() const { return HomeLocation; }
 	float GetLeashRadius() const { return LeashRadius; }
@@ -106,13 +111,9 @@ protected:
 
 	// ── 이동 훅 ─────────────────────────────────────────
 
-	/** 선딜 시작. 잠수는 여기서 가라앉는다. */
 	virtual void OnTelegraphBegin(const FTDBossPatternSpec& Spec);
-	/** 타격 시작. 돌진은 달리기 시작, 잠수는 출현, 물대포는 발사. */
 	virtual void OnMotionBegin(const FTDBossPatternSpec& Spec);
-	/** 타격 끝. 돌진 정지. */
 	virtual void OnMotionEnd(const FTDBossPatternSpec& Spec);
-	/** 판정 중심. 기본은 정면 오프셋, 잠수는 찍어둔 대상 위치. */
 	virtual FVector GetStrikeCenter(const FTDBossPatternSpec& Spec) const;
 
 	// ── 패턴 명세 ────────────────────────────────────────
@@ -128,7 +129,6 @@ protected:
 
 	// ── 이동 파라미터 ─────────────────────────────────────
 
-	/** 돌진 속도(cm/s). 이동 거리 = 속도 × StrikeTime. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float DashSpeed = 1400.f;
 
@@ -138,19 +138,15 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float ProjectileSpeed = 1200.f;
 
-	/** 발사 지점: 캡슐 반지름 + 이 값만큼 정면. 몸 안에서 스폰되면 벽 판정에 걸린다. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float ProjectileMuzzleForward = 120.f;
 
-	/** 발사 높이(캡슐 중심 기준 Z). 입 위치에 맞춘다. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion")
 	float ProjectileMuzzleHeight = 0.f;
 
-	/** 페이즈 2 부채꼴 발사 수. 1 이면 페이즈 2 에도 한 발. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "1"))
 	int32 ProjectileCountPhase2 = 3;
 
-	/** 부채꼴 발 사이 각도. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float ProjectileSpreadAngle = 20.f;
 
@@ -168,6 +164,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0"))
 	float Phase2TransitionDuration = 2.f;
 
+	/** 페이즈 2 공격력 증가(Increased). 0.2 = +20%. Source.Boss 스탯 소스로 건다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0"))
+	float Phase2DamageBonus = 0.2f;
+
 	// ── 분노 ─────────────────────────────────────────────
 
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0"))
@@ -175,6 +175,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0.1", ClampMax = "1"))
 	float EnrageTelegraphScale = 0.5f;
+
+	/** 분노 공격력 증가. 페이즈 2 와 합산된다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0"))
+	float EnrageDamageBonus = 0.3f;
 
 	// ── 전투 ─────────────────────────────────────────────
 
@@ -186,6 +190,14 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0"))
 	float LeashRadius = 2500.f;
+
+	/** 귀환 도착 판정 거리. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0"))
+	float ReturnArriveDistance = 150.f;
+
+	/** 귀환이 이 시간 안에 못 끝나면(길 막힘) 순간이동으로 마무리. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "1"))
+	float ReturnTimeout = 8.f;
 
 	// ── 소환 ─────────────────────────────────────────────
 
@@ -223,6 +235,10 @@ protected:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastPatternTelegraph(int32 PatternIndex, FVector Center, FVector Direction, float Duration);
 
+	/** 타격 시작. OnBossEvent(PatternStrike) 발화 + 예고 VFX 제거 + 타격 VFX 스폰. */
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastPatternStrike(int32 PatternIndex, FVector Center, FVector Direction);
+
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastCameraShake(FVector Epicenter, float Scale);
 
@@ -249,6 +265,15 @@ protected:
 	void FireProjectiles(const FTDBossPatternSpec& Spec);
 	FVector GetFacing() const;
 
+	// ── 귀환·강화·등록 (서버) ─────────────────────────────
+
+	void StartReturnHome();
+	void TickReturn();
+	void FinishReturnHome();
+	void ApplyBossBuff();
+	void ClearBossBuff();
+	void RegisterActiveBoss(bool bActive);
+
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void EndEntrance();
 	void EndPhase2Transition();
@@ -256,17 +281,18 @@ protected:
 	void ClearFightTimers();
 	void PlayShakeLocally(const FVector& Epicenter, float Scale) const;
 
+	// ── VFX (전 머신) ─────────────────────────────────────
+
+	void ClearTelegraphVFX();
+
 	UPROPERTY(ReplicatedUsing = OnRep_Phase)
 	int32 Phase = 1;
 
 	UPROPERTY(Replicated)
 	bool bEnraged = false;
 
-	/** 패턴 시작 순간의 대상 위치. 잠수가 "그 자리"를 노리게 한다(추적 안 함 → 피할 수 있음). */
 	FVector PatternTargetLocation = FVector::ZeroVector;
-
 	TWeakObjectPtr<ATDCharacterBase> PatternTarget;
-
 	ETDBossPatternPhase CurrentPatternPhase = ETDBossPatternPhase::None;
 	int32 CurrentPattern = INDEX_NONE;
 
@@ -274,12 +300,11 @@ private:
 	bool bFightActive = false;
 	bool bInEntrance = false;
 	bool bInPhaseTransition = false;
+	bool bReturning = false;
 
-	// 돌진
 	bool bDashing = false;
 	FVector DashDirection = FVector::ForwardVector;
 
-	// 잠수
 	bool bBurrowed = false;
 	FVector BurrowFrom = FVector::ZeroVector;
 	FVector BurrowTo = FVector::ZeroVector;
@@ -294,12 +319,18 @@ private:
 	float FightStartTime = 0.f;
 
 	TArray<TWeakObjectPtr<ATDEnemyBase>> Minions;
+	FTDStatSourceHandle BossBuffHandle;
+
+	/** 선딜 동안 떠 있는 예고 이펙트. 머신마다 자기 것. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> TelegraphVFXComponent;
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle StrikeTickHandle;
 	FTimerHandle EntranceTimerHandle;
 	FTimerHandle EnrageTimerHandle;
 	FTimerHandle TransitionTimerHandle;
+	FTimerHandle ReturnTimeoutHandle;
 
 	FDelegateHandle HealthChangedHandle;
 };

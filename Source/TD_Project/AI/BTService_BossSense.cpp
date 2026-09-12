@@ -26,6 +26,8 @@ void UBTService_BossSense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 		return;
 	}
 
+	
+	if (Boss->IsReturning()) { return; }
 	// 1. 리시: 집에서 너무 멀리 끌려 나갔으면 귀환·풀피. 추격전으로 보스를 방 밖으로 끌고 가는 걸 막는다.
 	if (Boss->IsFightActive() &&
 		FVector::Dist(Boss->GetActorLocation(), Boss->GetHomeLocation()) > Boss->GetLeashRadius())

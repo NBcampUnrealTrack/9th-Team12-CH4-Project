@@ -2129,7 +2129,7 @@ namespace TDDebugCommands
 			else if (Sub == TEXT("phase2"))  { Boss->EnterPhase2(); }
 			else if (Sub == TEXT("enrage"))  { Boss->TriggerEnrage(); }
 			else if (Sub == TEXT("summon"))  { Boss->SummonMinions(); }
-			else if (Sub == TEXT("reset"))   { Boss->ResetFight(); }
+			else if (Sub == TEXT("reset"))   { Boss->ResetFight(true); }
 			else
 			{
 				UE_LOG(LogTDDebug, Warning, TEXT("모르는 하위 명령: %s"), *Sub);

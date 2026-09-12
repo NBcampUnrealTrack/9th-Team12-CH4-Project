@@ -19,7 +19,8 @@ void UTDInventorySlotEntryWidget::RefreshItemTooltip()
 	UTDItemTooltipWidget::AttachItem(this,
 		bHasItem ? SlotListItem->ItemInstance.ItemId : NAME_None,
 		bHasItem ? SlotListItem->ItemInstance.Count : 0, FText::GetEmpty(),
-		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr);
+		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr,
+		bHasItem ? SlotListItem->ItemInstance.EnhanceLevel : 0);
 }
 
 void UTDInventorySlotEntryWidget::NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event)

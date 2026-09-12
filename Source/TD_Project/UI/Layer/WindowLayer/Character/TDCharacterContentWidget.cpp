@@ -218,7 +218,7 @@ void UTDCharacterContentWidget::RefreshEquipment()
 		// 교체 전 아이템 ID로 툴팁이 잠깐 갱신되지 않도록 소스부터 교체한다.
 		Visual->SetItemTooltipSource(NAME_None, FText::GetEmpty());
 		Visual->SetSlotVisualData(Data);
-		Visual->SetItemTooltipSource(Item->ItemId, EquippedActionHint);
+		Visual->SetItemTooltipSource(Item->ItemId, EquippedActionHint, Item->EnhanceLevel);
 	}
 }
 

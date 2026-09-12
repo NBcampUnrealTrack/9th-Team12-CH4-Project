@@ -12,6 +12,8 @@ class UOverlay;
 class UVerticalBox;
 class UCommonActivatableWidgetStack;
 class UTDWindowBaseWidget;
+class ATDPlayerCharacter;
+class UTDRespawnWidget;
 
 /**
  * 
@@ -71,6 +73,18 @@ protected:
     ESlateVisibility LoadedHUDVisibility = ESlateVisibility::SelfHitTestInvisible;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FTDDeathUITest;
+#endif
+    UFUNCTION()
+    void RefreshDeathUI();
+    void CloseDeathUI();
+    void UnbindDeathSource();
+    TWeakObjectPtr<ATDPlayerCharacter> DeathSource;
+    UPROPERTY(Transient)
+    TObjectPtr<UTDRespawnWidget> DeathScreen;
+    bool bCursorVisibleBeforeDeath = false;
+
     FTimerHandle HUDReadyTimer;
     TWeakObjectPtr<APawn> DisplayedPawn;
     bool bPlayerHUDReady = false;

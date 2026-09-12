@@ -21,6 +21,10 @@
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
+#include "Character/TDPlayerCharacter.h"
+#include "UI/HUD/TDRespawnWidget.h"
+#include "UI/Settings/TDUISettings.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
@@ -61,6 +65,8 @@ void UTDUIRootWidget::NativeConstruct()
 
 void UTDUIRootWidget::NativeDestruct()
 {
+    UnbindDeathSource();
+    CloseDeathUI();
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(HUDReadyTimer);
     DisplayedPawn.Reset();
     bPlayerHUDReady = false;
@@ -142,9 +148,14 @@ void UTDUIRootWidget::RefreshPlayerHUD()
         HUDLayer->SetVisibility(ESlateVisibility::Collapsed);
         bPlayerHUDReady = false;
         DisplayedPawn.Reset();
+        RefreshDeathUI();
         return;
     }
-    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn) return;
+    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn)
+    {
+        RefreshDeathUI();
+        return;
+    }
     if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
     {
         if (UTDPlayerStatsSubsystem* Stats = LocalPlayer->GetSubsystem<UTDPlayerStatsSubsystem>())
@@ -161,4 +172,76 @@ void UTDUIRootWidget::RefreshPlayerHUD()
     DisplayedPawn = CharacterPawn;
     bPlayerHUDReady = true;
     HUDLayer->SetVisibility(LoadedHUDVisibility);
+    RefreshDeathUI();
+}
+
+void UTDUIRootWidget::UnbindDeathSource()
+{
+    if (DeathSource.IsValid())
+    {
+        DeathSource->OnDeath.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
+        DeathSource->OnRespawn.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
+    }
+    DeathSource.Reset();
+}
+
+void UTDUIRootWidget::RefreshDeathUI()
+{
+    APlayerController* Controller = GetOwningPlayer();
+    ATDPlayerCharacter* Character = Controller && Controller->IsLocalController()
+        ? Cast<ATDPlayerCharacter>(Controller->GetPawn()) : nullptr;
+    if (DeathSource.Get() != Character)
+    {
+        UnbindDeathSource();
+        CloseDeathUI();
+        DeathSource = Character;
+        if (Character)
+        {
+            Character->OnDeath.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
+            Character->OnRespawn.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
+        }
+    }
+    if (!Character || !Character->IsDead() || !IsPlayerHUDReady())
+    {
+        CloseDeathUI();
+        return;
+    }
+    if (DeathScreen || !ModalStack || !IsPlayerHUDReady()) return;
+    const TSubclassOf<UTDRespawnWidget> WidgetClass = GetDefault<UTDUISettings>()->RespawnWidgetClass.LoadSynchronous();
+    if (!WidgetClass) return;
+    bCursorVisibleBeforeDeath = Controller->bShowMouseCursor;
+    DeathScreen = ModalStack->AddWidget<UTDRespawnWidget>(WidgetClass);
+    if (DeathScreen)
+    {
+        FInputModeUIOnly Mode;
+        UWidget* FocusTarget = DeathScreen->GetDesiredFocusTarget();
+        Mode.SetWidgetToFocus(FocusTarget ? FocusTarget->TakeWidget() : DeathScreen->TakeWidget());
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        Controller->SetInputMode(Mode);
+        Controller->bShowMouseCursor = true;
+    }
+}
+
+void UTDUIRootWidget::CloseDeathUI()
+{
+    if (!DeathScreen) return;
+    if (ModalStack) ModalStack->RemoveWidget(*DeathScreen);
+    DeathScreen = nullptr;
+    if (APlayerController* Controller = GetOwningPlayer(); Controller && Controller->IsLocalController() && IsPlayerHUDReady())
+    {
+        Controller->bShowMouseCursor = bCursorVisibleBeforeDeath;
+        if (bCursorVisibleBeforeDeath)
+        {
+            FInputModeGameAndUI Mode;
+            Mode.SetHideCursorDuringCapture(false);
+            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            Controller->SetInputMode(Mode);
+        }
+        else
+        {
+            FInputModeGameOnly Mode;
+            Mode.SetConsumeCaptureMouseDown(false);
+            Controller->SetInputMode(Mode);
+        }
+    }
 }

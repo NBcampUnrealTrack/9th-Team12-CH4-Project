@@ -11,6 +11,8 @@
 #include "Data/TDQuestTypes.h"
 #include "TDPlayerController.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnRespawnRequestResult, bool, bSucceeded);
+
 /**
  * 존 이동이 거부됐을 때. 이 클라이언트에서만 불린다.
  *
@@ -270,6 +272,13 @@ public:
 	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|Combat")
 	void ServerRequestRespawn();
+
+	/** 수동 요청 결과는 요청한 소유 클라이언트에게만 보낸다. 생존 상태는 Pawn 복제를 따른다. */
+	UFUNCTION(Client, Reliable)
+	void ClientRespawnRequestResult(bool bSucceeded);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
+	FTDOnRespawnRequestResult OnRespawnRequestResult;
 	
 	
 	// ── 개인 상호작용 결과 ────────────────────────────────

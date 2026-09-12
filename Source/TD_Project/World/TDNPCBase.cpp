@@ -979,3 +979,11 @@ void ATDNPCBase::SetLocalPresentationHidden(
 				: ECollisionEnabled::QueryOnly);
 	}
 }
+
+bool ATDNPCBase::IsEnhanceNPC() const
+{
+	const FTDNPCRow* Definition = GetDefinitionRow();
+
+	return Definition != nullptr
+		&& Definition->bOpenEnhanceAfterDialogue;
+}

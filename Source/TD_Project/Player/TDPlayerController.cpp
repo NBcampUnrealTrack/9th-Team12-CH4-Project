@@ -42,6 +42,8 @@ void ATDPlayerController::SetupInputComponent()
 
 void ATDPlayerController::ToggleMouseCursor()
 {
+    const ATDCharacterBase* ControlledCharacter = Cast<ATDCharacterBase>(GetPawn());
+    if (ControlledCharacter && ControlledCharacter->IsDead()) return;
 	if (!IsLocalController() || GetPawn() == nullptr)
 	{
 		return;
@@ -325,10 +327,17 @@ void ATDPlayerController::ServerDebugPartyExp_Implementation(int32 BaseAmount)
 void ATDPlayerController::ServerRequestRespawn_Implementation()
 {
 	// 치트가 아니므로 Shipping 가드를 두지 않는다.
+	bool bSucceeded = false;
 	if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
 	{
-		GameMode->RespawnPlayer(this);
+		bSucceeded = GameMode->RespawnPlayer(this);
 	}
+	ClientRespawnRequestResult(bSucceeded);
+}
+
+void ATDPlayerController::ClientRespawnRequestResult_Implementation(bool bSucceeded)
+{
+	OnRespawnRequestResult.Broadcast(bSucceeded);
 }
 
 void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)

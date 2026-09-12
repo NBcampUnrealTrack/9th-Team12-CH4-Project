@@ -21,13 +21,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="TD|UI|Boss")
 		void SetSource(ATDBossCharacter* InBoss);
 
-	/** SetSource 후 호출한다. 이름/레벨은 UI 데이터 제공자가 전달하며 Enemy를 수정하지 않는다. */
-	UFUNCTION(BlueprintCallable, Category="TD|UI|Boss")
-	void SetDisplayIdentity(const FText& InName, int32 InLevel);
-
 	UFUNCTION(BlueprintPure, Category="TD|UI|Boss")
 		ATDBossCharacter* GetSource() const;
 
+	/** 현재 보스의 Getter와 ASC 값을 다시 읽는다. 식별 정보 변경 알림도 이 함수로 연결한다. */
 	UFUNCTION(BlueprintCallable, Category="TD|UI|Boss")
 		void RefreshAll();
 
@@ -57,8 +54,6 @@ private:
 	TWeakObjectPtr<UAbilitySystemComponent> BoundASC;
 	FDelegateHandle HealthHandle;
 	FDelegateHandle MaxHealthHandle;
-	FText DisplayName;
-	int32 DisplayLevel = 0;
 	void UnbindSource();
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	UFUNCTION()

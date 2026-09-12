@@ -12,8 +12,6 @@ void UTDBossViewModel::SetSource(ATDBossCharacter* InBoss)
 		return;
 	}
 	UnbindSource();
-	DisplayName = FText::GetEmpty();
-	DisplayLevel = 0;
 	Source = InBoss;
 	if (InBoss){
 		InBoss->OnEndPlay.AddUniqueDynamic(this, &ThisClass::HandleSourceEndPlay);
@@ -39,20 +37,13 @@ ATDBossCharacter* UTDBossViewModel::GetSource() const
 	return Source.Get();
 }
 
-void UTDBossViewModel::SetDisplayIdentity(const FText& InName, int32 InLevel)
-{
-	// 해제된 대상의 뒤늦은 표시 정보는 보관하지 않는다.
-	if (!Source.IsValid()) return;
-	DisplayName = InName;
-	DisplayLevel = FMath::Max(0, InLevel);
-	RefreshAll();
-}
-
 void UTDBossViewModel::RefreshAll()
 {
 	const ATDBossCharacter* Boss = Source.Get();
 	const UAbilitySystemComponent* ASC = Boss ? BoundASC.Get() : nullptr;
-	const FText NewName = Boss ? DisplayName : FText::GetEmpty();
+	const FText NewName = Boss ? Boss->GetDisplayName() : FText::GetEmpty();
+	// 클라이언트에서는 수신된 값만 읽는다. Level 복제와 변경 알림은 게임플레이 측 책임이다.
+	const int32 NewLevel = Boss ? FMath::Max(0, Boss->GetLevel()) : 0;
 	float NewMaximum = ASC
 		                   ? ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute())
 		                   : 0.f;
@@ -61,7 +52,7 @@ void UTDBossViewModel::RefreshAll()
 	NewHealth = FMath::IsFinite(NewHealth) ? FMath::Clamp(NewHealth, 0.f, NewMaximum) : 0.f;
 	if (!BossName.EqualTo(NewName))
 		UE_MVVM_SET_PROPERTY_VALUE(BossName, NewName);
-	UE_MVVM_SET_PROPERTY_VALUE(BossLevel, Boss ? DisplayLevel : 0);
+	UE_MVVM_SET_PROPERTY_VALUE(BossLevel, NewLevel);
 	UE_MVVM_SET_PROPERTY_VALUE(Health, NewHealth);
 	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, NewMaximum);
 	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent,
@@ -71,7 +62,6 @@ void UTDBossViewModel::RefreshAll()
 	UE_MVVM_SET_PROPERTY_VALUE(bIsDead, Boss && Boss->IsDead());
 	OnDisplayChanged.Broadcast();
 }
-
 
 void UTDBossViewModel::UnbindSource()
 {

@@ -14,9 +14,13 @@
 #include "UI/Core/TDUIRootWidget.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
 #include "UI/Settings/TDUISettings.h"
+#include "Character/TDPlayerCharacter.h"
+#include "UI/HUD/TDRespawnWidget.h"
 
 void UTDUIManagerSubsystem::Deinitialize()
 {
+    UnbindDeathSource();
+    CloseDeathUI();
 	if (GetWorld()){
 		GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
 	}
@@ -30,14 +34,18 @@ void UTDUIManagerSubsystem::Deinitialize()
 
 void UTDUIManagerSubsystem::RegisterRoot(UTDUIRootWidget* InRootWidget)
 {
-	if (!IsValid(InRootWidget) || RootWidget.Get() == InRootWidget){
+	if (!IsValid(InRootWidget) || InRootWidget->GetOwningLocalPlayer() != GetLocalPlayer()
+        || RootWidget.Get() == InRootWidget){
 		return;
 	}
 
+    UnbindDeathSource();
+    CloseDeathUI();
 	ClearWindowRegistry();
 	RootWidget = InRootWidget;
 	AccountScreen = nullptr;
-	RefreshAccountFlow();
+    if (GetWorld()) GetWorld()->GetTimerManager().SetTimer(AccountFlowTimer, this, &ThisClass::RefreshUI, .1f, true);
+	RefreshUI();
 
 	// 현재 WBP_Root에 미리 배치된 인벤토리 창이 있으면 첫 프레임부터
 	// 보이지 않게 숨긴 뒤, 첫 Nav 클릭에서 같은 인스턴스를 재사용한다.
@@ -69,6 +77,9 @@ void UTDUIManagerSubsystem::UnregisterRoot(UTDUIRootWidget* InRootWidget)
 		return;
 	}
 
+    UnbindDeathSource();
+    CloseDeathUI();
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
 	ClearWindowRegistry();
 	RootWidget.Reset();
 	AccountScreen = nullptr;
@@ -362,9 +373,20 @@ void UTDUIManagerSubsystem::StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetC
 	AccountScreenClass = WidgetClass;
 	if (GetWorld()){
 		GetWorld()->GetTimerManager().SetTimer(AccountFlowTimer, this,
-		                                       &ThisClass::RefreshAccountFlow, .1f, true);
+		                                       &ThisClass::RefreshUI, .1f, true);
 	}
-	RefreshAccountFlow();
+	RefreshUI();
+}
+
+void UTDUIManagerSubsystem::RefreshUI()
+{
+    UTDUIRootWidget* Root = RootWidget.Get();
+    if (Root && Root->GetOwningLocalPlayer() == GetLocalPlayer())
+    {
+        Root->RefreshPlayerHUD();
+        RefreshAccountFlow();
+    }
+    RefreshDeathUI();
 }
 
 void UTDUIManagerSubsystem::RefreshAccountFlow()
@@ -377,7 +399,6 @@ void UTDUIManagerSubsystem::RefreshAccountFlow()
 	if (!Controller || !Controller->IsLocalController()){
 		return;
 	}
-	Root->RefreshPlayerHUD();
 	UCommonActivatableWidgetStack* Stack = Root->GetScreenStack();
 	if (Root->IsPlayerHUDReady()){
 		if (AccountScreen){
@@ -413,6 +434,89 @@ void UTDUIManagerSubsystem::RefreshAccountFlow()
 			Controller->bShowMouseCursor = true;
 		}
 	}
+}
+
+void UTDUIManagerSubsystem::UnbindDeathSource()
+{
+    if (DeathSource.IsValid())
+    {
+        DeathSource->OnDeath.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
+        DeathSource->OnRespawn.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
+    }
+    DeathSource.Reset();
+}
+
+void UTDUIManagerSubsystem::RefreshDeathUI()
+{
+    UTDUIRootWidget* Root = RootWidget.Get();
+    APlayerController* Controller = Root && Root->GetOwningLocalPlayer() == GetLocalPlayer()
+        ? Root->GetOwningPlayer() : nullptr;
+    ATDPlayerCharacter* Character = Controller && Controller->IsLocalController()
+        && Controller->GetLocalPlayer() == GetLocalPlayer()
+        ? Cast<ATDPlayerCharacter>(Controller->GetPawn()) : nullptr;
+    if (DeathSource.Get() != Character)
+    {
+        UnbindDeathSource();
+        CloseDeathUI();
+        DeathSource = Character;
+        if (Character)
+        {
+            Character->OnDeath.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
+            Character->OnRespawn.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
+        }
+    }
+    if (!Character || !Character->IsDead() || !Root || !Root->IsPlayerHUDReady())
+    {
+        CloseDeathUI();
+        return;
+    }
+    UCommonActivatableWidgetStack* ModalStack = Root->GetModalStack();
+    if (DeathScreen || !ModalStack) return;
+    const TSubclassOf<UTDRespawnWidget> WidgetClass = GetDefault<UTDUISettings>()->RespawnWidgetClass.LoadSynchronous();
+    if (!WidgetClass) return;
+    bCursorVisibleBeforeDeath = Controller->bShowMouseCursor;
+    DeathController = Controller;
+    DeathScreen = ModalStack->AddWidget<UTDRespawnWidget>(WidgetClass);
+    if (DeathScreen)
+    {
+        FInputModeUIOnly Mode;
+        UWidget* FocusTarget = DeathScreen->GetDesiredFocusTarget();
+        Mode.SetWidgetToFocus(FocusTarget ? FocusTarget->TakeWidget() : DeathScreen->TakeWidget());
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        Controller->SetInputMode(Mode);
+        Controller->bShowMouseCursor = true;
+    }
+}
+
+void UTDUIManagerSubsystem::CloseDeathUI()
+{
+    if (!DeathScreen) return;
+    UTDUIRootWidget* Root = RootWidget.Get();
+    DeathScreen->DeactivateWidget();
+    if (Root && Root->GetModalStack()) Root->GetModalStack()->RemoveWidget(*DeathScreen);
+    else DeathScreen->RemoveFromParent();
+    DeathScreen = nullptr;
+    APlayerController* Controller = DeathController.Get();
+    DeathController.Reset();
+    // Login/character selection manages its own input mode when the gameplay HUD is not ready.
+    if (Controller && Controller->IsLocalController() && Controller->GetLocalPlayer() == GetLocalPlayer()
+        && (!Root || Root->IsPlayerHUDReady()))
+    {
+        Controller->bShowMouseCursor = bCursorVisibleBeforeDeath;
+        if (bCursorVisibleBeforeDeath)
+        {
+            FInputModeGameAndUI Mode;
+            Mode.SetHideCursorDuringCapture(false);
+            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            Controller->SetInputMode(Mode);
+        }
+        else
+        {
+            FInputModeGameOnly Mode;
+            Mode.SetConsumeCaptureMouseDown(false);
+            Controller->SetInputMode(Mode);
+        }
+    }
 }
 
 void UTDUIManagerSubsystem::RequestCharacterSelection()

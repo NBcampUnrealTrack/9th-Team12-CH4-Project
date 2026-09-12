@@ -9,6 +9,9 @@ class ATDPlayerState;
 class UTDLoginWidget;
 class UTDUIRootWidget;
 class UTDWindowBaseWidget;
+class ATDPlayerCharacter;
+class APlayerController;
+class UTDRespawnWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 		FTDOnMenuWindowStateChanged,
@@ -52,6 +55,18 @@ public:
 	void BringWindowToFront(UTDWindowBaseWidget* Window);
 
 private:
+    /** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */
+    void RefreshUI();
+    UFUNCTION()
+    void RefreshDeathUI();
+    void CloseDeathUI();
+    void UnbindDeathSource();
+    TWeakObjectPtr<ATDPlayerCharacter> DeathSource;
+    TWeakObjectPtr<APlayerController> DeathController;
+    UPROPERTY(Transient)
+    TObjectPtr<UTDRespawnWidget> DeathScreen;
+    bool bCursorVisibleBeforeDeath = false;
+
 	UPROPERTY(Transient)
 		TSubclassOf<UTDLoginWidget> AccountScreenClass;
 	UPROPERTY(Transient)

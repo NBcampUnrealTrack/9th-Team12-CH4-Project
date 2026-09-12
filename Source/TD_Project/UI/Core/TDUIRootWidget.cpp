@@ -62,8 +62,6 @@ void UTDUIRootWidget::NativeConstruct()
 void UTDUIRootWidget::NativeDestruct()
 {
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(HUDReadyTimer);
-    DisplayedPawn.Reset();
-    bPlayerHUDReady = false;
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		if (UTDUIManagerSubsystem* UIManager =
@@ -73,6 +71,8 @@ void UTDUIRootWidget::NativeDestruct()
 		}
 	}
 
+    DisplayedPawn.Reset();
+    bPlayerHUDReady = false;
 	Super::NativeDestruct();
 }
 
@@ -144,7 +144,10 @@ void UTDUIRootWidget::RefreshPlayerHUD()
         DisplayedPawn.Reset();
         return;
     }
-    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn) return;
+    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn)
+    {
+        return;
+    }
     if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
     {
         if (UTDPlayerStatsSubsystem* Stats = LocalPlayer->GetSubsystem<UTDPlayerStatsSubsystem>())

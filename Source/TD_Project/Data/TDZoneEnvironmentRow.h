@@ -57,6 +57,18 @@ struct FTDZoneEnvironmentRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone|Rules")
 	FGameplayTag RespawnZoneId;
 
+	/** 이 존을 부활 목적지로 사용할 때 찾을 PlayerStartTag. 비우면 기존 ZoneId 태그 규칙을 쓴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone|Respawn")
+	FName RespawnPlayerStartTag;
+
+	/**
+	 * 지정하면 이 후보 존들의 부활 지점 중 사망 위치에서 가장 가까운 곳을 선택한다.
+	 * 비우면 기존 RespawnZoneId 고정 목적지를 쓴다. 후보를 찾지 못하면 RespawnZoneId로 폴백한다.
+	 * 마을 여부를 태그 문자열이나 안전지대 값으로 추측하지 않고 기획 데이터로 지정한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone|Respawn", meta = (Categories = "Zone"))
+	TArray<FGameplayTag> RespawnCandidateZoneIds;
+
 	/**
 	 * 권장 레벨. 막지 않고 알려만 준다. UI 가 "권장 25레벨" 로 표시한다.
 	 *

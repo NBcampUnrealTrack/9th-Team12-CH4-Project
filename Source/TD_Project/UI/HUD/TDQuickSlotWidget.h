@@ -48,6 +48,8 @@ private:
     UPROPERTY(Transient) TArray<TObjectPtr<UTDItemSlotVisualWidget>> SkillWidgets;
     TWeakObjectPtr<UTDProgressionComponent> SkillSource;
     FName DisplayedSkillClass;
+    TArray<int32> DisplayedSkillLevels;
+    int32 DisplayedCharacterLevel = INDEX_NONE;
 	int32 FindSlotAt(const FVector2D& ScreenPosition) const;
 	UFUNCTION()
 	void QueueRefresh();

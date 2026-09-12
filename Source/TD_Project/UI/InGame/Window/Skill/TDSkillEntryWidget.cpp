@@ -4,6 +4,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
 #include "UI/Common/Tooltip/TDItemTooltipWidget.h"
+#include "UI/Common/Tooltip/TDTooltipStatics.h"
 
 void UTDSkillEntryWidget::NativeConstruct()
 {
@@ -47,20 +48,12 @@ void UTDSkillEntryWidget::RefreshSkill()
     else { SkillIcon->SetBrushFromSoftTexture(Row->Icon); SkillIcon->SetVisibility(ESlateVisibility::HitTestInvisible); }
     // 행 전체에서 공용 툴팁을 보여준다. 강화 버튼은 자체 도움말을 유지한다.
     SetVisibility(ESlateVisibility::Visible);
-    if (TooltipLevel != Level)
+    if (TooltipLevel != Level || TooltipCharacterLevel != Progression->GetLevel())
     {
-        FText Details = FText::Format(
-            NSLOCTEXT("TDSkillWindow", "SkillTooltip", "{0}\n스킬 레벨: {1} / {2}\n요구 레벨: {3}"),
-            SkillTypeText->GetText(), FText::AsNumber(Level),
-            FText::AsNumber(Row->MaxLevel), FText::AsNumber(Row->RequiredLevel));
-        if (bActive)
-        {
-            Details = FText::Format(
-                NSLOCTEXT("TDSkillWindow", "ActiveTooltip", "{0}\n기본 마나: {1}\n기본 재사용 대기시간: {2}초"),
-                Details, FText::AsNumber(Row->ManaCost), FText::AsNumber(Row->Cooldown));
-        }
-        UTDItemTooltipWidget::AttachText(this, this, Row->DisplayName, Details);
+        UTDItemTooltipWidget::AttachData(this, this,
+            UTDTooltipStatics::MakeSkillTooltip(Progression, SkillId, Level));
         TooltipLevel = Level;
+        TooltipCharacterLevel = Progression->GetLevel();
     }
     // 잔여 포인트가 없을 때는 버튼 자리도 접는다. 요청의 최종 검증은 서버에서 한다.
     UpgradeButton->SetVisibility(Progression->GetRemainingSkillPoints() > 0 && !bMax ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);

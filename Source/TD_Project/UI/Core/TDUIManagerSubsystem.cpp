@@ -443,3 +443,78 @@ void UTDUIManagerSubsystem::ShowPartyInvitation(ATDPlayerState* Inviter)
 		}
 	}
 }
+
+
+bool UTDUIManagerSubsystem::IsGameplayWindowLayerReady() const
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+
+	if (!IsValid(Root)
+		|| !Root->IsPlayerHUDReady()
+		|| Root->GetWindowLayer() == nullptr)
+	{
+		return false;
+	}
+
+	const ESlateVisibility Visibility =
+		Root->GetWindowLayer()->GetVisibility();
+
+	return Visibility != ESlateVisibility::Collapsed
+		&& Visibility != ESlateVisibility::Hidden;
+}
+
+bool UTDUIManagerSubsystem::ShowServiceWindow(
+	UTDWindowBaseWidget* Window)
+{
+	if (!IsValid(Window) || !IsGameplayWindowLayerReady())
+	{
+		return false;
+	}
+
+	UTDUIRootWidget* Root = RootWidget.Get();
+
+	if (!Root->AddWindow(Window))
+	{
+		return false;
+	}
+
+	Window->SetVisibility(ESlateVisibility::Visible);
+	BringWindowToFront(Window);
+
+	return true;
+}
+
+bool UTDUIManagerSubsystem::HasVisibleGameWindow() const
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+
+	UCanvasPanel* Layer =
+		Root ? Root->GetWindowLayer() : nullptr;
+
+	if (Layer == nullptr)
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < Layer->GetChildrenCount(); ++Index)
+	{
+		const UTDWindowBaseWidget* Window =
+			Cast<UTDWindowBaseWidget>(Layer->GetChildAt(Index));
+
+		if (Window == nullptr)
+		{
+			continue;
+		}
+
+		const ESlateVisibility Visibility =
+			Window->GetVisibility();
+
+		if (Visibility != ESlateVisibility::Collapsed
+			&& Visibility != ESlateVisibility::Hidden)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}

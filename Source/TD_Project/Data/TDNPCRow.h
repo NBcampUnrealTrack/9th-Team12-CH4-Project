@@ -76,7 +76,11 @@ struct TD_PROJECT_API FTDNPCRow
 	UPROPERTY(EditAnywhere, BlueprintReadOnly,
 		Category = "TD|NPC")
 	bool bShowQuestMarker = true;
-
+	
+	/** 정상적인 대화 종료 후 강화창을 여는 NPC인지 여부입니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Enhance")
+	bool bOpenEnhanceAfterDialogue = false;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly,
 		Category = "TD|NPC|Gift")
 	bool bAcceptsGifts = true;

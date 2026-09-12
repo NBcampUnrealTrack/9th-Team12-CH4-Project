@@ -9,6 +9,7 @@
 
 class UDataTable;
 struct FTDItemRow;
+class UTDEnhanceServiceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnInventoryChanged);
 
@@ -163,6 +164,12 @@ public:
 
 	const TArray<FTDItemInstance>& GetItems() const { return ItemContainer.Items; }
 
+	/** 서버에서 가방 내용이 변경될 때 증가하는 임시 번호입니다. */
+	int64 GetInventoryRevision() const
+	{
+		return InventoryRevision;
+	}
+	
 	/** 내용이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Inventory")
 	FTDOnInventoryChanged OnInventoryChanged;
@@ -273,4 +280,17 @@ private:
 
 	UFUNCTION()
 	void OnRep_SlotCapacity();
+	
+	friend class UTDEnhanceServiceComponent;
+
+	/**
+	 * 강화 서비스만 호출하는 실제 강화 처리입니다.
+	 * 블루프린트나 클라이언트에서 직접 호출할 수 없습니다.
+	 */
+	ETDEnhanceResult EnhanceItemForService(
+		int32 SlotIndex,
+		int32& OutNewLevel);
+
+	/** 저장할 필요가 없는 서버 실행 중 변경 번호입니다. */
+	int64 InventoryRevision = 0;
 };

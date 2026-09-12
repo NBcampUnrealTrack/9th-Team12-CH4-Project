@@ -20,7 +20,21 @@
 #include "Components/Overlay.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
+#include "UI/Layer/TDHUDLayer.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
+
+UTDBossHPWidget* UTDUIRootWidget::GetBossWidget() const
+{
+	if (!HUDLayer) return nullptr;
+	for (UWidget* Child : HUDLayer->GetAllChildren())
+	{
+		if (UTDHUDLayer* HUD = Cast<UTDHUDLayer>(Child))
+		{
+			if (UTDBossHPWidget* BossWidget = HUD->GetBossWidget()) return BossWidget;
+		}
+	}
+	return nullptr;
+}
 
 FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {

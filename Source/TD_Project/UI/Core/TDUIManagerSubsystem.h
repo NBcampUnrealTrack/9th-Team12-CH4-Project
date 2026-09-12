@@ -5,13 +5,18 @@
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDUIManagerSubsystem.generated.h"
 
+class UTDBossHPWidget;
+class UTDBossViewModel;
+class ATDBossCharacter;
+class ATDGameState;
 class ATDPlayerState;
 class UTDLoginWidget;
 class UTDUIRootWidget;
 class UTDWindowBaseWidget;
-class ATDPlayerCharacter;
+class UTDPlayerStatsViewModel;
 class APlayerController;
 class UTDRespawnWidget;
+class UTDChatWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 		FTDOnMenuWindowStateChanged,
@@ -31,6 +36,11 @@ class TD_PROJECT_API UTDUIManagerSubsystem : public ULocalPlayerSubsystem
 public:
 	virtual void Deinitialize() override;
 
+ /** 채팅 입력 중 게임 조작을 막고, 종료 시 이전 커서 상태를 복원한다. */
+ bool BeginChatInput(UTDChatWidget* Widget);
+ void EndChatInput(UTDChatWidget* Widget);
+ bool IsChatInputActive() const { return ActiveChatWidget.IsValid(); }
+
 	/** Root의 ScreenStack에서 로그인/선택 화면을 관리한다. */
 	void StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetClass);
 	UFUNCTION(BlueprintCallable, Category="TD|UI|Account")
@@ -41,9 +51,14 @@ public:
 	void RegisterRoot(UTDUIRootWidget* InRootWidget);
 	void UnregisterRoot(UTDUIRootWidget* InRootWidget);
 
+	// Nav 메뉴 오픈
 	UFUNCTION(BlueprintCallable, Category = "TD|UI")
 		void RequestMenu(ETDNavMenuType MenuType);
+
+	// 파티창 오픈 .
 	void ShowPartyInvitation(ATDPlayerState* Inviter);
+
+	UTDBossHPWidget* GetBossWidget() const;
 
 	UFUNCTION(BlueprintPure, Category = "TD|UI")
 		bool IsMenuOpen(ETDNavMenuType MenuType) const;
@@ -65,17 +80,34 @@ public:
 	bool HasVisibleGameWindow() const;
 
 private:
-    /** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */
-    void RefreshUI();
-    UFUNCTION()
-    void RefreshDeathUI();
-    void CloseDeathUI();
-    void UnbindDeathSource();
-    TWeakObjectPtr<ATDPlayerCharacter> DeathSource;
-    TWeakObjectPtr<APlayerController> DeathController;
-    UPROPERTY(Transient)
-    TObjectPtr<UTDRespawnWidget> DeathScreen;
-    bool bCursorVisibleBeforeDeath = false;
+ TWeakObjectPtr<UTDChatWidget> ActiveChatWidget;
+ TWeakObjectPtr<APlayerController> ChatInputController;
+ bool bCursorVisibleBeforeChat = false;
+ void CancelChatInput();
+	UPROPERTY(Transient)
+	TObjectPtr<UTDBossViewModel> BossViewModel;
+	/** 현재 월드의 보스 상태만 구독한다. 서버 권위 상태는 GameState가 소유한다. */
+	TWeakObjectPtr<ATDGameState> BoundBossGameState;
+	void RefreshBossState();
+	void UnbindBossState();
+	void DisconnectBossUI();
+
+	UFUNCTION()
+	void HandleActiveBossChanged(ATDBossCharacter* NewBoss);
+
+	UFUNCTION()
+	void RefreshBossVisibility();
+
+	/** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */
+	void RefreshUI();
+	void RefreshDeathUI();
+	void CloseDeathUI();
+	void UnbindDeathViewModel();
+	TWeakObjectPtr<UTDPlayerStatsViewModel> DeathViewModel;
+	TWeakObjectPtr<APlayerController> DeathController;
+	UPROPERTY(Transient)
+		TObjectPtr<UTDRespawnWidget> DeathScreen;
+	bool bCursorVisibleBeforeDeath = false;
 
 	UPROPERTY(Transient)
 		TSubclassOf<UTDLoginWidget> AccountScreenClass;
@@ -83,6 +115,7 @@ private:
 		TObjectPtr<UTDLoginWidget> AccountScreen;
 	FTimerHandle AccountFlowTimer;
 	void RefreshAccountFlow();
+
 
 	struct FWindowPlacement
 	{
@@ -107,4 +140,5 @@ private:
 
 	UFUNCTION()
 		void HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow);
+
 };

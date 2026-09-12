@@ -42,4 +42,8 @@ public:
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Chat", meta = (ClampMin = "0.0"))
 	float SendCooldownSeconds = 1.f;
+
+ /** 클라이언트 채팅창에 보관할 최근 메시지 수. 로그아웃/캐릭터 전환 시 비운다. */
+ UPROPERTY(config, EditAnywhere, Category="Chat|UI", meta=(ClampMin="1", ClampMax="1000"))
+ int32 MaxHistoryMessages = 300;
 };

@@ -62,6 +62,12 @@ public:
 	/** 조작을 되돌린다. 체력 회복과 위치 이동은 GameMode 가 맡는다. */
 	virtual void HandleRespawn() override;
 
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+    /** Display only; -1 means no automatic respawn is scheduled. */
+    UFUNCTION(BlueprintPure, Category="TD|Respawn")
+    float GetAutoRespawnRemainingSeconds() const;
+
 	// ══ 조작 ═══════════════════════════════════════════════════════════════
 	//
 	// 조작과 관련된 것은 전부 여기 모여 있다. 새 조작을 추가할 때 볼 곳은 세 군데다.
@@ -167,6 +173,9 @@ private:
 
 	/** 자동 부활 타이머. 서버에서만 돈다. */
 	FTimerHandle AutoRespawnTimerHandle;
+
+    UPROPERTY(Replicated)
+    double AutoRespawnEndServerTime = 0.0;
 	
 	
 	/**  상호작용

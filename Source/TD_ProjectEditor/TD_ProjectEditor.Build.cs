@@ -30,7 +30,7 @@ public class TD_ProjectEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"UnrealEd",
-			"UMG", "UMGEditor", "Slate", "SlateCore", "Kismet", "BlueprintGraph", "RenderCore"
+			"UMG", "UMGEditor", "CommonUI", "Slate", "SlateCore", "Kismet", "BlueprintGraph", "RenderCore", "AssetRegistry", "GameplayAbilities"
 		});
 	}
 }

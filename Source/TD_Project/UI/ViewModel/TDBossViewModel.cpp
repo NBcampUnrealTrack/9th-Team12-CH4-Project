@@ -12,13 +12,14 @@ void UTDBossViewModel::SetSource(ATDBossCharacter* InBoss)
 		return;
 	}
 	UnbindSource();
+	DisplayName = FText::GetEmpty();
+	DisplayLevel = 0;
 	Source = InBoss;
 	if (InBoss){
 		InBoss->OnEndPlay.AddUniqueDynamic(this, &ThisClass::HandleSourceEndPlay);
 		InBoss->OnDestroyed.AddUniqueDynamic(this, &ThisClass::HandleSourceDestroyed);
 		InBoss->OnDeath.AddUniqueDynamic(this, &ThisClass::HandleDeathStateChanged);
 		InBoss->OnRespawn.AddUniqueDynamic(this, &ThisClass::HandleDeathStateChanged);
-		IdentityHandle = InBoss->OnMonsterIdentityChanged.AddUObject(this, &ThisClass::RefreshAll);
 		BoundASC = InBoss->GetAbilitySystemComponent();
 		if (UAbilitySystemComponent* ASC = BoundASC.Get()){
 			HealthHandle = ASC->GetGameplayAttributeValueChangeDelegate(
@@ -29,7 +30,7 @@ void UTDBossViewModel::SetSource(ATDBossCharacter* InBoss)
 			                     .AddUObject(this, &ThisClass::HandleHealthChanged);
 		}
 	}
-	// 구독 전에 감소한 HP와 이미 복제된 이름/사망 상태도 즉시 읽는다.
+	// 구독 전에 감소한 HP와 사망 상태도 즉시 읽는다.
 	RefreshAll();
 }
 
@@ -38,11 +39,20 @@ ATDBossCharacter* UTDBossViewModel::GetSource() const
 	return Source.Get();
 }
 
+void UTDBossViewModel::SetDisplayIdentity(const FText& InName, int32 InLevel)
+{
+	// 해제된 대상의 뒤늦은 표시 정보는 보관하지 않는다.
+	if (!Source.IsValid()) return;
+	DisplayName = InName;
+	DisplayLevel = FMath::Max(0, InLevel);
+	RefreshAll();
+}
+
 void UTDBossViewModel::RefreshAll()
 {
 	const ATDBossCharacter* Boss = Source.Get();
 	const UAbilitySystemComponent* ASC = Boss ? BoundASC.Get() : nullptr;
-	const FText NewName = Boss ? Boss->GetMonsterDisplayName() : FText::GetEmpty();
+	const FText NewName = Boss ? DisplayName : FText::GetEmpty();
 	float NewMaximum = ASC
 		                   ? ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute())
 		                   : 0.f;
@@ -51,7 +61,7 @@ void UTDBossViewModel::RefreshAll()
 	NewHealth = FMath::IsFinite(NewHealth) ? FMath::Clamp(NewHealth, 0.f, NewMaximum) : 0.f;
 	if (!BossName.EqualTo(NewName))
 		UE_MVVM_SET_PROPERTY_VALUE(BossName, NewName);
-	UE_MVVM_SET_PROPERTY_VALUE(BossLevel, Boss ? Boss->GetLevel() : 0);
+	UE_MVVM_SET_PROPERTY_VALUE(BossLevel, Boss ? DisplayLevel : 0);
 	UE_MVVM_SET_PROPERTY_VALUE(Health, NewHealth);
 	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, NewMaximum);
 	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent,
@@ -70,7 +80,6 @@ void UTDBossViewModel::UnbindSource()
 		Boss->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleSourceDestroyed);
 		Boss->OnDeath.RemoveDynamic(this, &ThisClass::HandleDeathStateChanged);
 		Boss->OnRespawn.RemoveDynamic(this, &ThisClass::HandleDeathStateChanged);
-		Boss->OnMonsterIdentityChanged.Remove(IdentityHandle);
 	}
 	if (UAbilitySystemComponent* ASC = BoundASC.Get()){
 		ASC->GetGameplayAttributeValueChangeDelegate(UTDAttributeSet::GetHealthAttribute()).Remove(
@@ -80,7 +89,6 @@ void UTDBossViewModel::UnbindSource()
 	}
 	HealthHandle.Reset();
 	MaxHealthHandle.Reset();
-	IdentityHandle.Reset();
 	BoundASC.Reset();
 	Source.Reset();
 }

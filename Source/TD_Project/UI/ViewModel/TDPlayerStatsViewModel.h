@@ -6,9 +6,12 @@
 
 class UTexture2D;
 class ATDPlayerState;
+class ATDPlayerCharacter;
 class UAbilitySystemComponent;
 class UTDProgressionComponent;
 struct FOnAttributeChangeData;
+
+DECLARE_MULTICAST_DELEGATE(FTDOnPlayerDeathStateChanged);
 
 /** 같은 로컬 플레이어의 HUD, EXP, 스탯창이 공유하는 읽기 전용 표시 데이터. */
 UCLASS(BlueprintType, meta=(MVVMAllowedContextCreationType="Manual"))
@@ -17,6 +20,14 @@ class TD_PROJECT_API UTDPlayerStatsViewModel : public UMVVMViewModelBase
  GENERATED_BODY()
 public:
  void SetSource(ATDPlayerState* InPlayerState);
+ /** Subsystem이 전달한 현재 Pawn의 사망/부활 상태를 구독한다. */
+ void SetDeathSource(ATDPlayerCharacter* InCharacter);
+
+ UPROPERTY(BlueprintReadOnly, FieldNotify, Category="TD|Player Stats")
+ bool bIsDead = false;
+
+ /** 화면 생성과 입력 전환은 이 알림을 받는 UIManager가 담당한다. */
+ FTDOnPlayerDeathStateChanged OnDeathStateChanged;
  UFUNCTION(BlueprintCallable, Category="TD|UI|ViewModel")
  void RefreshAll();
 
@@ -124,6 +135,10 @@ private:
  TWeakObjectPtr<UTDProgressionComponent> BoundProgression;
  TArray<FDelegateHandle> AttributeHandles;
  void UnbindSource();
+ TWeakObjectPtr<ATDPlayerCharacter> DeathSource;
+ void UnbindDeathSource();
+ UFUNCTION()
+ void RefreshDeathState();
  void RefreshVitals();
  void HandleAttributeChanged(const FOnAttributeChangeData& Data);
 

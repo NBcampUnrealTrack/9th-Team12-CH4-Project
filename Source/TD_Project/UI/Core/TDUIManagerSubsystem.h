@@ -5,11 +5,13 @@
 #include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDUIManagerSubsystem.generated.h"
 
+class UTDBossHPWidget;
+class UTDBossViewModel;
 class ATDPlayerState;
 class UTDLoginWidget;
 class UTDUIRootWidget;
 class UTDWindowBaseWidget;
-class ATDPlayerCharacter;
+class UTDPlayerStatsViewModel;
 class APlayerController;
 class UTDRespawnWidget;
 
@@ -41,9 +43,14 @@ public:
 	void RegisterRoot(UTDUIRootWidget* InRootWidget);
 	void UnregisterRoot(UTDUIRootWidget* InRootWidget);
 
+	// Nav 메뉴 오픈
 	UFUNCTION(BlueprintCallable, Category = "TD|UI")
 		void RequestMenu(ETDNavMenuType MenuType);
+
+	// 파티창 오픈 .
 	void ShowPartyInvitation(ATDPlayerState* Inviter);
+
+	UTDBossHPWidget* GetBossWidget() const;
 
 	UFUNCTION(BlueprintPure, Category = "TD|UI")
 		bool IsMenuOpen(ETDNavMenuType MenuType) const;
@@ -55,17 +62,20 @@ public:
 	void BringWindowToFront(UTDWindowBaseWidget* Window);
 
 private:
-    /** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */
-    void RefreshUI();
-    UFUNCTION()
-    void RefreshDeathUI();
-    void CloseDeathUI();
-    void UnbindDeathSource();
-    TWeakObjectPtr<ATDPlayerCharacter> DeathSource;
-    TWeakObjectPtr<APlayerController> DeathController;
-    UPROPERTY(Transient)
-    TObjectPtr<UTDRespawnWidget> DeathScreen;
-    bool bCursorVisibleBeforeDeath = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UTDBossViewModel> BossViewModel;
+	void DisconnectBossUI();
+
+	/** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */
+	void RefreshUI();
+	void RefreshDeathUI();
+	void CloseDeathUI();
+	void UnbindDeathViewModel();
+	TWeakObjectPtr<UTDPlayerStatsViewModel> DeathViewModel;
+	TWeakObjectPtr<APlayerController> DeathController;
+	UPROPERTY(Transient)
+		TObjectPtr<UTDRespawnWidget> DeathScreen;
+	bool bCursorVisibleBeforeDeath = false;
 
 	UPROPERTY(Transient)
 		TSubclassOf<UTDLoginWidget> AccountScreenClass;
@@ -73,6 +83,7 @@ private:
 		TObjectPtr<UTDLoginWidget> AccountScreen;
 	FTimerHandle AccountFlowTimer;
 	void RefreshAccountFlow();
+
 
 	struct FWindowPlacement
 	{
@@ -97,4 +108,5 @@ private:
 
 	UFUNCTION()
 		void HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow);
+
 };

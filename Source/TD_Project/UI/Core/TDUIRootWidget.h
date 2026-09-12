@@ -12,6 +12,7 @@ class UOverlay;
 class UVerticalBox;
 class UCommonActivatableWidgetStack;
 class UTDWindowBaseWidget;
+class UTDBossHPWidget;
 
 /**
  * 
@@ -51,6 +52,8 @@ public:
 		return HUDLayer;
 	}
 
+	UTDBossHPWidget* GetBossWidget() const { return BossHPWidget; }
+
     void SetLoadingVisible(bool bVisible);
 
     /** 선택한 캐릭터와 Pawn의 연결을 확인하고 HUD 데이터를 갱신한다. */
@@ -64,6 +67,10 @@ public:
 	bool AddWindow(UTDWindowBaseWidget* WindowWidget);
 
 protected:
+	/** WBP_Root의 동일한 이름을 가진 자식 위젯과 연결된다. */
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional))
+	TObjectPtr<UTDBossHPWidget> BossHPWidget;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
     bool bWaitForCharacterLoad = true;
 

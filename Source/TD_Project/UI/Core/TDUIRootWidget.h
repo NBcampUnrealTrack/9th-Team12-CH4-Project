@@ -52,7 +52,8 @@ public:
 		return HUDLayer;
 	}
 
-	UTDBossHPWidget* GetBossWidget() const { return BossHPWidget; }
+	/** HUDLayer 안의 HUD 위젯을 통해 보스 HP 위젯을 가져온다. */
+	UTDBossHPWidget* GetBossWidget() const;
 
     void SetLoadingVisible(bool bVisible);
 
@@ -67,10 +68,6 @@ public:
 	bool AddWindow(UTDWindowBaseWidget* WindowWidget);
 
 protected:
-	/** WBP_Root의 동일한 이름을 가진 자식 위젯과 연결된다. */
-	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional))
-	TObjectPtr<UTDBossHPWidget> BossHPWidget;
-
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
     bool bWaitForCharacterLoad = true;
 

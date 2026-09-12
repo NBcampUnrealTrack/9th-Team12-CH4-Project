@@ -53,6 +53,16 @@ public:
 
 	/** WindowLayer 안에서 해당 창을 가장 앞으로 배치한다. */
 	void BringWindowToFront(UTDWindowBaseWidget* Window);
+	
+	//강화부분  추가
+	/** NPC 서비스처럼 하단 메뉴와 별개인 창을 WindowLayer에 표시합니다. */
+	bool ShowServiceWindow(UTDWindowBaseWidget* Window);
+
+	/** 게임용 창을 표시할 수 있는 상태인지 확인합니다. */
+	bool IsGameplayWindowLayerReady() const;
+
+	/** 현재 WindowLayer에 표시 중인 창이 있는지 확인합니다. */
+	bool HasVisibleGameWindow() const;
 
 private:
     /** 등록된 Root의 화면 흐름을 갱신한다. 로그인 화면이 없어도 Pawn 변경을 추적한다. */

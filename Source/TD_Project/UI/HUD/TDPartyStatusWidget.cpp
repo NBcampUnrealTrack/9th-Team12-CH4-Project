@@ -1,6 +1,8 @@
+#include "UI/HUD/TDPartyStatusWidget.h"
+
 #include "GameFramework/GameStateBase.h"
 #include "Engine/LocalPlayer.h"
-#include "UI/HUD/TDPartyStatusWidget.h"
+
 #include "UI/Core/TDUIManagerSubsystem.h"
 #include "UI/HUD/TDPartyMemberWidget.h"
 #include "Party/TDPartyComponent.h"

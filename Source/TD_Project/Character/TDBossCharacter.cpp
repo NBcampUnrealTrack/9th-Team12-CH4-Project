@@ -2,26 +2,33 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "AIController.h"
 #include "Camera/CameraShakeBase.h"
 #include "Combat/TDBossProjectile.h"
 #include "Combat/TDCombatComponent.h"
 #include "Combat/TDCombatStatics.h"
 #include "Components/CapsuleComponent.h"
+#include "Core/TDGameplayTags.h"
+#include "Data/TDMonsterRow.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Game/TDGameState.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "Stats/TDStatComponent.h"
 #include "TimerManager.h"
 
 ATDBossCharacter::ATDBossCharacter()
 {
-	// 돌진·잠수 이동은 서버 Tick 에서 굴린다. 클라이언트는 이동 복제로 본다.
 	PrimaryActorTick.bCanEverTick = true;
-
-	HitStaggerDuration = 0.f;   // 슈퍼아머 — CanBeStaggered 가 false 라 의미 없지만 명시
-	CorpseLifetime = 4.f;       // 사망 연출(가라앉기)을 볼 시간
+	HitStaggerDuration = 0.f;
+	CorpseLifetime = 4.f;
 }
 
 void ATDBossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -38,7 +45,6 @@ void ATDBossCharacter::BeginPlay()
 	HomeLocation = GetActorLocation();
 	PatternReadyTime.Init(0.f, Patterns.Num());
 
-	// 페이즈 판정은 서버가 체력 변경을 직접 듣는다. 체력바와 같은 델리게이트, 구독자만 다르다.
 	if (HasAuthority())
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -56,6 +62,11 @@ void ATDBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ASC->GetGameplayAttributeValueChangeDelegate(UTDAttributeSet::GetHealthAttribute()).Remove(HealthChangedHandle);
 	}
 	ClearFightTimers();
+	ClearTelegraphVFX();
+	if (HasAuthority())
+	{
+		RegisterActiveBoss(false);
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -75,19 +86,23 @@ void ATDBossCharacter::Tick(float DeltaSeconds)
 	{
 		TickBurrow(DeltaSeconds);
 	}
+	else if (bReturning)
+	{
+		TickReturn();
+	}
 }
 
 // ── 조회 ─────────────────────────────────────────────────
 
 bool ATDBossCharacter::IsBusy() const
 {
-	return CurrentPatternPhase != ETDBossPatternPhase::None || bInEntrance || bInPhaseTransition;
+	return CurrentPatternPhase != ETDBossPatternPhase::None || bInEntrance || bInPhaseTransition || bReturning;
 }
 
 bool ATDBossCharacter::IsInvulnerable() const
 {
 	// 시간 무적(방벽 스킬, 부모)에 보스 고유 무적을 더한다. Super 를 빼면 보스만 방벽이 안 먹는다.
-	return Super::IsInvulnerable() || bInEntrance || bInPhaseTransition || bBurrowed;
+	return Super::IsInvulnerable() || bInEntrance || bInPhaseTransition || bBurrowed || bReturning;
 }
 
 float ATDBossCharacter::GetIncomingDamageMultiplier() const
@@ -105,6 +120,18 @@ bool ATDBossCharacter::GetPatternSpec(int32 PatternIndex, FTDBossPatternSpec& Ou
 	return true;
 }
 
+FText ATDBossCharacter::GetDisplayName() const
+{
+	if (MonsterTable != nullptr && !MonsterId.IsNone())
+	{
+		if (const FTDMonsterRow* Row = MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("BossDisplayName")))
+		{
+			return Row->DisplayName;
+		}
+	}
+	return FText::FromName(MonsterId);
+}
+
 FVector ATDBossCharacter::GetFacing() const
 {
 	const UTDCombatComponent* Combat = GetCombatComponent();
@@ -112,11 +139,11 @@ FVector ATDBossCharacter::GetFacing() const
 	return Facing.IsNearlyZero() ? GetActorForwardVector().GetSafeNormal2D() : Facing;
 }
 
-// ── 전투 시작·리셋 ────────────────────────────────────────
+// ── 전투 시작·리셋·귀환 ───────────────────────────────────
 
 void ATDBossCharacter::BeginFight(ATDCharacterBase* FirstTarget)
 {
-	if (!HasAuthority() || bFightActive || IsDead())
+	if (!HasAuthority() || bFightActive || bReturning || IsDead())
 	{
 		return;
 	}
@@ -124,8 +151,8 @@ void ATDBossCharacter::BeginFight(ATDCharacterBase* FirstTarget)
 	bFightActive = true;
 	FightStartTime = GetWorld()->GetTimeSeconds();
 	PatternTarget = FirstTarget;
+	RegisterActiveBoss(true);
 
-	// 입장 연출: 무적·정지. BP 가 Entrance 이벤트로 포효·카메라 연출을 붙인다.
 	bInEntrance = true;
 	MulticastBossEvent(ETDBossEvent::Entrance, 0);
 	MulticastCameraShake(GetActorLocation(), 2.f);
@@ -144,25 +171,78 @@ void ATDBossCharacter::EndEntrance()
 	bInEntrance = false;
 }
 
-void ATDBossCharacter::ResetFight()
+void ATDBossCharacter::ResetFight(bool bInstant)
 {
-	// 시체는 리셋하지 않는다. 되살리는 건 스폰포인트 몫이다.
-	if (!HasAuthority() || IsDead())
+	if (!HasAuthority() || IsDead() || bReturning)
 	{
 		return;
 	}
 
+	// 전투 상태는 즉시 끊는다. 풀피·페이즈 복구는 집에 도착했을 때(FinishReturnHome).
 	ClearFightTimers();
 	CancelPattern();
 	DestroyMinions();
-
 	bFightActive = false;
 	bInEntrance = false;
 	bInPhaseTransition = false;
-	bEnraged = false;
 	PatternTarget = nullptr;
+	RegisterActiveBoss(false);
+
+	const bool bAlreadyHome = FVector::Dist2D(GetActorLocation(), HomeLocation) <= ReturnArriveDistance;
+	if (bInstant || bAlreadyHome)
+	{
+		SetActorLocation(HomeLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		FinishReturnHome();
+		return;
+	}
+	StartReturnHome();
+}
+
+void ATDBossCharacter::StartReturnHome()
+{
+	// 귀환 중: 무적, 판단 정지(IsBusy), 공격 안 함. 플레이어가 끌고 나가 봤자 얻을 게 없게.
+	bReturning = true;
+	MulticastBossEvent(ETDBossEvent::Reset, 0);
+
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		AIC->StopMovement();
+		AIC->MoveToLocation(HomeLocation, 50.f);
+	}
+
+	// 길이 막혀 못 오면 순간이동으로 마무리. 리시가 영원히 안 풀리는 것보다 낫다.
+	GetWorldTimerManager().SetTimer(ReturnTimeoutHandle, [this]()
+	{
+		if (bReturning)
+		{
+			SetActorLocation(HomeLocation, false, nullptr, ETeleportType::TeleportPhysics);
+			FinishReturnHome();
+		}
+	}, ReturnTimeout, false);
+}
+
+void ATDBossCharacter::TickReturn()
+{
+	if (FVector::Dist2D(GetActorLocation(), HomeLocation) <= ReturnArriveDistance)
+	{
+		FinishReturnHome();
+	}
+}
+
+void ATDBossCharacter::FinishReturnHome()
+{
+	GetWorldTimerManager().ClearTimer(ReturnTimeoutHandle);
+	bReturning = false;
+
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		AIC->StopMovement();
+	}
+
+	bEnraged = false;
 	LastPattern = INDEX_NONE;
 	PatternReadyTime.Init(0.f, Patterns.Num());
+	ClearBossBuff();
 
 	if (Phase != 1)
 	{
@@ -170,15 +250,28 @@ void ATDBossCharacter::ResetFight()
 		OnPhaseChanged.Broadcast(Phase);   // 서버는 OnRep 이 안 불린다
 	}
 
-	// 풀피. 회복 경로(RestoreHealth)는 "살아 있는 대상"이 전제라 리셋엔 어트리뷰트를 직접 쓴다.
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
 		const float MaxHealth = ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute());
 		ASC->SetNumericAttributeBase(UTDAttributeSet::GetHealthAttribute(), MaxHealth);
 	}
+}
 
-	SetActorLocation(HomeLocation, false, nullptr, ETeleportType::TeleportPhysics);
-	MulticastBossEvent(ETDBossEvent::Reset, 0);
+void ATDBossCharacter::RegisterActiveBoss(bool bActive)
+{
+	ATDGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATDGameState>() : nullptr;
+	if (GameState == nullptr)
+	{
+		return;
+	}
+	if (bActive)
+	{
+		GameState->SetActiveBoss(this);
+	}
+	else if (GameState->GetActiveBoss() == this)
+	{
+		GameState->SetActiveBoss(nullptr);   // 다른 보스가 등록돼 있으면 건드리지 않는다
+	}
 }
 
 void ATDBossCharacter::ClearFightTimers()
@@ -191,7 +284,39 @@ void ATDBossCharacter::ClearFightTimers()
 		TM.ClearTimer(EntranceTimerHandle);
 		TM.ClearTimer(EnrageTimerHandle);
 		TM.ClearTimer(TransitionTimerHandle);
+		TM.ClearTimer(ReturnTimeoutHandle);
 	}
+}
+
+// ── 강화 (스탯 소스) ──────────────────────────────────────
+
+void ATDBossCharacter::ApplyBossBuff()
+{
+	UTDStatComponent* Stats = GetStatComponent();
+	if (Stats == nullptr)
+	{
+		return;
+	}
+
+	// 페이즈 2 와 분노가 합산된다. ReplaceSource 라 몇 번 불러도 소스는 하나.
+	const float Bonus = (Phase >= 2 ? Phase2DamageBonus : 0.f) + (bEnraged ? EnrageDamageBonus : 0.f);
+
+	TArray<FTDStatModifier> Modifiers;
+	Modifiers.Add(FTDStatModifier(TDTags::Stat_Offense_Damage_Physical, ETDModOp::Increased, Bonus));
+	Modifiers.Add(FTDStatModifier(TDTags::Stat_Offense_Damage_Magical, ETDModOp::Increased, Bonus));
+	BossBuffHandle = Stats->ReplaceSource(BossBuffHandle, TDTags::Source_Boss, MoveTemp(Modifiers));
+}
+
+void ATDBossCharacter::ClearBossBuff()
+{
+	if (UTDStatComponent* Stats = GetStatComponent())
+	{
+		if (BossBuffHandle.IsValid())
+		{
+			Stats->RemoveSource(BossBuffHandle);
+		}
+	}
+	BossBuffHandle.Invalidate();
 }
 
 // ── 패턴 선택 ────────────────────────────────────────────
@@ -254,10 +379,9 @@ int32 ATDBossCharacter::ChoosePattern(float DistanceToTarget) const
 
 	if (Candidates.Num() == 0)
 	{
-		return INDEX_NONE;   // BT 가 잠깐 기다렸다 다시 묻는다
+		return INDEX_NONE;
 	}
 
-	// 가중 랜덤: 룰렛 돌리기.
 	float Roll = FMath::FRandRange(0.f, TotalWeight);
 	for (int32 Index : Candidates)
 	{
@@ -281,7 +405,6 @@ bool ATDBossCharacter::StartPattern(int32 PatternIndex)
 
 	const FTDBossPatternSpec& Spec = Patterns[PatternIndex];
 
-	// 대상 쪽을 보고, 그 순간의 위치를 찍어둔다. 이후 대상이 움직여도 판정은 이 자리 기준.
 	if (ATDCharacterBase* Target = PatternTarget.Get())
 	{
 		PatternTargetLocation = Target->GetActorLocation();
@@ -301,7 +424,6 @@ bool ATDBossCharacter::StartPattern(int32 PatternIndex)
 	const float Duration = FMath::Max(ScaledTelegraph(Spec.TelegraphTime), 0.01f);
 	const FVector Center = GetStrikeCenter(Spec);
 
-	// 방송 둘: 사건(번호만) + 예고(어디·어느 방향·얼마나). BP 는 후자로 바닥 표시를 그린다.
 	MulticastBossEvent(ETDBossEvent::PatternTelegraph, PatternIndex);
 	MulticastPatternTelegraph(PatternIndex, Center, GetFacing(), Duration);
 
@@ -337,16 +459,17 @@ void ATDBossCharacter::EnterStrike()
 
 	CurrentPatternPhase = ETDBossPatternPhase::Strike;
 	HitThisStrike.Empty();
-	MulticastBossEvent(ETDBossEvent::PatternStrike, CurrentPattern);
+
+	OnMotionBegin(Spec);   // 잠수는 여기서 출현하므로, 중심 계산은 그 뒤에
+
+	const FVector Center = GetStrikeCenter(Spec);
+	MulticastPatternStrike(CurrentPattern, Center, GetFacing());
 
 	if (Spec.ShakeScale > 0.f)
 	{
-		MulticastCameraShake(GetStrikeCenter(Spec), Spec.ShakeScale);
+		MulticastCameraShake(Center, Spec.ShakeScale);
 	}
 
-	OnMotionBegin(Spec);
-
-	// 투사체는 탄이 스스로 판정한다. 나머지는 모양 판정 — 한 번, 또는 StrikeTime 동안 간격 반복.
 	if (Spec.Motion != ETDBossMotion::Projectile)
 	{
 		DoStrikeHit();
@@ -365,7 +488,6 @@ FVector ATDBossCharacter::GetStrikeCenter(const FTDBossPatternSpec& Spec) const
 {
 	if (Spec.Motion == ETDBossMotion::Burrow)
 	{
-		// 찍어둔 대상 자리. 높이는 보스 것 — 땅속에서 그 자리로 솟는다.
 		return FVector(PatternTargetLocation.X, PatternTargetLocation.Y, GetActorLocation().Z);
 	}
 	return GetActorLocation() + GetFacing() * Spec.ForwardOffset;
@@ -397,15 +519,13 @@ void ATDBossCharacter::DoStrikeHit()
 	{
 		if (HitThisStrike.Contains(Enemy))
 		{
-			continue;   // 반복 판정이어도 한 대상 1회
+			continue;
 		}
 		const FTDDamageResult Result = UTDCombatStatics::ApplyDamage(
 			this, Enemy, FGameplayTagContainer(), Spec.DamageScale);
 		if (Result.FinalDamage > 0.f)
 		{
 			HitThisStrike.Add(Enemy);
-
-			// 평타·스킬과 같은 OnHit 접점으로. 팝업·히트 VFX 가 보스용 델리게이트를 따로 안 배워도 된다.
 			if (Combat != nullptr)
 			{
 				Combat->NotifyHit(Enemy, Result.FinalDamage, Result.bCritical, Enemy->GetActorLocation());
@@ -450,7 +570,6 @@ void ATDBossCharacter::FinishPattern()
 
 void ATDBossCharacter::CancelPattern()
 {
-	// 페이즈 전환·사망·리셋이 패턴을 끊을 때. 쿨은 안 건다. 이동 상태도 원복.
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	GetWorldTimerManager().ClearTimer(StrikeTickHandle);
 	EndDash(false);
@@ -496,7 +615,7 @@ void ATDBossCharacter::OnMotionBegin(const FTDBossPatternSpec& Spec)
 	switch (Spec.Motion)
 	{
 	case ETDBossMotion::Dash:       StartDash();            break;
-	case ETDBossMotion::Burrow:     EndBurrow();            break;   // 출현
+	case ETDBossMotion::Burrow:     EndBurrow();            break;
 	case ETDBossMotion::Projectile: FireProjectiles(Spec);  break;
 	default: break;
 	}
@@ -527,8 +646,6 @@ void ATDBossCharacter::TickDash(float DeltaSeconds)
 	FHitResult Hit;
 	AddActorWorldOffset(DashDirection * DashSpeed * DeltaSeconds, true, &Hit);
 
-	// 벽(또는 큰 장애물)에 박으면 거기서 끝. 판정 반복은 StrikeTime 이 끝날 때까지 계속되지만
-	// 몸이 안 움직이니 같은 자리만 때린다 — 이미 맞은 대상은 1회 규칙으로 걸러진다.
 	if (Hit.bBlockingHit && !Cast<ATDCharacterBase>(Hit.GetActor()))
 	{
 		EndDash(true);
@@ -554,11 +671,10 @@ void ATDBossCharacter::StartBurrow(const FTDBossPatternSpec& Spec)
 {
 	bBurrowed = true;
 	BurrowFrom = GetActorLocation();
-	BurrowTo = GetStrikeCenter(Spec);   // 찍어둔 대상 자리(보스 높이)
+	BurrowTo = GetStrikeCenter(Spec);
 	BurrowElapsed = 0.f;
 	BurrowDuration = FMath::Max(ScaledTelegraph(Spec.TelegraphTime), 0.01f);
 
-	// 땅속: 안 보이고, 안 부딪히고, 안 맞는다(IsInvulnerable). 숨김은 복제되는 속성이라 클라도 따라온다.
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
@@ -585,7 +701,6 @@ void ATDBossCharacter::EndBurrow()
 	}
 	bBurrowed = false;
 
-	// 출현: 정확히 목표 자리에서. 취소로 끊길 때도 여기로 오므로 현재 위치가 아닌 목표를 쓴다.
 	SetActorLocation(BurrowTo, false, nullptr, ETeleportType::TeleportPhysics);
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
@@ -608,7 +723,6 @@ void ATDBossCharacter::FireProjectiles(const FTDBossPatternSpec& Spec)
 	const FVector Muzzle = GetActorLocation() + Facing * (Radius + ProjectileMuzzleForward)
 		+ FVector(0.f, 0.f, ProjectileMuzzleHeight);
 
-	// 페이즈 2 는 부채꼴. 가운데 발이 정면, 나머지는 좌우로 SpreadAngle 씩.
 	const int32 Count = Phase >= 2 ? FMath::Max(1, ProjectileCountPhase2) : 1;
 	const float StartAngle = -ProjectileSpreadAngle * (Count - 1) * 0.5f;
 
@@ -633,13 +747,9 @@ void ATDBossCharacter::FireProjectiles(const FTDBossPatternSpec& Spec)
 
 void ATDBossCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
-	if (!HasAuthority() || Phase >= 2 || IsDead())
+	if (!HasAuthority() || Phase >= 2 || IsDead() || Data.NewValue <= 0.f)
 	{
 		return;
-	}
-	if (Data.NewValue <= 0.f)
-	{
-		return;   // 죽는 타격. 페이즈 전환은 HandleDeath 에 양보한다.
 	}
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
@@ -649,11 +759,7 @@ void ATDBossCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 	}
 
 	const float MaxHealth = ASC->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute());
-	if (MaxHealth <= 0.f)
-	{
-		return;
-	}
-	if (Data.NewValue / MaxHealth <= Phase2HealthRatio)
+	if (MaxHealth > 0.f && Data.NewValue / MaxHealth <= Phase2HealthRatio)
 	{
 		EnterPhase2();
 	}
@@ -666,10 +772,11 @@ void ATDBossCharacter::EnterPhase2()
 		return;
 	}
 
-	CancelPattern();   // 진행 중이던 패턴은 끊고 전환 연출로
+	CancelPattern();
 
 	Phase = 2;
-	OnPhaseChanged.Broadcast(Phase);   // 서버는 OnRep 이 안 불린다
+	OnPhaseChanged.Broadcast(Phase);
+	ApplyBossBuff();
 
 	bInPhaseTransition = true;
 	MulticastBossEvent(ETDBossEvent::Phase2, 0);
@@ -701,6 +808,7 @@ void ATDBossCharacter::TriggerEnrage()
 		return;
 	}
 	bEnraged = true;
+	ApplyBossBuff();
 	MulticastBossEvent(ETDBossEvent::Enrage, 0);
 	MulticastCameraShake(GetActorLocation(), 2.f);
 }
@@ -717,7 +825,6 @@ void ATDBossCharacter::SummonMinions()
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-	// 보스 발 근처 높이. 캡슐 중심에서 스폰하면 큰 보스일수록 쫄이 하늘에서 떨어진다.
 	const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f;
 
 	int32 Spawned = 0;
@@ -765,16 +872,20 @@ void ATDBossCharacter::DestroyMinions()
 void ATDBossCharacter::HandleDeath()
 {
 	ClearFightTimers();
-	CancelPattern();   // 돌진·잠수 상태도 여기서 원복된다
+	GetWorldTimerManager().ClearTimer(ReturnTimeoutHandle);
+	CancelPattern();
 	DestroyMinions();
+	ClearBossBuff();
 	bFightActive = false;
 	bInEntrance = false;
 	bInPhaseTransition = false;
+	bReturning = false;
+	RegisterActiveBoss(false);
 
 	MulticastBossEvent(ETDBossEvent::Death, 0);
 	MulticastCameraShake(GetActorLocation(), 3.f);
 
-	Super::HandleDeath();   // 콜리전 off·이동 정지·시체 수명
+	Super::HandleDeath();
 }
 
 // ── 방송 ─────────────────────────────────────────────────
@@ -787,6 +898,44 @@ void ATDBossCharacter::MulticastBossEvent_Implementation(ETDBossEvent Event, int
 void ATDBossCharacter::MulticastPatternTelegraph_Implementation(int32 PatternIndex, FVector Center, FVector Direction, float Duration)
 {
 	OnPatternTelegraph.Broadcast(PatternIndex, Center, Direction, Duration);
+
+	// 예고 VFX: 스펙에 지정돼 있으면 각 머신이 직접 띄운다. 타격에 지운다.
+	ClearTelegraphVFX();
+	if (Patterns.IsValidIndex(PatternIndex))
+	{
+		const FTDBossPatternSpec& Spec = Patterns[PatternIndex];
+		if (UNiagaraSystem* System = Spec.TelegraphVFX.LoadSynchronous())
+		{
+			TelegraphVFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				this, System, Center, Direction.Rotation(), FVector(Spec.TelegraphVFXScale),
+				/*bAutoDestroy=*/ true, /*bAutoActivate=*/ true);
+		}
+	}
+}
+
+void ATDBossCharacter::MulticastPatternStrike_Implementation(int32 PatternIndex, FVector Center, FVector Direction)
+{
+	OnBossEvent.Broadcast(ETDBossEvent::PatternStrike, PatternIndex);
+
+	ClearTelegraphVFX();
+	if (Patterns.IsValidIndex(PatternIndex))
+	{
+		const FTDBossPatternSpec& Spec = Patterns[PatternIndex];
+		if (UNiagaraSystem* System = Spec.StrikeVFX.LoadSynchronous())
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				this, System, Center, Direction.Rotation(), FVector(Spec.StrikeVFXScale), true, true);
+		}
+	}
+}
+
+void ATDBossCharacter::ClearTelegraphVFX()
+{
+	if (TelegraphVFXComponent != nullptr)
+	{
+		TelegraphVFXComponent->DestroyComponent();
+		TelegraphVFXComponent = nullptr;
+	}
 }
 
 void ATDBossCharacter::MulticastCameraShake_Implementation(FVector Epicenter, float Scale)

@@ -134,6 +134,9 @@ namespace TDTags
 		"찍어 둔 패시브 스킬에서 온 모디파이어.");
 	
 	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Boss, "Source.Boss",
+	"보스 페이즈·분노 강화. 보스 자신이 걸고 리셋 때 걷는다.");
+	
 	
 	// ── 퀘스트 ────────────────────────────────────────────
 

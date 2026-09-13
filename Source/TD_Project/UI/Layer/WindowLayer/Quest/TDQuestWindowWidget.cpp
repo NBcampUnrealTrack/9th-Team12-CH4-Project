@@ -4,9 +4,11 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Core/TDGameplayTags.h"
+#include "Data/TDItemRow.h"
 #include "Data/TDQuestTypes.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Items/TDInventoryComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Quest/TDQuestComponent.h"
 
@@ -14,6 +16,94 @@
 
 namespace
 {
+    FText MakeQuestItemRewardValue(
+        const FTDQuestViewData& InQuest,
+        const UTDInventoryComponent* InInventory)
+    {
+        TArray<FString> RewardParts;
+
+        for (const FTDQuestItemReward& ItemReward : InQuest.ItemRewards)
+        {
+            if (ItemReward.ItemId.IsNone() || ItemReward.Count <= 0)
+            {
+                continue;
+            }
+
+            FString ItemName = ItemReward.ItemId.ToString();
+
+            if (InInventory)
+            {
+                if (const FTDItemRow* ItemDefinition =
+                    InInventory->FindItemDefinition(ItemReward.ItemId))
+                {
+                    if (!ItemDefinition->DisplayName.IsEmpty())
+                    {
+                        ItemName = ItemDefinition->DisplayName.ToString();
+                    }
+                }
+            }
+
+            RewardParts.Add(FString::Printf(
+                TEXT("%s x%s"),
+                *ItemName,
+                *FText::AsNumber(ItemReward.Count).ToString()));
+        }
+
+        return FText::FromString(
+            RewardParts.IsEmpty()
+                ? TEXT("-")
+                : FString::Join(RewardParts, TEXT(" / ")));
+    }
+
+    void UpdateQuestRewardValues(
+        UTextBlock* InItemReward,
+        UTextBlock* InExpReward,
+        UTextBlock* InGoldReward,
+        const FTDQuestViewData* InQuest,
+        const UTDInventoryComponent* InInventory)
+    {
+        UTextBlock* ValueWidgets[] =
+        {
+            InItemReward,
+            InExpReward,
+            InGoldReward
+        };
+
+        for (UTextBlock* ValueWidget : ValueWidgets)
+        {
+            if (ValueWidget)
+            {
+                ValueWidget->SetVisibility(
+                    InQuest
+                        ? ESlateVisibility::Visible
+                        : ESlateVisibility::Collapsed);
+            }
+        }
+
+        if (!InQuest)
+        {
+            return;
+        }
+
+        if (InItemReward)
+        {
+            InItemReward->SetText(
+                MakeQuestItemRewardValue(*InQuest, InInventory));
+        }
+
+        if (InExpReward)
+        {
+            InExpReward->SetText(
+                FText::AsNumber(InQuest->ExpReward));
+        }
+
+        if (InGoldReward)
+        {
+            InGoldReward->SetText(
+                FText::AsNumber(InQuest->GoldReward));
+        }
+    }
+
     // 한 퀘스트 영역의 제목과 설명을 갱신합니다.
     // 색상은 변경하지 않고 위젯 디자이너 설정을 그대로 사용합니다.
     void UpdateQuestRow(
@@ -222,6 +312,33 @@ void UTDQuestWindowWidget::RefreshQuestWindow()
 
     SubQuest2Id =
         SubViews[1] ? SubViews[1]->QuestId : NAME_None;
+
+    const ATDPlayerState* TDState =
+        GetOwningPlayerState<ATDPlayerState>();
+
+    const UTDInventoryComponent* Inventory =
+        TDState ? TDState->GetInventoryComponent() : nullptr;
+
+    UpdateQuestRewardValues(
+        TXT_MainRewardItem,
+        TXT_MainRewardExp,
+        TXT_MainRewardGold,
+        MainView,
+        Inventory);
+
+    UpdateQuestRewardValues(
+        TXT_Sub1RewardItem,
+        TXT_Sub1RewardExp,
+        TXT_Sub1RewardGold,
+        SubViews[0],
+        Inventory);
+
+    UpdateQuestRewardValues(
+        TXT_Sub2RewardItem,
+        TXT_Sub2RewardExp,
+        TXT_Sub2RewardGold,
+        SubViews[1],
+        Inventory);
 
     UpdateQuestRow(
         ROW_Main,

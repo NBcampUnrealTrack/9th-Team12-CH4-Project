@@ -14,6 +14,7 @@
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
 #include "Shop/TDShopStatics.h"
+#include "Shop/TDShopServiceComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
@@ -927,6 +928,15 @@ void ATDPlayerController::ClientMarketResult_Implementation(ETDMarketResult Resu
 
 void ATDPlayerController::ServerBuyFromShop_Implementation(FName ShopId, FName ItemId, int32 Count)
 {
+	const UTDShopServiceComponent* ShopService =
+		FindComponentByClass<UTDShopServiceComponent>();
+
+	if (!ShopService || !ShopService->IsActiveForShop(ShopId))
+	{
+		ClientShopResult(ETDShopResult::TooFar, ItemId, Count, 0);
+		return;
+	}
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 
 	int32 TotalPrice = 0;
@@ -941,6 +951,15 @@ void ATDPlayerController::ServerBuyFromShop_Implementation(FName ShopId, FName I
 
 void ATDPlayerController::ServerSellToShop_Implementation(FName ShopId, int32 InventorySlot, int32 Count)
 {
+	const UTDShopServiceComponent* ShopService =
+		FindComponentByClass<UTDShopServiceComponent>();
+
+	if (!ShopService || !ShopService->IsActiveForShop(ShopId))
+	{
+		ClientShopResult(ETDShopResult::TooFar, NAME_None, Count, 0);
+		return;
+	}
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 
 	// 어느 아이템이었는지 먼저 알아둔다. 팔고 나면 그 칸이 비어 되짚을 수 없다.

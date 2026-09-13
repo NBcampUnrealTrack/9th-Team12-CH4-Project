@@ -7,6 +7,8 @@
 class UTexture2D;
 class UDataTable;
 
+/** TileView 안쪽 슬롯 이미지가 클릭을 먼저 처리해도 소유 화면에 직접 전달합니다. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FTDOnInventorySlotDirectClick, UObject*);
 
 UCLASS(BlueprintType)
 class TD_PROJECT_API UTDInventorySlotListItem : public UObject
@@ -45,4 +47,15 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
 	int32 RequiredLevel = 0;
-};   
+
+	/** 상점처럼 같은 슬롯 UI를 다른 화면에서 사용할 때 툴팁 아래에 붙는 안내입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
+	FText InteractionHint;
+
+	/** false면 슬롯은 보이지만 상점 판매 같은 외부 클릭 동작은 실행하지 않습니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Inventory")
+	bool bInteractionEnabled = true;
+
+	/** 상점처럼 TileView의 선택 이벤트를 사용하지 않는 화면 전용 클릭 통로입니다. */
+	FTDOnInventorySlotDirectClick OnDirectClick;
+};

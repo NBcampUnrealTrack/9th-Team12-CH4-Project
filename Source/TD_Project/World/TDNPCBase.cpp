@@ -15,6 +15,7 @@
 #include "Player/TDPlayerState.h"
 #include "Quest/TDPersonalWorldStateComponent.h"
 #include "Quest/TDQuestComponent.h"
+#include "Shop/TDShopComponent.h"
 #include "UI/HUD/TDQuestMarkerWidget.h"
 #include "World/TDKoreanDailyResetSubsystem.h"
 
@@ -118,6 +119,10 @@ ATDNPCBase::ATDNPCBase()
 		ECollisionEnabled::NoCollision);
 
 	QuestMarkerComponent->SetVisibility(false);
+
+	ShopComponent =
+		CreateDefaultSubobject<UTDShopComponent>(
+			TEXT("ShopComponent"));
 }
 
 void ATDNPCBase::BeginPlay()
@@ -154,6 +159,13 @@ void ATDNPCBase::BeginPlay()
 			TEXT(
 				"NPC '%s': NPCDefinition을 확인하세요."),
 			*GetName());
+	}
+
+	// 컴포넌트는 모든 NPC에 공통으로 있지만 DT_NPC에서 상점 사용이 켜진
+	// NPC만 상점 목록에 등록됩니다.
+	if (ShopComponent != nullptr)
+	{
+		ShopComponent->SetShopId(GetShopId());
 	}
 
 	if (DialogueTable == nullptr)
@@ -986,4 +998,27 @@ bool ATDNPCBase::IsEnhanceNPC() const
 
 	return Definition != nullptr
 		&& Definition->bOpenEnhanceAfterDialogue;
+}
+
+bool ATDNPCBase::IsShopNPC() const
+{
+	const FTDNPCRow* Definition = GetDefinitionRow();
+
+	return Definition != nullptr
+		&& Definition->bOpenShopAfterDialogue
+		&& !Definition->ShopId.IsNone();
+}
+
+FName ATDNPCBase::GetShopId() const
+{
+	const FTDNPCRow* Definition = GetDefinitionRow();
+
+	if (Definition != nullptr
+		&& Definition->bOpenShopAfterDialogue
+		&& !Definition->ShopId.IsNone())
+	{
+		return Definition->ShopId;
+	}
+
+	return NAME_None;
 }

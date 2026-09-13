@@ -80,6 +80,17 @@ struct TD_PROJECT_API FTDNPCRow
 	/** 정상적인 대화 종료 후 강화창을 여는 NPC인지 여부입니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Enhance")
 	bool bOpenEnhanceAfterDialogue = false;
+
+	/** 정상적인 대화 종료 후 상점창을 여는 NPC인지 여부입니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Shop")
+	bool bOpenShopAfterDialogue = false;
+
+	/**
+	 * bOpenShopAfterDialogue가 true일 때 사용할 DT_Shop의 RowName입니다.
+	 * 예: Shop_Forest.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Shop")
+	FName ShopId;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly,
 		Category = "TD|NPC|Gift")

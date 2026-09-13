@@ -61,6 +61,18 @@ public:
 	 */
 	bool AddItem(FName ItemId, int32 Count = 1);
 
+	/**
+	 * 여러 종류의 아이템이 한꺼번에 전부 들어갈 수 있는지 계산합니다.
+	 * 장바구니 구매처럼 한 종류만 넣고 나머지가 실패하면 안 되는 곳에서 씁니다.
+	 */
+	bool CanAddItems(const TMap<FName, int32>& Items) const;
+
+	/**
+	 * 여러 종류를 한 묶음으로 넣습니다. 전부 들어갈 수 없으면 하나도 넣지 않습니다.
+	 * 서버 전용이며, Count가 0 이하인 항목이나 없는 ItemId가 섞여 있어도 실패합니다.
+	 */
+	bool AddItems(const TMap<FName, int32>& Items);
+
 	/** 슬롯에서 수량만큼 덜어낸다. 퀘스트 아이템처럼 버릴 수 없는 것은 거부된다. */
 	bool RemoveItem(int32 SlotIndex, int32 Count = 1);
 

@@ -46,6 +46,18 @@ protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> TXT_MainDescription;
 
+    /** WBP에서 라벨 옆에 배치할 메인 퀘스트 아이템 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_MainRewardItem;
+
+    /** WBP에서 라벨 옆에 배치할 메인 퀘스트 경험치 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_MainRewardExp;
+
+    /** WBP에서 라벨 옆에 배치할 메인 퀘스트 골드 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_MainRewardGold;
+
     // 첫 번째 서브 퀘스트 영역
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UBorder> ROW_Sub1;
@@ -55,6 +67,18 @@ protected:
 
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> TXT_Sub1Description;
+
+    /** WBP에서 라벨 옆에 배치할 첫 번째 서브 퀘스트 아이템 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub1RewardItem;
+
+    /** WBP에서 라벨 옆에 배치할 첫 번째 서브 퀘스트 경험치 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub1RewardExp;
+
+    /** WBP에서 라벨 옆에 배치할 첫 번째 서브 퀘스트 골드 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub1RewardGold;
 
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UButton> BTN_Sub1Abandon;
@@ -68,6 +92,18 @@ protected:
 
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> TXT_Sub2Description;
+
+    /** WBP에서 라벨 옆에 배치할 두 번째 서브 퀘스트 아이템 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub2RewardItem;
+
+    /** WBP에서 라벨 옆에 배치할 두 번째 서브 퀘스트 경험치 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub2RewardExp;
+
+    /** WBP에서 라벨 옆에 배치할 두 번째 서브 퀘스트 골드 값입니다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> TXT_Sub2RewardGold;
 
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UButton> BTN_Sub2Abandon;

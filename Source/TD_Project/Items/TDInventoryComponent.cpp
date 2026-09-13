@@ -313,6 +313,95 @@ void UTDInventoryComponent::MarkContainerDirty()
 	BroadcastInventoryChanged();
 }
 
+bool UTDInventoryComponent::CanAddItems(
+	const TMap<FName, int32>& Items) const
+{
+	if (!HasAuthorityToModify() || Items.IsEmpty())
+	{
+		return false;
+	}
+
+	int64 TotalNeededSlots = 0;
+
+	for (const TPair<FName, int32>& Pair : Items)
+	{
+		if (Pair.Key.IsNone() || Pair.Value <= 0)
+		{
+			return false;
+		}
+
+		const FTDItemRow* Row = FindItemRow(Pair.Key);
+
+		if (Row == nullptr)
+		{
+			return false;
+		}
+
+		const int64 MaxStack = Row->bStackable
+			? FMath::Max(1, Row->MaxStackSize)
+			: 1;
+
+		int64 Remaining = Pair.Value;
+
+		if (Row->bStackable)
+		{
+			for (const FTDItemInstance& Item : ItemContainer.Items)
+			{
+				if (Item.ItemId == Pair.Key && Item.Count < MaxStack)
+				{
+					Remaining -= MaxStack - Item.Count;
+
+					if (Remaining <= 0)
+					{
+						break;
+					}
+				}
+			}
+		}
+
+		if (Remaining > 0)
+		{
+			TotalNeededSlots +=
+				(Remaining + MaxStack - 1) / MaxStack;
+		}
+
+		if (TotalNeededSlots
+			> static_cast<int64>(SlotCapacity - ItemContainer.Items.Num()))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UTDInventoryComponent::AddItems(
+	const TMap<FName, int32>& Items)
+{
+	if (!CanAddItems(Items))
+	{
+		return false;
+	}
+
+	// CanAddItems가 모든 종류를 합쳐 검사했으므로 아래 AddItem은 전부 성공합니다.
+	// 게임 스레드에서 연속 실행되어 중간에 다른 요청이 끼어들 수 없습니다.
+	for (const TPair<FName, int32>& Pair : Items)
+	{
+		if (!AddItem(Pair.Key, Pair.Value))
+		{
+			UE_LOG(
+				LogTemp,
+				Error,
+				TEXT("AddItems: 사전 공간 검사 뒤 지급에 실패했다. ItemId=%s Count=%d"),
+				*Pair.Key.ToString(),
+				Pair.Value);
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool UTDInventoryComponent::AddItem(FName ItemId, int32 Count)
 {
 	if (!HasAuthorityToModify())

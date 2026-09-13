@@ -33,10 +33,11 @@ ATDBossProjectile::ATDBossProjectile()
 	Movement->bShouldBounce = false;
 }
 
-void ATDBossProjectile::Init(ATDCharacterBase* InShooter, const FVector& Direction, float InDamageScale, float Speed)
+void ATDBossProjectile::Init(ATDCharacterBase* InShooter, const FVector& Direction, float InDamageScale, float Speed, float InKnockback)
 {
 	Shooter = InShooter;
 	DamageScale = InDamageScale;
+	Knockback = InKnockback;
 
 	if (InShooter != nullptr)
 	{
@@ -89,6 +90,12 @@ void ATDBossProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComp, AActo
 		if (UTDCombatComponent* Combat = Shooter->GetCombatComponent())
 		{
 			Combat->NotifyHit(Target, Result.FinalDamage, Result.bCritical, GetActorLocation());
+		}
+		
+		if (Knockback > 0.f)
+		{
+			const FVector Dir = Movement->Velocity.GetSafeNormal2D();
+			Target->LaunchCharacter(Dir * Knockback + FVector(0.f, 0.f, Knockback * 0.3f), true, true);
 		}
 	}
 

@@ -118,6 +118,10 @@ struct FTDBossPatternSpec
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
 	float ShakeScale = 1.f;
 	
+	/** 맞은 대상을 밀어내는 속도(cm/s). 0 이면 없음. 정면 방향 + 위로 절반. 잠수는 위로 크게. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
+	float Knockback = 0.f;
+	
 	// ── VFX (희진님이 채운다. 비우면 없음) ──
 
 	/** 선딜 동안 판정 자리에 띄우는 루프 이펙트. 타격 시작에 지운다. */

@@ -584,3 +584,10 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,rider,visualstudio,unrealengine
+
+### DataTable ###
+# ExportTables.bat 이 뱉은 언리얼 원본. NSLOCTEXT(...) 와 (TagName="...") 범벅이라
+# 사람이 읽을 것이 못 되고, 되돌릴 때도 쓰지 않는다 — 진실의 원천은 .uasset 이다.
+#
+# 사람이 보는 정리본은 한 단계 아래 GoogleSheet/ 에 있고 그쪽만 커밋한다.
+Content/Data/DataTables/*/CSV/*.csv

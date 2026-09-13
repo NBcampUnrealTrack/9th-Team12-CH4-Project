@@ -7,6 +7,7 @@
 /** 적 발견 반응. 발견 모션·경계음이 구독한다. 전 머신에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnMonsterSensed);
 
+class ATDPlayerState;
 class UAbilitySystemComponent;
 class UDataTable;
 class UTDAttributeSet;
@@ -108,6 +109,13 @@ private:
 	/** 스탯 계산 결과를 어트리뷰트에 기록한다. 플레이어의 PlayerState 가 하는 일과 같다. */
 	void UpdateVitalAttributes();
 
+	/**
+	 * 드롭 목록을 굴려 나온 아이템을 인벤토리에 넣는다. 서버 전용.
+	 *
+	 * 받는 사람은 파티장이다. 파티가 없거나 파티장이 다른 존에 있으면 처치자 본인이 받는다.
+	 */
+	void GrantDrops(ATDPlayerState* KillerPlayerState);
+
 	/** ApplyDefinition 때 테이블에서 읽어둔 처치 경험치. */
 	int32 ExpReward = 0;
 
@@ -119,6 +127,9 @@ private:
 	 */
 	int32 GoldMinReward = 0;
 	int32 GoldMaxReward = 0;
+
+	/** ApplyDefinition 때 읽어둔 드롭 목록 이름. 비어 있으면 아이템을 떨구지 않는다. */
+	FName DropTableId;
 
 	/**
 	 * ApplyDefinition 때 테이블에서 읽어둔 보스 여부.

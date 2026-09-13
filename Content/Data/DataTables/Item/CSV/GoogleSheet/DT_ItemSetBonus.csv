@@ -1,0 +1,15 @@
+﻿Name,SetId,RequiredCount,StatTag,Op,Value
+Fire_2_Damage,Fire_Set,2,Stat.Offense.Damage.Physical,Increased,0.06
+Fire_4_Damage,Fire_Set,4,Stat.Offense.Damage.Physical,Increased,0.1
+Fire_6_ArmorPen,Fire_Set,6,Stat.Offense.ArmorPenetration,Added,0.1
+Water_2_Damage,Water_Set,2,Stat.Offense.Damage.Magical,Increased,0.06
+Water_4_Damage,Water_Set,4,Stat.Offense.Damage.Magical,Increased,0.1
+Water_6_Cooldown,Water_Set,6,Stat.Utility.CooldownRecoveryRate,Added,0.1
+Earth_2_Health,Earth_Set,2,Stat.Resource.Health.Max,Increased,0.06
+Earth_4_Armor,Earth_Set,4,Stat.Defense.Armor,Increased,0.12
+Earth_6_Reduce,Earth_Set,6,Stat.Defense.DamageReduction,Added,0.06
+Wind_2_Damage,Wind_Set,2,Stat.Offense.Damage.Physical,Increased,0.06
+Wind_4_Crit,Wind_Set,4,Stat.Offense.CritChance,Added,0.08
+Wind_6_CritDmg,Wind_Set,6,Stat.Offense.CritDamage,Added,0.25
+Boss_2_Damage,Boss_Set,2,Stat.Offense.Damage,Increased,0.1
+Boss_3_BossDmg,Boss_Set,3,Stat.Offense.BossDamage,Added,0.15

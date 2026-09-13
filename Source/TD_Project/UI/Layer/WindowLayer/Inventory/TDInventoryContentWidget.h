@@ -12,6 +12,44 @@ class UDataTable;
 class UTileView;
 class UTextBlock;
 class UButton;
+class UTexture2D;
+
+USTRUCT(BlueprintType)
+struct TD_PROJECT_API FTDInventoryExternalItemView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	int32 SlotIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	FName ItemId;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	int32 Count = 1;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	FText DisplayName;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	TSoftObjectPtr<UTexture2D> Icon;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	FGameplayTag Rarity;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	FText InteractionHint;
+
+	UPROPERTY(BlueprintReadWrite, Category = "TD|Inventory|External")
+	bool bInteractionEnabled = true;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FTDOnInventoryExternalSlotClicked,
+	int32,
+	SlotIndex,
+	FName,
+	ItemId);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnInventoryExpansionRequested);
 
@@ -48,6 +86,21 @@ public:
 	/** 보유 재화 시스템에서 전달받은 골드를 표시한다. 재화를 지급하거나 차감하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Inventory|Footer")
 	void SetDisplayedGold(int64 InGold);
+
+	/**
+	 * 실제 가방 대신 상점 상품처럼 외부에서 전달한 아이템을 표시합니다.
+	 * WBP_InventoryContent의 TileView와 WBP_InventoryEntry 외형은 그대로 사용합니다.
+	 */
+	void SetExternalItems(
+		const TArray<FTDInventoryExternalItemView>& InItems,
+		int32 InSlotCapacity);
+
+	/** 외부 표시 중인 슬롯을 좌클릭했을 때 상점창으로 전달합니다. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Inventory|External")
+	FTDOnInventoryExternalSlotClicked OnExternalSlotClicked;
+
+	/** WBP_InventoryEntry가 좌클릭을 일반 인벤토리 동작보다 먼저 전달하는 진입점입니다. */
+	bool HandleExternalSlotClick(UTDInventorySlotListItem* Item);
 
 	/** + 버튼의 확장 안내/구매 화면을 연결한다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Inventory|Footer")
@@ -106,6 +159,7 @@ private:
 	void BindInventoryComponent();
 	void BuildPreviewInventory();
 	void BuildInventoryFromTable(UDataTable* SourceTable);
+	void BuildExternalInventory();
 	void RefreshFooter();
 	void CheckInventorySource();
 
@@ -125,4 +179,8 @@ private:
 	/** Tile View가 사용하는 객체의 수명을 위젯과 함께 유지한다. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTDInventorySlotListItem>> SlotListItems;
+
+	TArray<FTDInventoryExternalItemView> ExternalItems;
+	int32 ExternalSlotCapacity = 0;
+	bool bUseExternalItems = false;
 };

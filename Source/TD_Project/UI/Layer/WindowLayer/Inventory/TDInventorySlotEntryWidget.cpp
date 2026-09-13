@@ -57,6 +57,17 @@ FReply UTDInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeomet
 			return FReply::Handled();
 		}
 	}
+	// 상점 구매·판매 슬롯은 TileView의 선택 이벤트를 사용하지 않고
+	// 슬롯 객체가 가진 직접 클릭 콜백으로 소유 화면에 전달합니다.
+	// 일반 인벤토리 슬롯은 콜백이 비어 있으므로 기존 동작을 그대로 유지합니다.
+	if (Event.GetEffectingButton() == EKeys::LeftMouseButton
+		&& IsValid(SlotListItem)
+		&& SlotListItem->bInteractionEnabled
+		&& SlotListItem->OnDirectClick.IsBound())
+	{
+		SlotListItem->OnDirectClick.Broadcast(SlotListItem);
+		return FReply::Handled();
+	}
 	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && GetDraggableInventory())
 	{
 		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
@@ -103,6 +114,13 @@ void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObj
 		{
 			SlotVisualWidget->ClearSlotVisual();
 		}
+
+		// 상점의 퀘스트 아이템처럼 상호작용이 금지된 슬롯은
+		// 공용 시각 위젯에도 비활성 상태를 전달해 회색 처리합니다.
+		// 다음 TileView 항목에 이전 슬롯의 비활성 상태가 남지 않도록
+		// Entry가 재사용될 때마다 반드시 갱신합니다.
+		SlotVisualWidget->SetSlotEnabled(
+			!SlotListItem || SlotListItem->bInteractionEnabled);
 	}
 
 	BP_OnSlotListItemSet(SlotListItem);
@@ -115,6 +133,7 @@ void UTDInventorySlotEntryWidget::NativeOnEntryReleased()
 	if (SlotVisualWidget)
 	{
 		SlotVisualWidget->ClearSlotVisual();
+		SlotVisualWidget->SetSlotEnabled(true);
 	}
 
 	SlotListItem = nullptr;

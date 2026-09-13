@@ -27,7 +27,15 @@ void UBTService_BossSense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 	}
 
 	
-	if (Boss->IsReturning()) { return; }
+	// 귀환 중: 트리의 귀환 가지가 집으로 걷는다. 탐색·재입장은 안 한다.
+	BB->SetValueAsVector(TDBossBB::HomeLocation, Boss->GetHomeNavLocation());
+	BB->SetValueAsBool(TDBossBB::bReturning, Boss->IsReturning());
+	if (Boss->IsReturning())
+	{
+		BB->SetValueAsBool(TDBossBB::bBusy, true);
+		return;
+	}
+	
 	// 1. 리시: 집에서 너무 멀리 끌려 나갔으면 귀환·풀피. 추격전으로 보스를 방 밖으로 끌고 가는 걸 막는다.
 	if (Boss->IsFightActive() &&
 		FVector::Dist(Boss->GetActorLocation(), Boss->GetHomeLocation()) > Boss->GetLeashRadius())
@@ -77,4 +85,6 @@ void UBTService_BossSense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 	BB->SetValueAsInt(TDBossBB::Phase, Boss->GetPhase());
 	BB->SetValueAsBool(TDBossBB::bBusy, Boss->IsBusy());
 	BB->SetValueAsBool(TDBossBB::bFightActive, Boss->IsFightActive());
+	BB->SetValueAsBool(TDBossBB::bPatternReady,
+	Target != nullptr && Boss->HasReadyPattern(BB->GetValueAsFloat(TDBossBB::Distance)));
 }

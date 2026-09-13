@@ -11,16 +11,21 @@ void UTDShopComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 비워두면 이 상인은 아무것도 팔지 않는다. 조용히 넘어가면 "상점이 안 열린다" 로만
-	// 보이고 원인을 찾기 어렵다.
-	if (ShopId.IsNone())
+	if (!ShopId.IsNone())
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("%s: TDShopComponent 의 ShopId 가 비어 있다. DT_Shop 의 행 이름을 넣을 것."),
-			*GetNameSafe(GetOwner()));
+		Registry.AddUnique(this);
 	}
+}
 
-	Registry.AddUnique(this);
+void UTDShopComponent::SetShopId(FName InShopId)
+{
+	Registry.Remove(this);
+	ShopId = InShopId;
+
+	if (HasBegunPlay() && !ShopId.IsNone())
+	{
+		Registry.AddUnique(this);
+	}
 }
 
 void UTDShopComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

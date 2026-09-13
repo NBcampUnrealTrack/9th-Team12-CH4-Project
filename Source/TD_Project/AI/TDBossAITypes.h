@@ -14,4 +14,7 @@ namespace TDBossBB
 	const FName NextPattern(TEXT("NextPattern"));   // Int: 선택된 패턴 번호
 	const FName bBusy(TEXT("bBusy"));               // Bool: 입장·전환·패턴 진행 중
 	const FName bFightActive(TEXT("bFightActive")); // Bool: 전투 중
+	const FName bReturning(TEXT("bReturning"));     // Bool: 리시 귀환 중
+	const FName HomeLocation(TEXT("HomeLocation")); // Vector: 집
+	const FName bPatternReady(TEXT("bPatternReady"));
 }

@@ -5,6 +5,7 @@
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Character/TDCharacterClassData.h"
+#include "Character/TDPlayerCharacter.h"
 #include "Data/TDCharacterClassRow.h"
 #include "Engine/DataTable.h"
 #include "Engine/Texture2D.h"
@@ -28,6 +29,7 @@ void UTDPlayerStatsViewModel::SetSource(ATDPlayerState* InPlayerState)
 {
  if (InPlayerState && Source.Get() == InPlayerState) return;
  UnbindSource();
+ SetDeathSource(nullptr);
  Source = InPlayerState;
  if (InPlayerState)
  {
@@ -49,6 +51,47 @@ void UTDPlayerStatsViewModel::SetSource(ATDPlayerState* InPlayerState)
  }
  UE_MVVM_SET_PROPERTY_VALUE(HasPlayerState, InPlayerState != nullptr);
  RefreshAll();
+}
+
+void UTDPlayerStatsViewModel::SetDeathSource(ATDPlayerCharacter* InCharacter)
+{
+ if (!IsValid(InCharacter)) InCharacter = nullptr;
+ if (DeathSource.Get() == InCharacter)
+ {
+  // Pawn이 파괴되어 약한 참조가 무효화된 경우에도 표시 상태를 지운다.
+  RefreshDeathState();
+  return;
+ }
+ UnbindDeathSource();
+ // 서로 다른 사망 캐릭터로 전환할 때도 이전 화면과 버튼 상태를 정리한다.
+ RefreshDeathState();
+ DeathSource = InCharacter;
+ if (InCharacter)
+ {
+  InCharacter->OnDeath.AddUniqueDynamic(this, &ThisClass::RefreshDeathState);
+  InCharacter->OnRespawn.AddUniqueDynamic(this, &ThisClass::RefreshDeathState);
+ }
+ // 이벤트 발생 전부터 죽어 있던 캐릭터도 즉시 반영한다.
+ RefreshDeathState();
+}
+
+void UTDPlayerStatsViewModel::UnbindDeathSource()
+{
+ if (ATDPlayerCharacter* Character = DeathSource.Get())
+ {
+  Character->OnDeath.RemoveDynamic(this, &ThisClass::RefreshDeathState);
+  Character->OnRespawn.RemoveDynamic(this, &ThisClass::RefreshDeathState);
+ }
+ DeathSource.Reset();
+}
+
+void UTDPlayerStatsViewModel::RefreshDeathState()
+{
+ const ATDPlayerCharacter* Character = DeathSource.Get();
+ const bool bNewIsDead = IsValid(Character) && Character->IsDead();
+ if (bIsDead == bNewIsDead) return;
+ UE_MVVM_SET_PROPERTY_VALUE(bIsDead, bNewIsDead);
+ OnDeathStateChanged.Broadcast();
 }
 
 void UTDPlayerStatsViewModel::RefreshAll()
@@ -86,6 +129,7 @@ void UTDPlayerStatsViewModel::UnbindSource()
 
 void UTDPlayerStatsViewModel::BeginDestroy()
 {
+ UnbindDeathSource();
  UnbindSource();
  Super::BeginDestroy();
 }

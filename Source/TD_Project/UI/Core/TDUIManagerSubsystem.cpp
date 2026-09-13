@@ -11,16 +11,26 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
+#include "Game/TDGameState.h"
+#include "Character/TDBossCharacter.h"
 #include "UI/Core/TDUIRootWidget.h"
+#include "UI/HUD/TDBossHPWidget.h"
+#include "UI/ViewModel/TDBossViewModel.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
 #include "UI/Settings/TDUISettings.h"
-#include "Character/TDPlayerCharacter.h"
+#include "UI/ViewModel/TDPlayerStatsSubsystem.h"
+#include "UI/ViewModel/TDPlayerStatsViewModel.h"
 #include "UI/HUD/TDRespawnWidget.h"
+#include "UI/HUD/TDChatWidget.h"
 
 void UTDUIManagerSubsystem::Deinitialize()
 {
-    UnbindDeathSource();
-    CloseDeathUI();
+ CancelChatInput();
+	UnbindBossState();
+	DisconnectBossUI();
+	BossViewModel = nullptr;
+	UnbindDeathViewModel();
+	CloseDeathUI();
 	if (GetWorld()){
 		GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
 	}
@@ -35,16 +45,34 @@ void UTDUIManagerSubsystem::Deinitialize()
 void UTDUIManagerSubsystem::RegisterRoot(UTDUIRootWidget* InRootWidget)
 {
 	if (!IsValid(InRootWidget) || InRootWidget->GetOwningLocalPlayer() != GetLocalPlayer()
-        || RootWidget.Get() == InRootWidget){
+		|| RootWidget.Get() == InRootWidget){
 		return;
 	}
 
-    UnbindDeathSource();
-    CloseDeathUI();
+	CancelChatInput();
+	UnbindDeathViewModel();
+	CloseDeathUI();
 	ClearWindowRegistry();
+	UnbindBossState();
+	DisconnectBossUI();
 	RootWidget = InRootWidget;
+	if (!BossViewModel)
+	{
+		BossViewModel = NewObject<UTDBossViewModel>(this);
+	}
+	BossViewModel->OnDisplayChanged.AddUniqueDynamic(
+		this, &ThisClass::RefreshBossVisibility);
+	if (UTDBossHPWidget* BossWidget = GetBossWidget())
+	{
+		BossWidget->SetViewModel(BossViewModel);
+	}
+	// GameState가 아직 복제되지 않았어도 빈 보스 프레임은 표시하지 않는다.
+	RefreshBossVisibility();
+	RefreshBossState();
 	AccountScreen = nullptr;
-    if (GetWorld()) GetWorld()->GetTimerManager().SetTimer(AccountFlowTimer, this, &ThisClass::RefreshUI, .1f, true);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().SetTimer(AccountFlowTimer, this,
+		                                       &ThisClass::RefreshUI, .1f, true);
 	RefreshUI();
 
 	// 현재 WBP_Root에 미리 배치된 인벤토리 창이 있으면 첫 프레임부터
@@ -77,9 +105,12 @@ void UTDUIManagerSubsystem::UnregisterRoot(UTDUIRootWidget* InRootWidget)
 		return;
 	}
 
-    UnbindDeathSource();
-    CloseDeathUI();
-    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
+	CancelChatInput();
+	UnbindBossState();
+	DisconnectBossUI();
+	UnbindDeathViewModel();
+	CloseDeathUI();
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(AccountFlowTimer);
 	ClearWindowRegistry();
 	RootWidget.Reset();
 	AccountScreen = nullptr;
@@ -174,7 +205,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 		MenuName = TEXT("퀘스트");
 		SettingName = TEXT("Quest Window Class");
 		break;
-		
+
 	default:
 		break;
 	}
@@ -323,7 +354,7 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 			return UISettings->QuestWindowClass.LoadSynchronous();
 		}
 		return nullptr;
-		
+
 	default:
 		return nullptr;
 	}
@@ -380,13 +411,19 @@ void UTDUIManagerSubsystem::StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetC
 
 void UTDUIManagerSubsystem::RefreshUI()
 {
-    UTDUIRootWidget* Root = RootWidget.Get();
-    if (Root && Root->GetOwningLocalPlayer() == GetLocalPlayer())
-    {
-        Root->RefreshPlayerHUD();
-        RefreshAccountFlow();
-    }
-    RefreshDeathUI();
+	RefreshBossState();
+	UTDUIRootWidget* Root = RootWidget.Get();
+	if (Root && Root->GetOwningLocalPlayer() == GetLocalPlayer()){
+		Root->RefreshPlayerHUD();
+		if (UTDPlayerStatsSubsystem* Stats = GetLocalPlayer()->GetSubsystem<
+			UTDPlayerStatsSubsystem>()){
+			Stats->RefreshSource();
+		}
+		RefreshAccountFlow();
+	}
+ if (ChatInputController.IsValid() && (!ActiveChatWidget.IsValid() || !Root || !Root->IsPlayerHUDReady()
+  || (Root->GetModalStack() && Root->GetModalStack()->GetNumWidgets() > 0))) CancelChatInput();
+	RefreshDeathUI();
 }
 
 void UTDUIManagerSubsystem::RefreshAccountFlow()
@@ -436,87 +473,85 @@ void UTDUIManagerSubsystem::RefreshAccountFlow()
 	}
 }
 
-void UTDUIManagerSubsystem::UnbindDeathSource()
+void UTDUIManagerSubsystem::UnbindDeathViewModel()
 {
-    if (DeathSource.IsValid())
-    {
-        DeathSource->OnDeath.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
-        DeathSource->OnRespawn.RemoveDynamic(this, &ThisClass::RefreshDeathUI);
-    }
-    DeathSource.Reset();
+	if (UTDPlayerStatsViewModel* ViewModel = DeathViewModel.Get()){
+		ViewModel->OnDeathStateChanged.RemoveAll(this);
+	}
+	DeathViewModel.Reset();
 }
 
 void UTDUIManagerSubsystem::RefreshDeathUI()
 {
-    UTDUIRootWidget* Root = RootWidget.Get();
-    APlayerController* Controller = Root && Root->GetOwningLocalPlayer() == GetLocalPlayer()
-        ? Root->GetOwningPlayer() : nullptr;
-    ATDPlayerCharacter* Character = Controller && Controller->IsLocalController()
-        && Controller->GetLocalPlayer() == GetLocalPlayer()
-        ? Cast<ATDPlayerCharacter>(Controller->GetPawn()) : nullptr;
-    if (DeathSource.Get() != Character)
-    {
-        UnbindDeathSource();
-        CloseDeathUI();
-        DeathSource = Character;
-        if (Character)
-        {
-            Character->OnDeath.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
-            Character->OnRespawn.AddUniqueDynamic(this, &ThisClass::RefreshDeathUI);
-        }
-    }
-    if (!Character || !Character->IsDead() || !Root || !Root->IsPlayerHUDReady())
-    {
-        CloseDeathUI();
-        return;
-    }
-    UCommonActivatableWidgetStack* ModalStack = Root->GetModalStack();
-    if (DeathScreen || !ModalStack) return;
-    const TSubclassOf<UTDRespawnWidget> WidgetClass = GetDefault<UTDUISettings>()->RespawnWidgetClass.LoadSynchronous();
-    if (!WidgetClass) return;
+	UTDUIRootWidget* Root = RootWidget.Get();
+	APlayerController* Controller = Root && Root->GetOwningLocalPlayer() == GetLocalPlayer()
+		                                ? Root->GetOwningPlayer()
+		                                : nullptr;
+	UTDPlayerStatsSubsystem* Stats = Controller && Controller->IsLocalController()
+	                                 && Controller->GetLocalPlayer() == GetLocalPlayer()
+		                                 ? GetLocalPlayer()->GetSubsystem<UTDPlayerStatsSubsystem>()
+		                                 : nullptr;
+	UTDPlayerStatsViewModel* ViewModel = Stats ? Stats->GetPlayerStatsViewModel() : nullptr;
+	if (DeathViewModel.Get() != ViewModel){
+		UnbindDeathViewModel();
+		CloseDeathUI();
+		DeathViewModel = ViewModel;
+		if (ViewModel){
+			ViewModel->OnDeathStateChanged.AddUObject(this, &ThisClass::RefreshDeathUI);
+		}
+	}
+	// 최초 연결과 HUD 준비 완료 시에도 현재 상태를 반영한다.
+	if (!ViewModel || !ViewModel->bIsDead || !Root || !Root->IsPlayerHUDReady()){
+		CloseDeathUI();
+		return;
+	}
+	if (DeathScreen && DeathController.Get() != Controller) CloseDeathUI();
+	UCommonActivatableWidgetStack* ModalStack = Root->GetModalStack();
+	if (DeathScreen || !ModalStack) return;
+	const TSubclassOf<UTDRespawnWidget> WidgetClass = GetDefault<UTDUISettings>()->
+	                                                  RespawnWidgetClass.LoadSynchronous();
+	if (!WidgetClass) return;
+	CancelChatInput();
     bCursorVisibleBeforeDeath = Controller->bShowMouseCursor;
-    DeathController = Controller;
-    DeathScreen = ModalStack->AddWidget<UTDRespawnWidget>(WidgetClass);
-    if (DeathScreen)
-    {
-        FInputModeUIOnly Mode;
-        UWidget* FocusTarget = DeathScreen->GetDesiredFocusTarget();
-        Mode.SetWidgetToFocus(FocusTarget ? FocusTarget->TakeWidget() : DeathScreen->TakeWidget());
-        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-        Controller->SetInputMode(Mode);
-        Controller->bShowMouseCursor = true;
-    }
+	DeathController = Controller;
+	DeathScreen = ModalStack->AddWidget<UTDRespawnWidget>(WidgetClass);
+	if (DeathScreen){
+		FInputModeUIOnly Mode;
+		UWidget* FocusTarget = DeathScreen->GetDesiredFocusTarget();
+		Mode.SetWidgetToFocus(FocusTarget ? FocusTarget->TakeWidget() : DeathScreen->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		Controller->SetInputMode(Mode);
+		Controller->bShowMouseCursor = true;
+	}
 }
 
 void UTDUIManagerSubsystem::CloseDeathUI()
 {
-    if (!DeathScreen) return;
-    UTDUIRootWidget* Root = RootWidget.Get();
-    DeathScreen->DeactivateWidget();
-    if (Root && Root->GetModalStack()) Root->GetModalStack()->RemoveWidget(*DeathScreen);
-    else DeathScreen->RemoveFromParent();
-    DeathScreen = nullptr;
-    APlayerController* Controller = DeathController.Get();
-    DeathController.Reset();
-    // Login/character selection manages its own input mode when the gameplay HUD is not ready.
-    if (Controller && Controller->IsLocalController() && Controller->GetLocalPlayer() == GetLocalPlayer()
-        && (!Root || Root->IsPlayerHUDReady()))
-    {
-        Controller->bShowMouseCursor = bCursorVisibleBeforeDeath;
-        if (bCursorVisibleBeforeDeath)
-        {
-            FInputModeGameAndUI Mode;
-            Mode.SetHideCursorDuringCapture(false);
-            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-            Controller->SetInputMode(Mode);
-        }
-        else
-        {
-            FInputModeGameOnly Mode;
-            Mode.SetConsumeCaptureMouseDown(false);
-            Controller->SetInputMode(Mode);
-        }
-    }
+	if (!DeathScreen) return;
+	UTDUIRootWidget* Root = RootWidget.Get();
+	DeathScreen->DeactivateWidget();
+	if (Root && Root->GetModalStack()) Root->GetModalStack()->RemoveWidget(*DeathScreen);
+	else DeathScreen->RemoveFromParent();
+	DeathScreen = nullptr;
+	APlayerController* Controller = DeathController.Get();
+	DeathController.Reset();
+	// Login/character selection manages its own input mode when the gameplay HUD is not ready.
+	if (Controller && Controller->IsLocalController() && Controller->GetLocalPlayer() ==
+		GetLocalPlayer()
+		&& (!Root || Root->IsPlayerHUDReady())){
+		Controller->bShowMouseCursor = bCursorVisibleBeforeDeath;
+		if (bCursorVisibleBeforeDeath){
+			FInputModeGameAndUI Mode;
+			Mode.SetHideCursorDuringCapture(false);
+			Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			Controller->SetInputMode(Mode);
+		}
+		else{
+			FInputModeGameOnly Mode;
+			Mode.SetConsumeCaptureMouseDown(false);
+			Controller->SetInputMode(Mode);
+		}
+	}
 }
 
 void UTDUIManagerSubsystem::RequestCharacterSelection()
@@ -546,4 +581,223 @@ void UTDUIManagerSubsystem::ShowPartyInvitation(ATDPlayerState* Inviter)
 			Window->ShowInvitation(Inviter);
 		}
 	}
+}
+
+UTDBossHPWidget* UTDUIManagerSubsystem::GetBossWidget() const
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+	return Root ? Root->GetBossWidget() : nullptr;
+}
+
+void UTDUIManagerSubsystem::RefreshBossState()
+{
+	UTDUIRootWidget* Root = RootWidget.Get();
+	UWorld* World = Root ? Root->GetWorld() : nullptr;
+	ATDGameState* GameState = World ? World->GetGameState<ATDGameState>() : nullptr;
+	if (!GameState)
+	{
+		UnbindBossState();
+		HandleActiveBossChanged(nullptr);
+		return;
+	}
+	if (BoundBossGameState.Get() == GameState)
+	{
+		return;
+	}
+
+	UnbindBossState();
+	BoundBossGameState = GameState;
+	GameState->OnActiveBossChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleActiveBossChanged);
+
+	HandleActiveBossChanged(GameState->GetActiveBoss());
+}
+
+void UTDUIManagerSubsystem::UnbindBossState()
+{
+	if (ATDGameState* GameState = BoundBossGameState.Get())
+	{
+		GameState->OnActiveBossChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleActiveBossChanged);
+	}
+	BoundBossGameState.Reset();
+}
+
+void UTDUIManagerSubsystem::HandleActiveBossChanged(ATDBossCharacter* NewBoss)
+{
+	if (BossViewModel)
+	{
+		BossViewModel->SetSource(NewBoss);
+	}
+	RefreshBossVisibility();
+}
+
+void UTDUIManagerSubsystem::RefreshBossVisibility()
+{
+	if (UTDBossHPWidget* BossWidget = GetBossWidget())
+	{
+		// 클라이언트에서 보스가 제거되면 GameState 알림보다 먼저 숨긴다.
+		const bool bShowBoss = BossViewModel && BossViewModel->bHasBoss
+			&& !BossViewModel->bIsDead && IsValid(BossViewModel->GetSource());
+		const ESlateVisibility Visibility = bShowBoss
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed;
+		if (BossWidget->GetVisibility() != Visibility)
+		{
+			BossWidget->SetVisibility(Visibility);
+		}
+	}
+}
+
+void UTDUIManagerSubsystem::DisconnectBossUI()
+{
+	if (BossViewModel)
+	{
+		BossViewModel->OnDisplayChanged.RemoveDynamic(
+			this, &ThisClass::RefreshBossVisibility);
+	}
+	if (UTDBossHPWidget* BossWidget = GetBossWidget())
+	{
+		BossWidget->SetViewModel(nullptr);
+		BossWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (BossViewModel)
+	{
+		BossViewModel->SetSource(nullptr);
+	}
+}
+
+bool UTDUIManagerSubsystem::BeginChatInput(UTDChatWidget* Widget)
+{
+ UTDUIRootWidget* Root = RootWidget.Get();
+ APlayerController* Controller = Root ? Root->GetOwningPlayer() : nullptr;
+ if (!IsValid(Widget) || !Root || !Root->IsPlayerHUDReady() || !Controller
+  || !Controller->IsLocalController() || Controller->GetLocalPlayer() != GetLocalPlayer()
+  || Widget->GetOwningPlayer() != Controller || AccountScreen || DeathScreen
+  || (DeathViewModel.IsValid() && DeathViewModel->bIsDead)
+  || (Root->GetModalStack() && Root->GetModalStack()->GetNumWidgets() > 0)) return false;
+ if (ActiveChatWidget.Get() == Widget) return true;
+ CancelChatInput();
+ ActiveChatWidget = Widget;
+ ChatInputController = Controller;
+ bCursorVisibleBeforeChat = Controller->bShowMouseCursor;
+ Controller->FlushPressedKeys();
+ Controller->SetIgnoreMoveInput(true);
+ Controller->SetIgnoreLookInput(true);
+ FInputModeUIOnly Mode;
+ Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+ Controller->SetInputMode(Mode);
+ Controller->bShowMouseCursor = true;
+ return true;
+}
+
+void UTDUIManagerSubsystem::EndChatInput(UTDChatWidget* Widget)
+{
+ if (ActiveChatWidget.Get() == Widget) CancelChatInput();
+}
+
+void UTDUIManagerSubsystem::CancelChatInput()
+{
+ UTDChatWidget* Widget = ActiveChatWidget.Get();
+ APlayerController* Controller = ChatInputController.Get();
+ ActiveChatWidget.Reset();
+ ChatInputController.Reset();
+ if (Widget) Widget->NotifyInputClosed();
+ if (!Controller) return;
+ Controller->SetIgnoreMoveInput(false);
+ Controller->SetIgnoreLookInput(false);
+ UTDUIRootWidget* Root = RootWidget.Get();
+ // 로그인이나 모달이 이미 입력을 인계받았다면 해당 모드를 덮어쓰지 않는다.
+ if (!Root || Root->GetOwningPlayer() != Controller || !Root->IsPlayerHUDReady() || AccountScreen || DeathScreen
+  || (Root->GetModalStack() && Root->GetModalStack()->GetNumWidgets() > 0)) return;
+ Controller->bShowMouseCursor = bCursorVisibleBeforeChat;
+ if (bCursorVisibleBeforeChat)
+ {
+  FInputModeGameAndUI Mode;
+  Mode.SetHideCursorDuringCapture(false);
+  Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+  Controller->SetInputMode(Mode);
+ }
+ else
+ {
+  FInputModeGameOnly Mode;
+  Mode.SetConsumeCaptureMouseDown(false);
+  Controller->SetInputMode(Mode);
+ }
+}
+
+bool UTDUIManagerSubsystem::IsGameplayWindowLayerReady() const
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+
+	if (!IsValid(Root)
+		|| !Root->IsPlayerHUDReady()
+		|| Root->GetWindowLayer() == nullptr)
+	{
+		return false;
+	}
+
+	const ESlateVisibility Visibility =
+		Root->GetWindowLayer()->GetVisibility();
+
+	return Visibility != ESlateVisibility::Collapsed
+		&& Visibility != ESlateVisibility::Hidden;
+}
+
+bool UTDUIManagerSubsystem::ShowServiceWindow(
+	UTDWindowBaseWidget* Window)
+{
+	if (!IsValid(Window) || !IsGameplayWindowLayerReady())
+	{
+		return false;
+	}
+
+	UTDUIRootWidget* Root = RootWidget.Get();
+
+	if (!Root->AddWindow(Window))
+	{
+		return false;
+	}
+
+	Window->SetVisibility(ESlateVisibility::Visible);
+	BringWindowToFront(Window);
+
+	return true;
+}
+
+bool UTDUIManagerSubsystem::HasVisibleGameWindow() const
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+
+	UCanvasPanel* Layer =
+		Root ? Root->GetWindowLayer() : nullptr;
+
+	if (Layer == nullptr)
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < Layer->GetChildrenCount(); ++Index)
+	{
+		const UTDWindowBaseWidget* Window =
+			Cast<UTDWindowBaseWidget>(Layer->GetChildAt(Index));
+
+		if (Window == nullptr)
+		{
+			continue;
+		}
+
+		const ESlateVisibility Visibility =
+			Window->GetVisibility();
+
+		if (Visibility != ESlateVisibility::Collapsed
+			&& Visibility != ESlateVisibility::Hidden)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }

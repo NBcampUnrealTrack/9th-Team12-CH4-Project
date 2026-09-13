@@ -12,6 +12,7 @@ class UOverlay;
 class UVerticalBox;
 class UCommonActivatableWidgetStack;
 class UTDWindowBaseWidget;
+class UTDBossHPWidget;
 
 /**
  * 
@@ -50,6 +51,9 @@ public:
 	{
 		return HUDLayer;
 	}
+
+	/** HUDLayer 안의 HUD 위젯을 통해 보스 HP 위젯을 가져온다. */
+	UTDBossHPWidget* GetBossWidget() const;
 
     void SetLoadingVisible(bool bVisible);
 

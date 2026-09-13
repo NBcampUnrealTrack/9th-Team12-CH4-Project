@@ -66,6 +66,11 @@ protected:
 
 private:
 	FTimerHandle RefreshTimer;
+ FTimerHandle PartyChangeRefreshTimer;
+ TArray<TWeakObjectPtr<UTDPartyComponent>> ObservedParties;
+ void UpdatePartySubscriptions();
+ UFUNCTION()
+ void QueuePartyRefresh();
 	TWeakObjectPtr<ATDPlayerState> CurrentSelf;
 	TWeakObjectPtr<ATDPlayerState> IncomingInviter;
 	double IncomingUntil = 0;

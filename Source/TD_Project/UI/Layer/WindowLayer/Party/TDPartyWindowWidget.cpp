@@ -73,6 +73,7 @@ void UTDPartyWindowWidget::SyncRows(UVerticalBox* List,
 
 void UTDPartyWindowWidget::RefreshRoster()
 {
+ UpdatePartySubscriptions();
 	auto* Self = GetOwningPlayer() ? GetOwningPlayer()->GetPlayerState<ATDPlayerState>() : nullptr;
 	if (CurrentSelf.Get() != Self){
 		CurrentSelf = Self;
@@ -168,6 +169,11 @@ void UTDPartyWindowWidget::DeclineInvite()
 
 void UTDPartyWindowWidget::NativeDestruct()
 {
+ for (const auto& Party : ObservedParties)
+  if (Party.IsValid())
+   Party->OnPartyChanged.RemoveDynamic(this, &ThisClass::QueuePartyRefresh);
+ ObservedParties.Reset();
+ if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(PartyChangeRefreshTimer);
 	if (GetWorld()){
 		GetWorld()->GetTimerManager().ClearTimer(RefreshTimer);
 	}
@@ -187,6 +193,35 @@ void UTDPartyWindowWidget::RequestLeaveParty()
  if (UTDPartyComponent* Party = LocalParty(); Party && Party->IsInParty())
  {
   Party->ServerLeaveParty();
-  RefreshRoster(); // 최종 목록은 서버 복제 후 정기 갱신에서 반영된다.
+  RefreshRoster(); // 최종 목록은 서버 복제 후 변경 이벤트에서 갱신한다.
+ }
+}
+
+void UTDPartyWindowWidget::UpdatePartySubscriptions()
+{
+ TArray<TWeakObjectPtr<UTDPartyComponent>> Current;
+ if (const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr)
+ {
+  for (APlayerState* State : GS->PlayerArray)
+   if (const ATDPlayerState* Player = Cast<ATDPlayerState>(State))
+    if (UTDPartyComponent* Party = Player->GetPartyComponent())
+     Current.AddUnique(Party);
+ }
+ // 다른 파티원의 PartyId 변경도 감시한다. 내 PartyId는 탈퇴 시 그대로일 수 있다.
+ for (const auto& Party : ObservedParties)
+  if (Party.IsValid() && !Current.Contains(Party))
+   Party->OnPartyChanged.RemoveDynamic(this, &ThisClass::QueuePartyRefresh);
+ for (const auto& Party : Current)
+  if (!ObservedParties.Contains(Party))
+   Party->OnPartyChanged.AddUniqueDynamic(this, &ThisClass::QueuePartyRefresh);
+ ObservedParties = MoveTemp(Current);
+}
+
+void UTDPartyWindowWidget::QueuePartyRefresh()
+{
+ if (UWorld* World = GetWorld(); World && !World->GetTimerManager().IsTimerActive(PartyChangeRefreshTimer))
+ {
+  // 같은 프레임의 여러 복제 알림을 모은 뒤 완성된 상태로 한 번 갱신한다.
+  PartyChangeRefreshTimer = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::RefreshRoster);
  }
 }

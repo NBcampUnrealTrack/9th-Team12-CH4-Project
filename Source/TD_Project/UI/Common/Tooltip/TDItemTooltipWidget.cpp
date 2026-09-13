@@ -17,6 +17,9 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Items/TDInventoryComponent.h"
+#include "Items/TDItemUseComponent.h"
+#include "Items/TDEnhanceStatics.h"
+#include "UI/Common/Tooltip/TDTooltipStatics.h"
 #include "Player/TDPlayerState.h"
 #include "Stats/TDProgressionComponent.h"
 #include "UI/Common/Typography/TDTextBlock.h"
@@ -104,8 +107,9 @@ void UTDItemTooltipWidget::SetTooltipData(const FTDTooltipData& InData)
 	RefreshContent();
 }
 
-bool UTDItemTooltipWidget::SetItem(FName ItemId, int32 Count, FText Hint, UDataTable* DefinitionTable)
+bool UTDItemTooltipWidget::SetItem(FName ItemId, int32 Count, FText Hint, UDataTable* DefinitionTable, int32 EnhanceLevel)
 {
+	SourceEnhanceLevel = FMath::Max(0, EnhanceLevel);
 	SourceItemId = ItemId;
 	SourceCount = FMath::Max(0, Count);
 	SourceHint = Hint;
@@ -155,8 +159,23 @@ bool UTDItemTooltipWidget::RefreshItem()
 		Data.bRequirementUnmet = Progression && Progression->GetLevel() < Definition->RequiredLevel;
 	}
 
+	// 강화 수치는 같은 종류의 다른 아이템이 아니라 해당 슬롯의 개체에서 전달받는다.
+	const bool bAccessory = Definition->ItemType == TDTags::Item_Type_Accessory;
+	const int32 Enhance = bAccessory ? SourceEnhanceLevel : 0;
+	const UTDItemUseComponent* ItemUse = State ? State->GetItemUseComponent() : nullptr;
+	const float Multiplier = bAccessory
+		? TDEnhance::GetStatMultiplier(Enhance, Definition->RequiredLevel) : 1.f;
+	if (bAccessory)
+	{
+		FTDTooltipLine Line;
+		Line.Label = LOCTEXT("EnhanceLevel", "강화 단계");
+		Line.Value = FText::Format(LOCTEXT("EnhanceLevelValue", "+{0}"), FText::AsNumber(Enhance));
+		Data.Lines.Add(Line);
+	}
+	UDataTable* StatTable = bAccessory && !SourceDefinitionTable && ItemUse && ItemUse->GetItemStatTable()
+		? ItemUse->GetItemStatTable() : Settings->TooltipItemStatTable.LoadSynchronous();
 	const TArray<const FTDStatRow*> Stats = SortedRows<FTDStatRow>(Settings->TooltipStatDefinitionTable.LoadSynchronous());
-	for (const FTDItemStatRow* Row : SortedRows<FTDItemStatRow>(Settings->TooltipItemStatTable.LoadSynchronous()))
+	for (const FTDItemStatRow* Row : SortedRows<FTDItemStatRow>(StatTable))
 	{
 		if (Row->ItemId != SourceItemId || !FMath::IsFinite(Row->Value)) continue;
 		const FTDStatRow* Meta = nullptr;
@@ -168,7 +187,7 @@ bool UTDItemTooltipWidget::RefreshItem()
 		Line.Label = Meta && !Meta->DisplayName.IsEmpty() ? Meta->DisplayName : FText::FromString(Row->StatTag.ToString());
 		const bool bMultiplier = Row->Op == ETDModOp::Increased || Row->Op == ETDModOp::More;
 		const bool bPercent = bMultiplier || (Meta && Meta->bIsPercent);
-		const float DisplayValue = Row->Value * (bPercent ? 100.f : 1.f);
+		const float DisplayValue = Row->Value * Multiplier * (bPercent ? 100.f : 1.f);
 		Line.Value = FText::Format(
 			bPercent ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"),
 			DisplayValue > 0 ? FText::FromString(TEXT("+")) : FText::GetEmpty(),
@@ -177,6 +196,10 @@ bool UTDItemTooltipWidget::RefreshItem()
 			Line.Label = FText::Format(LOCTEXT("Increased", "{0} (합연산)"), Line.Label);
 		else if (Row->Op == ETDModOp::More)
 			Line.Label = FText::Format(LOCTEXT("More", "{0} (곱연산)"), Line.Label);
+		const float Gain = Row->Value * (Multiplier - 1.f);
+		if (Enhance > 0 && !FMath::IsNearlyZero(Gain))
+			Line.Value = FText::Format(LOCTEXT("EnhancedStat", "{0} ({1})"), Line.Value,
+				UTDTooltipStatics::FormatStatValue(Row->StatTag, Row->Op, Gain));
 		if (DisplayValue < 0) Line.ValueColor = FLinearColor(1.f, 0.35f, 0.35f);
 		Data.Lines.Add(Line);
 	}
@@ -211,7 +234,7 @@ bool UTDItemTooltipWidget::RefreshItem()
 		? FText::Format(LOCTEXT("Count", "보유 {0}개"), FText::AsNumber(SourceCount)) : Type;
 	if (!SourceHint.IsEmpty())
 		Data.Footer = FText::Format(LOCTEXT("FooterHint", "{0}\n{1}"), Data.Footer, SourceHint);
-	// bCanDiscard는 거래 가능 여부가 아니다. 거래 문구와 강화 수치는 표시하지 않는다.
+	// bCanDiscard는 거래 가능 여부가 아니다. 거래 문구로 표시하지 않는다.
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	RefreshContent();
 	return true;
@@ -303,6 +326,14 @@ void UTDItemTooltipWidget::ClearItemTooltip(UUserWidget* Host)
 	Host->SetToolTip(nullptr);
 }
 
+void UTDItemTooltipWidget::AttachData(UUserWidget* Owner, UWidget* Host, const FTDTooltipData& InData)
+{
+	if (!Host) return;
+	AttachText(Owner, Host, InData.Title, InData.Description.IsEmpty() ? InData.Title : InData.Description);
+	if (UTDItemTooltipWidget* Tooltip = Cast<UTDItemTooltipWidget>(Host->GetToolTip()))
+		Tooltip->SetTooltipData(InData);
+}
+
 void UTDItemTooltipWidget::AttachText(UUserWidget* Owner, UWidget* Host,
 	const FText& Title, const FText& Description)
 {
@@ -337,7 +368,7 @@ void UTDItemTooltipWidget::AttachText(UUserWidget* Owner, UWidget* Host,
 }
 
 void UTDItemTooltipWidget::AttachItem(UUserWidget* Host, FName ItemId, int32 Count,
-	const FText& Hint, UDataTable* DefinitionTable)
+	const FText& Hint, UDataTable* DefinitionTable, int32 EnhanceLevel)
 {
 	if (!Host || Host->IsDesignTime()) return;
 	if (ItemId.IsNone()) { ClearItemTooltip(Host); return; }
@@ -355,7 +386,7 @@ void UTDItemTooltipWidget::AttachItem(UUserWidget* Host, FName ItemId, int32 Cou
 		Tooltip = Host->GetOwningPlayer() ? CreateWidget<UTDItemTooltipWidget>(Host->GetOwningPlayer(), Class)
 			: CreateWidget<UTDItemTooltipWidget>(Host->GetWorld(), Class);
 	}
-	if (!Tooltip || !Tooltip->SetItem(ItemId, Count, Hint, DefinitionTable))
+	if (!Tooltip || !Tooltip->SetItem(ItemId, Count, Hint, DefinitionTable, EnhanceLevel))
 	{
 		ClearItemTooltip(Host);
 		return;

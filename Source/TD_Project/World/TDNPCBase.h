@@ -94,6 +94,10 @@ public:
 
 	bool CanReceiveGifts() const;
 
+	/** 정상적인 대화 종료 후 강화 기능을 제공하는 NPC인지 확인합니다. */
+	UFUNCTION(BlueprintPure, Category = "TD|NPC|Enhance")
+	bool IsEnhanceNPC() const;
+	
 	int32 GetGiftAffectionValue(
 		FName ItemId) const;
 

@@ -61,7 +61,7 @@ class TD_PROJECT_API UTDItemTooltipWidget : public UUserWidget
 public:
 	/** 정의 테이블 Override는 인벤토리 미리보기에서만 사용한다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Tooltip")
-	bool SetItem(FName ItemId, int32 Count, FText Hint, UDataTable* DefinitionTable = nullptr);
+	bool SetItem(FName ItemId, int32 Count, FText Hint, UDataTable* DefinitionTable = nullptr, int32 EnhanceLevel = 0);
 
 	UFUNCTION(BlueprintCallable, Category = "TD|Tooltip")
 	void SetTooltipData(const FTDTooltipData& InData);
@@ -74,10 +74,12 @@ public:
 
 	/** Host에 이미 생성된 공용 툴팁이 있으면 재사용. ItemId=None은 해제. */
 	static void AttachItem(UUserWidget* Host, FName ItemId, int32 Count,
-		const FText& Hint = FText::GetEmpty(), UDataTable* DefinitionTable = nullptr);
+		const FText& Hint = FText::GetEmpty(), UDataTable* DefinitionTable = nullptr, int32 EnhanceLevel = 0);
 	static void ClearItemTooltip(UUserWidget* Host);
 
 	/** 스탯 등 텍스트 설명도 설정된 공용 카드로 표시한다. 빈 설명은 해제. */
+	static void AttachData(UUserWidget* Owner, UWidget* Host, const FTDTooltipData& InData);
+
 	static void AttachText(UUserWidget* Owner, UWidget* Host, const FText& Title, const FText& Description);
 
 protected:
@@ -114,6 +116,7 @@ private:
 	FTDTooltipData Data;
 	UPROPERTY(Transient)
 	FName SourceItemId;
+	int32 SourceEnhanceLevel = 0;
 	UPROPERTY(Transient)
 	int32 SourceCount = 0;
 	UPROPERTY(Transient)

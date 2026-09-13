@@ -3,29 +3,36 @@
 #include "CoreMinimal.h"
 #include "Character/TDEnemyBase.h"
 #include "Combat/TDBossPattern.h"
+#include "Stats/TDStatTypes.h"
 #include "TDBossCharacter.generated.h"
 
 class UCameraShakeBase;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class ATDBossProjectile;
 struct FOnAttributeChangeData;
 
-/** 보스 사건 방송. 전 머신. BP 가 포효·UI 를 붙인다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnBossEvent, ETDBossEvent, Event, int32, Param);
-/** 패턴 예고. 전 머신. Center/Direction 으로 바닥 표시(데칼·VFX)를 그린다. Duration 은 선딜 길이. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnBossPatternTelegraph,
 	int32, PatternIndex, FVector, Center, FVector, Direction, float, Duration);
-/** 페이즈 변경. 전 머신(복제). 보스 체력바가 색을 바꾸는 지점. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnBossPhaseChanged, int32, NewPhase);
-/** 패턴 종료. 서버 전용(네이티브). BT 실행 태스크가 기다리는 신호. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FTDOnBossPatternFinished, int32 /*PatternIndex*/);
 
+/** 추가 타격 하나가 띄워 둔 예고 VFX 묶음. 머신마다 자기 것. */
+USTRUCT()
+struct FTDBossVFXBatch
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> Components;
+};
+
 /**
- * 보스 몬스터. 패턴 엔진(선딜→타격→후딜)·페이즈·분노·입장·소환·리시·화면 흔들림.
+ * 보스 몬스터. 패턴 엔진(선딜→타격→후딜)·페이즈·분노·입장·소환·리시 귀환·흔들림·VFX·몸 연출.
+ * 두뇌(BT)가 "무엇을"을 정하면 이 클래스가 "어떻게"를 한다. 이동·회전·솟구침은 서버 Tick.
  *
- * 두뇌(BT)는 "무엇을 할지"만 정하고 StartPattern 을 부른다. 이동(돌진·잠수·투사체)은
- * OnTelegraphBegin/OnMotionBegin/OnMotionEnd 훅에서 이 클래스가 처리한다.
- * 데미지는 전부 CombatStatics::ApplyDamage, 히트 방송은 CombatComponent::NotifyHit —
- * 평타·스킬과 같은 접점을 쓴다.
+ * 판정 높이는 전부 발밑(GetFloorZ) 기준이다. 원판·도넛은 바닥 기준 원기둥으로 재서 예고 원과 정확히 같다.
  */
 UCLASS()
 class TD_PROJECT_API ATDBossCharacter : public ATDEnemyBase
@@ -38,60 +45,42 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void Tick(float DeltaSeconds) override;
 
-	// ── 서버 API: BT·치트가 부른다 ────────────────────────
-
+	// ── 서버 API ─────────────────────────────────────────
 	void BeginFight(ATDCharacterBase* FirstTarget);
-	void ResetFight();
+	void ResetFight(bool bInstant = false);
 	bool StartPattern(int32 PatternIndex);
+	void CancelPattern();
 	int32 ChoosePattern(float DistanceToTarget) const;
 	void SetPatternTarget(ATDCharacterBase* Target);
 	ATDCharacterBase* FindEnemy(bool bFarthest, float MaxRange) const;
 	void EnterPhase2();
 	void TriggerEnrage();
 	void SummonMinions();
+	/** 지금 거리·페이즈에서 쓸 수 있는 패턴이 하나라도 있나. 쉼·쿨·거리 조건을 본다(랜덤은 안 굴림). */
+	bool HasReadyPattern(float DistanceToTarget) const;
 
 	// ── 조회 ─────────────────────────────────────────────
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	bool IsBusy() const;
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	bool IsFightActive() const { return bFightActive; }
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	int32 GetPhase() const { return Phase; }
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	bool IsEnraged() const { return bEnraged; }
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	int32 GetPatternCount() const { return Patterns.Num(); }
-
-	/** BP 가 예고 모양(박스/구·크기)을 그릴 때 읽는다. */
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	bool GetPatternSpec(int32 PatternIndex, FTDBossPatternSpec& OutSpec) const;
-
-	UFUNCTION(BlueprintPure, Category = "TD|Boss")
-	ETDBossPatternPhase GetCurrentPatternPhase() const { return CurrentPatternPhase; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") bool IsBusy() const;
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") bool IsFightActive() const { return bFightActive; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") bool IsReturning() const { return bReturning; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") int32 GetPhase() const { return Phase; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") bool IsEnraged() const { return bEnraged; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") int32 GetPatternCount() const { return Patterns.Num(); }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") bool GetPatternSpec(int32 PatternIndex, FTDBossPatternSpec& OutSpec) const;
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") ETDBossPatternPhase GetCurrentPatternPhase() const { return CurrentPatternPhase; }
+	UFUNCTION(BlueprintPure, Category = "TD|Boss") FText GetDisplayName() const;
 
 	FVector GetHomeLocation() const { return HomeLocation; }
+	/** 내비 목적지용 집 좌표(발 높이). 캡슐 중심을 주면 키 큰 보스는 투영에 실패해 Move To 가 즉시 실패한다. */
+	FVector GetHomeNavLocation() const;
 	float GetLeashRadius() const { return LeashRadius; }
 	ATDCharacterBase* GetPatternTarget() const { return PatternTarget.Get(); }
 
 	// ── 델리게이트 ────────────────────────────────────────
-
-	UPROPERTY(BlueprintAssignable, Category = "TD|Boss")
-	FTDOnBossEvent OnBossEvent;
-
-	UPROPERTY(BlueprintAssignable, Category = "TD|Boss")
-	FTDOnBossPatternTelegraph OnPatternTelegraph;
-
-	UPROPERTY(BlueprintAssignable, Category = "TD|Boss")
-	FTDOnBossPhaseChanged OnPhaseChanged;
-
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossEvent OnBossEvent;
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossPatternTelegraph OnPatternTelegraph;
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossPhaseChanged OnPhaseChanged;
 	FTDOnBossPatternFinished OnPatternFinished;
-
-	// ── 슈퍼아머·피해 규칙 ─────────────────────────────────
 
 	virtual bool CanBeStaggered() const override { return false; }
 	virtual bool IsInvulnerable() const override;
@@ -102,203 +91,215 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath() override;
 
-	// ── 이동 훅 ─────────────────────────────────────────
-
-	/** 선딜 시작. 잠수는 여기서 가라앉는다. */
 	virtual void OnTelegraphBegin(const FTDBossPatternSpec& Spec);
-	/** 타격 시작. 돌진은 달리기 시작, 잠수는 출현, 물대포는 발사. */
 	virtual void OnMotionBegin(const FTDBossPatternSpec& Spec);
-	/** 타격 끝. 돌진 정지. */
 	virtual void OnMotionEnd(const FTDBossPatternSpec& Spec);
-	/** 판정 중심. 기본은 정면 오프셋, 잠수는 찍어둔 대상 위치. */
-	virtual FVector GetStrikeCenter(const FTDBossPatternSpec& Spec) const;
+
+	/** 본 판정의 기준점(발 높이). 잠수는 대상 자리, 나머지는 보스 자리. 여기에 ForwardOffset 이 더해진다. */
+	virtual FVector GetStrikeBase(const FTDBossPatternSpec& Spec) const;
+	/** 발밑 Z. 솟구침 중엔 액터가 공중이라 잠수 목적지(지면 캡슐 중심) 기준. */
+	float GetFloorZ() const;
 
 	// ── 패턴 명세 ────────────────────────────────────────
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns") TArray<FTDBossPatternSpec> Patterns;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns") bool bAvoidRepeatingPattern = true;
+	/** 서버 창에 예고(노랑)·타격(빨강) 판정을 그린다. 예고 그림과 맞는 범위가 같은지 볼 때. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns") bool bDrawDebugHits = true;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns")
-	TArray<FTDBossPatternSpec> Patterns;
+	/** 패턴과 패턴 사이 쉬는 시간(초) 범위. 이 동안 걷고 재배치한다 — 없으면 쉴 새 없이 두들긴다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns", meta = (ClampMin = "0"))
+	float PatternGapMin = 1.0f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns")
-	bool bAvoidRepeatingPattern = true;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns", meta = (ClampMin = "0"))
+	float PatternGapMax = 2.0f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns")
-	bool bDrawDebugHits = true;
+	/** 모든 선딜(잠수 출현 예고 포함)에 곱하는 전역 배율. 0.8 = 전체 20% 빠르게. 페이즈 2·분노 배율은 이 위에 또 곱해진다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Patterns", meta = (ClampMin = "0.1", ClampMax = "2"))
+	float TelegraphScale = 1.0f;
 
-	// ── 이동 파라미터 ─────────────────────────────────────
+	// ── 몸 연출 ──────────────────────────────────────────
+	/** 선딜 동안 몸이 판정 방향으로 도는 속도(도/초). */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
+	float TurnSpeedDegrees = 540.f;
 
-	/** 돌진 속도(cm/s). 이동 거리 = 속도 × StrikeTime. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float DashSpeed = 1400.f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion")
-	TSubclassOf<ATDBossProjectile> ProjectileClass;
-
+	/** 돌진 중 몸에 닿은 캐릭터를 밀어내는 속도. 겹치지 않고 튕겨 나간다. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
-	float ProjectileSpeed = 1200.f;
+	float DashShove = 900.f;
 
-	/** 발사 지점: 캡슐 반지름 + 이 값만큼 정면. 몸 안에서 스폰되면 벽 판정에 걸린다. */
+	/** 솟구침: 이 깊이(cm)에서 시작해 */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
-	float ProjectileMuzzleForward = 120.f;
+	float EmergeDepth = 500.f;
 
-	/** 발사 높이(캡슐 중심 기준 Z). 입 위치에 맞춘다. */
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion")
-	float ProjectileMuzzleHeight = 0.f;
-
-	/** 페이즈 2 부채꼴 발사 수. 1 이면 페이즈 2 에도 한 발. */
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "1"))
-	int32 ProjectileCountPhase2 = 3;
-
-	/** 부채꼴 발 사이 각도. */
+	/** 지면 위 이 높이까지 튀어오른 뒤 내려온다. 정점에서 판정. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
-	float ProjectileSpreadAngle = 20.f;
+	float EmergeHeight = 250.f;
 
-	// ── 페이즈 ───────────────────────────────────────────
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0.05"))
+	float EmergeRiseTime = 0.25f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0", ClampMax = "1"))
-	float Phase2HealthRatio = 0.5f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0.05"))
+	float EmergeFallTime = 0.2f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0.1", ClampMax = "1"))
-	float Phase2TelegraphScale = 0.7f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion") TSubclassOf<ATDBossProjectile> ProjectileClass;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0")) float ProjectileSpeed = 1200.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0")) float ProjectileMuzzleForward = 120.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion") float ProjectileMuzzleHeight = 0.f;
+	/** 페이즈 2 기본 탄 수. 스펙의 ProjectileCount 가 0 이 아니면 그쪽이 우선. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "1")) int32 ProjectileCountPhase2 = 3;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0")) float ProjectileSpreadAngle = 20.f;
 
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0.1", ClampMax = "1"))
-	float Phase2RecoveryScale = 0.8f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0"))
-	float Phase2TransitionDuration = 2.f;
-
-	// ── 분노 ─────────────────────────────────────────────
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0"))
-	float EnrageAfterSeconds = 240.f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0.1", ClampMax = "1"))
-	float EnrageTelegraphScale = 0.5f;
-
-	// ── 전투 ─────────────────────────────────────────────
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0"))
-	float EntranceDuration = 2.f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "1"))
-	float RecoveryIncomingDamageMultiplier = 1.5f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0"))
-	float LeashRadius = 2500.f;
-
-	// ── 소환 ─────────────────────────────────────────────
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon")
-	TSubclassOf<ATDEnemyBase> MinionClass;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon")
-	FName MinionId;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon", meta = (ClampMin = "0"))
-	int32 MinionCount = 2;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon", meta = (ClampMin = "0"))
-	float MinionSpawnRadius = 400.f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon")
-	bool bSummonOnPhase2 = true;
-
-	// ── 화면 흔들림 ───────────────────────────────────────
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback")
-	TSubclassOf<UCameraShakeBase> CameraShakeClass;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback", meta = (ClampMin = "0"))
-	float ShakeInnerRadius = 600.f;
-
-	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback", meta = (ClampMin = "0"))
-	float ShakeOuterRadius = 2500.f;
+	// ── 페이즈·분노·전투·소환·흔들림 ────────────────────
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0", ClampMax = "1")) float Phase2HealthRatio = 0.5f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0.1", ClampMax = "1")) float Phase2TelegraphScale = 0.7f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0.1", ClampMax = "1")) float Phase2RecoveryScale = 0.8f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0")) float Phase2TransitionDuration = 2.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Phase", meta = (ClampMin = "0")) float Phase2DamageBonus = 0.2f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0")) float EnrageAfterSeconds = 240.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0.1", ClampMax = "1")) float EnrageTelegraphScale = 0.5f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Enrage", meta = (ClampMin = "0")) float EnrageDamageBonus = 0.3f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float EntranceDuration = 2.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "1")) float RecoveryIncomingDamageMultiplier = 1.5f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float LeashRadius = 2500.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float ReturnArriveDistance = 150.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "1")) float ReturnTimeout = 12.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon") TSubclassOf<ATDEnemyBase> MinionClass;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon") FName MinionId;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon", meta = (ClampMin = "0")) int32 MinionCount = 2;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon", meta = (ClampMin = "0")) float MinionSpawnRadius = 400.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon") bool bSummonOnPhase2 = true;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback") TSubclassOf<UCameraShakeBase> CameraShakeClass;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback", meta = (ClampMin = "0")) float ShakeInnerRadius = 600.f;
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Feedback", meta = (ClampMin = "0")) float ShakeOuterRadius = 2500.f;
 
 	// ── 방송 ─────────────────────────────────────────────
+	UFUNCTION(NetMulticast, Reliable) void MulticastBossEvent(ETDBossEvent Event, int32 Param);
+	/** Center 는 본 판정 기준점(발 높이). VFX 는 여기서 스펙대로 갈래·둘레 지점을 계산해 띄운다. */
+	UFUNCTION(NetMulticast, Reliable) void MulticastPatternTelegraph(int32 PatternIndex, FVector Center, FVector Direction, float Duration);
+	UFUNCTION(NetMulticast, Reliable) void MulticastPatternStrike(int32 PatternIndex, FVector Center, FVector Direction);
+	UFUNCTION(NetMulticast, Reliable) void MulticastExtraTelegraph(int32 PatternIndex, int32 ExtraIndex, FVector Center, FVector Direction, float Duration);
+	UFUNCTION(NetMulticast, Reliable) void MulticastExtraStrike(int32 PatternIndex, int32 ExtraIndex, FVector Center, FVector Direction);
+	/** 취소·사망·리셋: 떠 있는 예고 VFX 를 전 머신에서 지운다. */
+	UFUNCTION(NetMulticast, Reliable) void MulticastClearTelegraphs();
+	UFUNCTION(NetMulticast, Unreliable) void MulticastCameraShake(FVector Epicenter, float Scale);
+	UFUNCTION() void OnRep_Phase();
 
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastBossEvent(ETDBossEvent Event, int32 Param);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastPatternTelegraph(int32 PatternIndex, FVector Center, FVector Direction, float Duration);
-
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastCameraShake(FVector Epicenter, float Scale);
-
-	UFUNCTION()
-	void OnRep_Phase();
-
-	// ── 패턴 진행 (서버) ──────────────────────────────────
-
+	// ── 패턴 진행 ────────────────────────────────────────
 	void EnterStrike();
+	/** 잠수: 땅속 이동이 끝남. 지금 대상 위치를 출현 자리로 잡고 짧은 예고 뒤 EnterStrike. */
+	void EndBurrowTravel();
 	void DoStrikeHit();
 	void EnterRecovery();
 	void FinishPattern();
-	void CancelPattern();
+	void StartDashReaim();
 	float ScaledTelegraph(float Base) const;
 	float ScaledRecovery(float Base) const;
+	void ApplyKnockback(ATDCharacterBase* Target, const FVector& Direction, float Strength, float UpRatio) const;
 
-	// ── 이동 구현 (서버) ──────────────────────────────────
+	// ── 판정 영역 (본 판정·추가 타격 공용) ────────────────
+	static FTDBossHitArea MakePrimaryArea(const FTDBossPatternSpec& Spec);
+	/** 영역 안의 적. Center 는 발 높이 기준점, Facing 은 박스 정면(갈래의 첫 방향). */
+	TArray<ATDCharacterBase*> GatherInArea(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing) const;
+	/** 피해 + 히트 방송 + 밀어내기. AlreadyHit 가 있으면 한 대상 1회를 보장한다. */
+	void StrikeArea(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing,
+		float DamageScale, float Knockback, float KnockUpRatio, TSet<TWeakObjectPtr<AActor>>* AlreadyHit);
+	void DrawArea(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing, const FColor& Color, float Duration) const;
+	/** 영역 모양대로 VFX 를 띄운다. KeepIn 이 있으면 컴포넌트를 거기 모아 나중에 지운다(예고). */
+	void SpawnAreaVFX(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing,
+		UNiagaraSystem* System, float Scale, int32 PointCount, TArray<TObjectPtr<UNiagaraComponent>>* KeepIn);
+	void ScheduleExtraStrikes(int32 PatternIndex, const FVector& PrimaryBase, const FVector& Facing);
+	void DoExtraStrike(int32 PatternIndex, int32 ExtraIndex, FVector Center, FVector Facing);
 
+	// ── 이동·몸 ──────────────────────────────────────────
+	void TickTurn(float DeltaSeconds);
 	void StartDash();
 	void TickDash(float DeltaSeconds);
 	void EndDash(bool bHitWall);
 	void StartBurrow(const FTDBossPatternSpec& Spec);
 	void TickBurrow(float DeltaSeconds);
-	void EndBurrow();
+	void StartEmerge();
+	void TickEmerge(float DeltaSeconds);
+	void FinishEmerge();
+	void AbortBurrow();
 	void FireProjectiles(const FTDBossPatternSpec& Spec);
 	FVector GetFacing() const;
+	void SetMovementFrozen(bool bFrozen);
+
+	// ── 귀환·강화·등록 ──────────────────────────────────
+	void StartReturnHome();
+	void TickReturn();
+	void FinishReturnHome();
+	void ApplyBossBuff();
+	void ClearBossBuff();
+	void RegisterActiveBoss(bool bActive);
 
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void EndEntrance();
 	void EndPhase2Transition();
 	void DestroyMinions();
 	void ClearFightTimers();
+	void ClearExtraStrikeTimers();
 	void PlayShakeLocally(const FVector& Epicenter, float Scale) const;
+	void ClearTelegraphVFX();
+	void ClearExtraTelegraphVFX(int32 ExtraIndex);
 
-	UPROPERTY(ReplicatedUsing = OnRep_Phase)
-	int32 Phase = 1;
+	UPROPERTY(ReplicatedUsing = OnRep_Phase) int32 Phase = 1;
+	UPROPERTY(Replicated) bool bEnraged = false;
 
-	UPROPERTY(Replicated)
-	bool bEnraged = false;
-
-	/** 패턴 시작 순간의 대상 위치. 잠수가 "그 자리"를 노리게 한다(추적 안 함 → 피할 수 있음). */
 	FVector PatternTargetLocation = FVector::ZeroVector;
-
 	TWeakObjectPtr<ATDCharacterBase> PatternTarget;
-
 	ETDBossPatternPhase CurrentPatternPhase = ETDBossPatternPhase::None;
 	int32 CurrentPattern = INDEX_NONE;
 
 private:
+	/** 원판·도넛 판정의 세로 반경. 바닥에서 이 두 배 높이까지 맞는다. */
+	static constexpr float HitCylinderHalfHeight = 250.f;
+
 	bool bFightActive = false;
 	bool bInEntrance = false;
 	bool bInPhaseTransition = false;
+	bool bReturning = false;
 
-	// 돌진
 	bool bDashing = false;
 	FVector DashDirection = FVector::ForwardVector;
+	int32 DashesLeft = 1;
 
-	// 잠수
+	// 잠수: 땅속 이동 → 솟구침(상승·하강) → 착지
 	bool bBurrowed = false;
+	bool bEmerging = false;
 	FVector BurrowFrom = FVector::ZeroVector;
 	FVector BurrowTo = FVector::ZeroVector;
 	float BurrowElapsed = 0.f;
 	float BurrowDuration = 1.f;
+	float EmergeElapsed = 0.f;
+	bool bEmergeHitDone = false;
 
 	int32 LastPattern = INDEX_NONE;
 	TArray<float> PatternReadyTime;
+	float NextPatternAllowedTime = 0.f;
 	TSet<TWeakObjectPtr<AActor>> HitThisStrike;
+	bool bExtrasScheduled = false;
+	TArray<FTimerHandle> ExtraStrikeHandles;
 
 	FVector HomeLocation = FVector::ZeroVector;
+	FRotator HomeRotation = FRotator::ZeroRotator;   // 도착 시 이 방향으로 선다
 	float FightStartTime = 0.f;
 
 	TArray<TWeakObjectPtr<ATDEnemyBase>> Minions;
+	FTDStatSourceHandle BossBuffHandle;
+
+	/** 본 판정 예고 VFX(박스 갈래·도넛 둘레만큼 여러 개). 머신마다 자기 것. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UNiagaraComponent>> TelegraphVFXComponents;
+	/** 추가 타격별 예고 VFX. 인덱스 = ExtraStrikes 인덱스. */
+	UPROPERTY(Transient) TArray<FTDBossVFXBatch> ExtraTelegraphVFX;
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle StrikeTickHandle;
 	FTimerHandle EntranceTimerHandle;
 	FTimerHandle EnrageTimerHandle;
 	FTimerHandle TransitionTimerHandle;
-
+	FTimerHandle ReturnTimeoutHandle;
 	FDelegateHandle HealthChangedHandle;
 };

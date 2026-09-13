@@ -115,6 +115,13 @@ public:
 		return ActiveDialogueSessionId != 0
 			|| LocalDialogueSessionId != 0;
 	}
+	
+	/** 서버 또는 로컬에서 챕터 화면이 진행 중인지 확인합니다. */
+	bool IsChapterPresentationActive() const
+	{
+		return !ActiveChapterId.IsNone()
+			|| bLocalChapterVisible;
+	}
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Dialogue")
 	FTDFlowOnDialogueLine OnDialogueLine;
@@ -162,7 +169,7 @@ private:
 	void CheckDialogueDistance();
 
 	void SendCurrentDialogueLine();
-	void EndDialogueSession();
+	void EndDialogueSession(bool bCompletedNormally = false);
 
 	bool ApplyDialogueAction(
 		const FTDDialogueAction& Action);
@@ -239,4 +246,5 @@ private:
 	FTimerHandle BindRetryTimerHandle;
 	FTimerHandle ChapterTimerHandle;
 	FTimerHandle DialogueDistanceTimerHandle;
+	
 };

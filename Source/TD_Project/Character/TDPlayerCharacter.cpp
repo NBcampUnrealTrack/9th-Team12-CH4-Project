@@ -13,6 +13,22 @@
 #include "Player/TDPlayerState.h"
 #include "Interaction/TDInteractionComponent.h"
 #include "Skill/TDSkillComponent.h"
+#include "GameFramework/GameStateBase.h"
+#include "Net/UnrealNetwork.h"
+
+void ATDPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME_CONDITION(ATDPlayerCharacter, AutoRespawnEndServerTime, COND_OwnerOnly);
+}
+
+float ATDPlayerCharacter::GetAutoRespawnRemainingSeconds() const
+{
+    if (!IsDead() || AutoRespawnEndServerTime <= 0.0 || !GetWorld()) return -1.f;
+    const AGameStateBase* State = GetWorld()->GetGameState();
+    const double Now = State ? State->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+    return FMath::Max(0.f, static_cast<float>(AutoRespawnEndServerTime - Now));
+}
 
 ATDPlayerCharacter::ATDPlayerCharacter()
 {
@@ -390,6 +406,9 @@ void ATDPlayerCharacter::HandleDeath()
 	TWeakObjectPtr<APlayerController> WeakController(OwningController);
 	TWeakObjectPtr<UWorld> WeakWorld(GetWorld());
 
+    AutoRespawnEndServerTime = GetWorld()->GetTimeSeconds() + Delay;
+    ForceNetUpdate();
+
 	GetWorldTimerManager().SetTimer(AutoRespawnTimerHandle,
 		[WeakController, WeakWorld]()
 		{
@@ -415,6 +434,7 @@ void ATDPlayerCharacter::HandleRespawn()
 	if (HasAuthority())
 	{
 		GetWorldTimerManager().ClearTimer(AutoRespawnTimerHandle);
+        AutoRespawnEndServerTime = 0.0;
 	}
 }
 

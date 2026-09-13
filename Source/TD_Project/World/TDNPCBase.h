@@ -15,6 +15,7 @@ class USphereComponent;
 class UTDPersonalWorldStateComponent;
 class UTDQuestComponent;
 class UTDKoreanDailyResetSubsystem;
+class UTDShopComponent;
 class UWidgetComponent;
 class UDataTable;
 class UTexture2D;
@@ -94,6 +95,22 @@ public:
 
 	bool CanReceiveGifts() const;
 
+	/** 정상적인 대화 종료 후 강화 기능을 제공하는 NPC인지 확인합니다. */
+	UFUNCTION(BlueprintPure, Category = "TD|NPC|Enhance")
+	bool IsEnhanceNPC() const;
+
+	/** DT_NPC에서 상점 사용이 켜져 있고 ShopId도 지정된 NPC인지 확인합니다. */
+	UFUNCTION(BlueprintPure, Category = "TD|NPC|Shop")
+	bool IsShopNPC() const;
+
+	UFUNCTION(BlueprintPure, Category = "TD|NPC|Shop")
+	FName GetShopId() const;
+
+	UTDShopComponent* GetShopComponent() const
+	{
+		return ShopComponent;
+	}
+	
 	int32 GetGiftAffectionValue(
 		FName ItemId) const;
 
@@ -130,6 +147,11 @@ protected:
 		Category = "TD|NPC")
 	TObjectPtr<UWidgetComponent>
 		QuestMarkerComponent;
+
+	/** 모든 NPC가 가지되, DT_NPC에서 상점 사용이 켜진 경우에만 상인으로 등록됩니다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+		Category = "TD|NPC|Shop")
+	TObjectPtr<UTDShopComponent> ShopComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly,
 		Category = "TD|NPC")

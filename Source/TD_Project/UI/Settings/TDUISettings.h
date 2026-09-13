@@ -8,6 +8,7 @@ class UTDTypographyThemeDA;
 class UTDWindowBaseWidget;
 class UTDItemTooltipWidget;
 class UDataTable;
+class UTDRespawnWidget;
 
 /** Project Settings > Game > TD UI에 표시되는 프로젝트 공용 UI 설정. */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "TD UI"))
@@ -16,6 +17,9 @@ class TD_PROJECT_API UTDUISettings : public UDeveloperSettings
 	GENERATED_BODY()
 
 public:
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Respawn")
+    TSoftClassPtr<UTDRespawnWidget> RespawnWidgetClass;
+
 	/** 아이템/향후 스킬의 공용 카드. 기존 HUD 에셋을 변경하지 않고 이 클래스만 교체한다. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
 		TSoftClassPtr<UTDItemTooltipWidget> ItemTooltipClass;

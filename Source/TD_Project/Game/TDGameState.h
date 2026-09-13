@@ -8,6 +8,11 @@
 /** 존이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnZoneChanged, FGameplayTag, NewZoneId);
 
+class ATDBossCharacter;
+
+/** 전투 중인 보스가 바뀌었을 때. nullptr 면 전투 끝. 서버·클라이언트 양쪽에서 불린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnActiveBossChanged, ATDBossCharacter*, NewBoss);
+
 /**
  * 모든 클라이언트가 알아야 하는 월드 상태.
  *
@@ -46,6 +51,19 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|World")
 	FTDOnZoneChanged OnZoneChanged;
+	
+	/**
+	* 지금 전투 중인 보스. 보스 체력바·타이틀 같은 HUD 가 "누구를 보여줄지" 여기서 받는다.
+	* 보스가 BeginFight 에 등록하고 사망·리셋에 해제한다. 늦게 접속해도 복제로 받는다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "TD|Boss")
+	ATDBossCharacter* GetActiveBoss() const { return ActiveBoss; }
+
+	/** 서버 전용. 보스 클래스가 부른다. */
+	void SetActiveBoss(ATDBossCharacter* NewBoss);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss")
+	FTDOnActiveBossChanged OnActiveBossChanged;
 
 private:
 	UFUNCTION()
@@ -53,4 +71,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_ZoneId)
 	FGameplayTag ZoneId;
+	
+	UFUNCTION()
+	void OnRep_ActiveBoss();
+
+	UPROPERTY(ReplicatedUsing = OnRep_ActiveBoss)
+	TObjectPtr<ATDBossCharacter> ActiveBoss;
 };

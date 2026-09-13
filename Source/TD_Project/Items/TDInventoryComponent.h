@@ -9,6 +9,7 @@
 
 class UDataTable;
 struct FTDItemRow;
+class UTDEnhanceServiceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnInventoryChanged);
 
@@ -59,6 +60,18 @@ public:
 	 * 남은 수량을 어디로 되돌릴지 호출한 쪽이 다시 결정해야 하기 때문이다.
 	 */
 	bool AddItem(FName ItemId, int32 Count = 1);
+
+	/**
+	 * 여러 종류의 아이템이 한꺼번에 전부 들어갈 수 있는지 계산합니다.
+	 * 장바구니 구매처럼 한 종류만 넣고 나머지가 실패하면 안 되는 곳에서 씁니다.
+	 */
+	bool CanAddItems(const TMap<FName, int32>& Items) const;
+
+	/**
+	 * 여러 종류를 한 묶음으로 넣습니다. 전부 들어갈 수 없으면 하나도 넣지 않습니다.
+	 * 서버 전용이며, Count가 0 이하인 항목이나 없는 ItemId가 섞여 있어도 실패합니다.
+	 */
+	bool AddItems(const TMap<FName, int32>& Items);
 
 	/** 슬롯에서 수량만큼 덜어낸다. 퀘스트 아이템처럼 버릴 수 없는 것은 거부된다. */
 	bool RemoveItem(int32 SlotIndex, int32 Count = 1);
@@ -163,6 +176,12 @@ public:
 
 	const TArray<FTDItemInstance>& GetItems() const { return ItemContainer.Items; }
 
+	/** 서버에서 가방 내용이 변경될 때 증가하는 임시 번호입니다. */
+	int64 GetInventoryRevision() const
+	{
+		return InventoryRevision;
+	}
+	
 	/** 내용이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다. */
 	UPROPERTY(BlueprintAssignable, Category = "TD|Inventory")
 	FTDOnInventoryChanged OnInventoryChanged;
@@ -273,4 +292,17 @@ private:
 
 	UFUNCTION()
 	void OnRep_SlotCapacity();
+	
+	friend class UTDEnhanceServiceComponent;
+
+	/**
+	 * 강화 서비스만 호출하는 실제 강화 처리입니다.
+	 * 블루프린트나 클라이언트에서 직접 호출할 수 없습니다.
+	 */
+	ETDEnhanceResult EnhanceItemForService(
+		int32 SlotIndex,
+		int32& OutNewLevel);
+
+	/** 저장할 필요가 없는 서버 실행 중 변경 번호입니다. */
+	int64 InventoryRevision = 0;
 };

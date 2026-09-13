@@ -20,6 +20,8 @@
 #include "TimerManager.h"
 #include "Widgets/SViewport.h"
 #include "World/TDNPCBase.h"
+#include "Enhance/TDEnhanceServiceComponent.h"
+#include "Shop/TDShopServiceComponent.h"
 
 UTDInteractionFlowComponent::UTDInteractionFlowComponent()
 {
@@ -481,7 +483,21 @@ void UTDInteractionFlowComponent::BeginDialogueFromSource(
 	{
 		return;
 	}
+	
+	// 새 대화가 시작되면 열려 있던 강화창과 강화 이용 상태를 종료합니다.
+	if (UTDEnhanceServiceComponent* Enhance =
+		GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
+	{
+		Enhance->EndService();
+	}
 
+	// 상점 이용 중 다시 말을 걸면 기존 상점 세션부터 닫습니다.
+	if (UTDShopServiceComponent* Shop =
+		GetOwner()->FindComponentByClass<UTDShopServiceComponent>())
+	{
+		Shop->EndService();
+	}
+	
 	DialogueSessionCounter =
 		DialogueSessionCounter >= MAX_int32
 			? 1
@@ -790,7 +806,7 @@ void UTDInteractionFlowComponent::ServerAdvanceDialogue_Implementation(
 
 	if (Row->NextRow.IsNone())
 	{
-		EndDialogueSession();
+		EndDialogueSession(true);
 		return;
 	}
 
@@ -880,8 +896,8 @@ void UTDInteractionFlowComponent::ServerAcceptQuest_Implementation(
 		return;
 	}
 
-	// 성공 또는 다른 실패 사유는 기존처럼 대화를 종료한다.
-	EndDialogueSession();
+	// 수락 성공일 때만 강화창을 열 수 있는 정상 종료로 처리합니다.
+	EndDialogueSession(Result == ETDQuestActionResult::Success);
 }
 
 void UTDInteractionFlowComponent::ServerDeclineQuest_Implementation(
@@ -1105,7 +1121,8 @@ UTDInteractionFlowComponent::GetGiftItemViews() const
 	return Result;
 }
 
-void UTDInteractionFlowComponent::EndDialogueSession()
+void UTDInteractionFlowComponent::EndDialogueSession(
+	bool bCompletedNormally)
 {
 	if (GetOwner() == nullptr || !GetOwner()->HasAuthority())
 	{
@@ -1120,6 +1137,11 @@ void UTDInteractionFlowComponent::EndDialogueSession()
 
 	const int32 EndedSessionId = ActiveDialogueSessionId;
 
+	ATDNPCBase* CompletedNPC =
+		bCompletedNormally
+			? Cast<ATDNPCBase>(ActiveDialogueSource.Get())
+			: nullptr;
+
 	ActiveDialogueSessionId = 0;
 	ActiveDialogueSource = nullptr;
 	ActiveDialogueTable = nullptr;
@@ -1131,14 +1153,33 @@ void UTDInteractionFlowComponent::EndDialogueSession()
 		ClientCloseDialogue(EndedSessionId);
 	}
 
-	// 이동 중단, 이동 모드 변경, 스킬 취소는 하지 않는다.
-
 	if (!PendingChapterQuestId.IsNone())
 	{
 		const FName ChapterQuestId = PendingChapterQuestId;
 		PendingChapterQuestId = NAME_None;
 
 		StartChapter(ChapterQuestId);
+	}
+
+	if (EndedSessionId != 0 && IsValid(CompletedNPC))
+	{
+		// 하나의 대화 뒤에 두 서비스 창이 겹치지 않게 강화 NPC를 우선합니다.
+		if (CompletedNPC->IsEnhanceNPC())
+		{
+			if (UTDEnhanceServiceComponent* Enhance =
+				GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
+			{
+				Enhance->StartForNPC(CompletedNPC);
+			}
+		}
+		else if (CompletedNPC->IsShopNPC())
+		{
+			if (UTDShopServiceComponent* Shop =
+				GetOwner()->FindComponentByClass<UTDShopServiceComponent>())
+			{
+				Shop->StartForNPC(CompletedNPC);
+			}
+		}
 	}
 }
 

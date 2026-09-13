@@ -34,4 +34,5 @@ private:
     TWeakObjectPtr<UTDProgressionComponent> Source;
     FName SkillId;
     int32 TooltipLevel = INDEX_NONE;
+    int32 TooltipCharacterLevel = INDEX_NONE;
 };

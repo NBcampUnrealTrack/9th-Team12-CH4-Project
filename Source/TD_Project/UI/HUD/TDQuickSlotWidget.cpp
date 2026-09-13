@@ -5,6 +5,7 @@
 #include "GameFramework/Pawn.h"
 #include "Skill/TDSkillComponent.h"
 #include "UI/Common/Tooltip/TDItemTooltipWidget.h"
+#include "UI/Common/Tooltip/TDTooltipStatics.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDItemRow.h"
@@ -84,8 +85,15 @@ void UTDQuickSlotWidget::RefreshSources()
 	UTDInventoryComponent* NewInventory = State ? State->GetInventoryComponent() : nullptr;
     UTDProgressionComponent* Progression = State ? State->GetProgressionComponent() : nullptr;
     const FName ClassId = Progression ? Progression->GetClassId() : NAME_None;
-    if (SkillSource.Get() != Progression || DisplayedSkillClass != ClassId)
+    TArray<int32> Levels;
+    for (int32 SkillSlotIndex = 1; SkillSlotIndex <= 3; ++SkillSlotIndex)
+        Levels.Add(Progression ? Progression->GetSkillLevel(Progression->GetSkillForSlot(SkillSlotIndex)) : 0);
+    const int32 CharacterLevel = Progression ? Progression->GetLevel() : 0;
+    if (SkillSource.Get() != Progression || DisplayedSkillClass != ClassId
+        || DisplayedSkillLevels != Levels || DisplayedCharacterLevel != CharacterLevel)
     {
+        DisplayedSkillLevels = Levels;
+        DisplayedCharacterLevel = CharacterLevel;
         SkillSource = Progression;
         DisplayedSkillClass = ClassId;
         RefreshSkillSlots();
@@ -253,13 +261,16 @@ void UTDQuickSlotWidget::RefreshSkillSlots()
             FName(*FString::Printf(TEXT("QuickSlotKeyOverlay_%d"), Index + 7))) : nullptr;
         if (!TooltipHost) TooltipHost = Visual;
         TooltipHost->SetVisibility(ESlateVisibility::Visible);
-        const TCHAR* Keys[] = {TEXT("Q"), TEXT("W"), TEXT("E")};
-        const FText Details = Row ? FText::Format(
-            NSLOCTEXT("TDQuickSlot", "SkillTooltip", "액티브 스킬 · {0}\n요구 레벨: {1}\n기본 마나: {2}\n기본 재사용 대기시간: {3}초"),
-            FText::FromString(Keys[Index]), FText::AsNumber(Row->RequiredLevel),
-            FText::AsNumber(Row->ManaCost), FText::AsNumber(Row->Cooldown)) : FText::GetEmpty();
-        UTDItemTooltipWidget::AttachText(this, TooltipHost,
-            Row ? Row->DisplayName : FText::GetEmpty(), Details);
+        FTDTooltipData TooltipData = UTDTooltipStatics::MakeSkillTooltip(Progression, SkillId,
+            Progression ? Progression->GetSkillLevel(SkillId) : 0);
+        if (Row)
+        {
+            const TCHAR* Keys[] = {TEXT("Q"), TEXT("W"), TEXT("E")};
+            TooltipData.Footer = FText::Format(NSLOCTEXT("TDQuickSlot", "SkillKey", "단축키: {0}{1}"),
+                FText::FromString(Keys[Index]), TooltipData.Footer.IsEmpty() ? FText::GetEmpty()
+                : FText::Format(NSLOCTEXT("TDQuickSlot", "PreviewFooter", "\n{0}"), TooltipData.Footer));
+        }
+        UTDItemTooltipWidget::AttachData(this, TooltipHost, TooltipData);
         if (NameText)
         {
             NameText->SetText(Row ? Row->DisplayName : FText::GetEmpty());

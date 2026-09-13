@@ -5,8 +5,9 @@
 #include "Components/Widget.h"
 #include "UI/Common/Tooltip/TDItemTooltipWidget.h"
 
-void UTDItemSlotVisualWidget::SetItemTooltipSource(FName ItemId, FText Hint)
+void UTDItemSlotVisualWidget::SetItemTooltipSource(FName ItemId, FText Hint, int32 EnhanceLevel)
 {
+	TooltipEnhanceLevel = EnhanceLevel;
 	TooltipItemId = ItemId;
 	TooltipHint = Hint;
 	if (ItemId.IsNone()) UTDItemTooltipWidget::ClearItemTooltip(this);
@@ -17,7 +18,7 @@ void UTDItemSlotVisualWidget::RefreshItemTooltip()
 {
 	if (!TooltipItemId.IsNone())
 		UTDItemTooltipWidget::AttachItem(this, SlotVisualData.bHasItem ? TooltipItemId : NAME_None,
-			SlotVisualData.Count, TooltipHint);
+			SlotVisualData.Count, TooltipHint, nullptr, TooltipEnhanceLevel);
 }
 
 void UTDItemSlotVisualWidget::NativeDestruct()

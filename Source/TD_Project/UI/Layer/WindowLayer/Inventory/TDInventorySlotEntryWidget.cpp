@@ -18,9 +18,9 @@ void UTDInventorySlotEntryWidget::RefreshItemTooltip()
 	const bool bHasItem = IsValid(SlotListItem) && SlotListItem->bHasItem;
 	UTDItemTooltipWidget::AttachItem(this,
 		bHasItem ? SlotListItem->ItemInstance.ItemId : NAME_None,
-		bHasItem ? SlotListItem->ItemInstance.Count : 0,
-		bHasItem ? SlotListItem->InteractionHint : FText::GetEmpty(),
-		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr);
+		bHasItem ? SlotListItem->ItemInstance.Count : 0, FText::GetEmpty(),
+		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr,
+		bHasItem ? SlotListItem->ItemInstance.EnhanceLevel : 0);
 }
 
 void UTDInventorySlotEntryWidget::NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -49,36 +49,12 @@ UTDInventoryComponent* UTDInventorySlotEntryWidget::GetDraggableInventory() cons
 
 FReply UTDInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
-	// WBP_InventoryEntry 안쪽의 슬롯 이미지가 마우스를 먼저 잡으면 TileView의
-	// OnItemClicked가 호출되지 않을 수 있다. 상점이 직접 콜백을 등록한 항목만
-	// 이 경로로 먼저 전달하며, 일반 인벤토리 슬롯 동작에는 영향을 주지 않는다.
-	if (Event.GetEffectingButton() == EKeys::LeftMouseButton
-		&& IsValid(SlotListItem)
-		&& SlotListItem->bHasItem
-		&& SlotListItem->bInteractionEnabled
-		&& SlotListItem->OnDirectClick.IsBound())
-	{
-		SlotListItem->OnDirectClick.Broadcast(SlotListItem);
-		return FReply::Handled();
-	}
-
 	if (Event.GetEffectingButton() == EKeys::RightMouseButton && IsValid(SlotListItem))
 	{
 		if (UTDInventoryContentWidget* Content = SlotListItem->GetTypedOuter<UTDInventoryContentWidget>())
 		{
 			Content->RequestItemAction(SlotListItem);
 			return FReply::Handled();
-		}
-	}
-	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && IsValid(SlotListItem))
-	{
-		if (UTDInventoryContentWidget* Content =
-			SlotListItem->GetTypedOuter<UTDInventoryContentWidget>())
-		{
-			if (Content->HandleExternalSlotClick(SlotListItem))
-			{
-				return FReply::Handled();
-			}
 		}
 	}
 	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && GetDraggableInventory())
@@ -127,9 +103,6 @@ void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObj
 		{
 			SlotVisualWidget->ClearSlotVisual();
 		}
-
-		SlotVisualWidget->SetSlotEnabled(
-			!SlotListItem || SlotListItem->bInteractionEnabled);
 	}
 
 	BP_OnSlotListItemSet(SlotListItem);
@@ -142,7 +115,6 @@ void UTDInventorySlotEntryWidget::NativeOnEntryReleased()
 	if (SlotVisualWidget)
 	{
 		SlotVisualWidget->ClearSlotVisual();
-		SlotVisualWidget->SetSlotEnabled(true);
 	}
 
 	SlotListItem = nullptr;

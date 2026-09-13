@@ -3,6 +3,7 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/TDPlayerState.h"
+#include "Character/TDPlayerCharacter.h"
 
 void UTDPlayerStatsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -31,11 +32,18 @@ void UTDPlayerStatsSubsystem::PlayerControllerChanged(APlayerController* NewPlay
  ATDPlayerState* NewPlayerState = IsValid(NewPlayerController)
   ? NewPlayerController->GetPlayerState<ATDPlayerState>() : nullptr;
  if (!IsValid(NewPlayerState)) NewPlayerState = nullptr;
- if (BoundController.Get() == NewPlayerController && BoundPlayerState.Get() == NewPlayerState
-  && PlayerStatsViewModel->HasPlayerState == (NewPlayerState != nullptr)) return;
- BoundController = NewPlayerController;
- BoundPlayerState = NewPlayerState;
- PlayerStatsViewModel->SetSource(NewPlayerState);
+ if (BoundController.Get() != NewPlayerController || BoundPlayerState.Get() != NewPlayerState
+  || PlayerStatsViewModel->HasPlayerState != (NewPlayerState != nullptr))
+ {
+  BoundController = NewPlayerController;
+  BoundPlayerState = NewPlayerState;
+  PlayerStatsViewModel->SetSource(NewPlayerState);
+ }
+ // Controller/PlayerState가 그대로여도 Pawn은 부활이나 캐릭터 선택으로 바뀔 수 있다.
+ ATDPlayerCharacter* Character = IsValid(NewPlayerController)
+  && NewPlayerController->IsLocalController() && NewPlayerController->GetLocalPlayer() == GetLocalPlayer()
+  ? Cast<ATDPlayerCharacter>(NewPlayerController->GetPawn()) : nullptr;
+ PlayerStatsViewModel->SetDeathSource(Character);
 }
 
 void UTDPlayerStatsSubsystem::RefreshSource()

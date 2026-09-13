@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "TDBossPattern.generated.h"
 
+class UNiagaraSystem;
+
 /** 판정 모양. 박스는 정면 방향으로 회전한다. */
 UENUM(BlueprintType)
 enum class ETDBossHitShape : uint8
@@ -115,4 +117,24 @@ struct FTDBossPatternSpec
 	/** 타격 순간 화면 흔들림 크기. 0 = 없음, 1 = 보통, 3 = 큼. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
 	float ShakeScale = 1.f;
+	
+	/** 맞은 대상을 밀어내는 속도(cm/s). 0 이면 없음. 정면 방향 + 위로 절반. 잠수는 위로 크게. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
+	float Knockback = 0.f;
+	
+	// ── VFX (희진님이 채운다. 비우면 없음) ──
+
+	/** 선딜 동안 판정 자리에 띄우는 루프 이펙트. 타격 시작에 지운다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TSoftObjectPtr<UNiagaraSystem> TelegraphVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
+	float TelegraphVFXScale = 1.f;
+
+	/** 타격 순간 판정 자리에 한 번 터지는 이펙트. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TSoftObjectPtr<UNiagaraSystem> StrikeVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
+	float StrikeVFXScale = 1.f;
 };

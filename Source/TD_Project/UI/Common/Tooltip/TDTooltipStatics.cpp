@@ -273,7 +273,7 @@ FText UTDTooltipStatics::FormatSkillDescription(const UTDProgressionComponent* P
 	// ── 시전 ──
 	Args.Add(TEXT("Level"), FText::AsNumber(EffectiveLevel));
 	Args.Add(TEXT("Mana"), FormatAmount(Row->ManaCost + Row->ManaCostPerLevel * (EffectiveLevel - 1), 0));
-	Args.Add(TEXT("Cooldown"), FormatAmount(Row->Cooldown, 1));
+	Args.Add(TEXT("Cooldown"), FormatAmount(FMath::Max(0.f, Row->Cooldown + Row->CooldownPerLevel * (EffectiveLevel - 1)), 1));
 	Args.Add(TEXT("CastTime"), FormatAmount(Row->CastDelay, 1));
 	Args.Add(TEXT("Duration"), FormatAmount(Row->ChannelDuration, 1));
 	Args.Add(TEXT("Interval"), FormatAmount(Row->ChannelInterval, 2));
@@ -355,6 +355,7 @@ FTDTooltipData UTDTooltipStatics::MakeSkillTooltip(const UTDProgressionComponent
 	Data.Title = Row->DisplayName;
 	Data.Icon = Row->Icon;
 	Data.Description = FormatSkillDescription(Progression, SkillId, Level);
+	if (Level <= 0) Data.Footer = LOCTEXT("UnlearnedPreview", "미습득 · 1레벨 효과 미리보기");
 
 	// 레벨은 인자를 그대로 쓴다. 설명은 0 을 1 로 보지만 여기서까지 그러면
 	// 안 찍은 스킬이 "Lv.1" 로 보여 이미 배운 것처럼 읽힌다.
@@ -392,10 +393,10 @@ FTDTooltipData UTDTooltipStatics::MakeSkillTooltip(const UTDProgressionComponent
 		AddLine(LOCTEXT("SkillMana", "마나 소모"), FormatAmount(Mana, 0));
 	}
 
-	if (Row->Cooldown > 0.f)
+	if (Row->Cooldown > 0.f || Row->CooldownPerLevel > 0.f)
 	{
 		AddLine(LOCTEXT("SkillCooldown", "재사용 대기"),
-			FText::Format(LOCTEXT("Seconds", "{0}초"), FormatAmount(Row->Cooldown, 1)));
+			FText::Format(LOCTEXT("Seconds", "{0}초"), FormatAmount(FMath::Max(0.f, Row->Cooldown + Row->CooldownPerLevel * (EffectiveLevel - 1)), 1)));
 	}
 
 	// 범위가 없는 스킬(자기 자신에게 거는 것)은 사거리를 말할 것이 없다.

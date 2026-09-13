@@ -26,6 +26,8 @@
 #include "World/TDNPCBase.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "Engine/LocalPlayer.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
 
 ATDPlayerController::ATDPlayerController()
 {
@@ -43,6 +45,9 @@ void ATDPlayerController::SetupInputComponent()
 
 void ATDPlayerController::ToggleMouseCursor()
 {
+ if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+  if (UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+   if (UI->IsChatInputActive()) return;
     const ATDCharacterBase* ControlledCharacter = Cast<ATDCharacterBase>(GetPawn());
     if (ControlledCharacter && ControlledCharacter->IsDead()) return;
 	if (!IsLocalController() || GetPawn() == nullptr)

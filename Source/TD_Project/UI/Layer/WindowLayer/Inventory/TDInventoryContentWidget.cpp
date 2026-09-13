@@ -174,6 +174,11 @@ void UTDInventoryContentWidget::NativeDestruct()
 
 void UTDInventoryContentWidget::BindInventoryComponent()
 {
+	if (bUseExternalItems)
+	{
+		return;
+	}
+
 	UTDInventoryComponent* NewInventory = nullptr;
 	if (const APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -213,6 +218,12 @@ void UTDInventoryContentWidget::SetInventoryOverrideTable(UDataTable* InTable)
 
 void UTDInventoryContentWidget::RefreshInventory()
 {
+	if (bUseExternalItems)
+	{
+		BuildExternalInventory();
+		return;
+	}
+
 	// WBP에서 테스트 테이블을 지정한 경우에만 실제 플레이어 인벤토리를 대체한다.
 	if (IsValid(InventoryOverrideTable))
 	{
@@ -299,8 +310,68 @@ void UTDInventoryContentWidget::SetDisplayedGold(int64 InGold)
 	RefreshFooter();
 }
 
+void UTDInventoryContentWidget::SetExternalItems(
+	const TArray<FTDInventoryExternalItemView>& InItems,
+	int32 InSlotCapacity)
+{
+	if (IsValid(InventoryComponent))
+	{
+		InventoryComponent->OnInventoryChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleInventoryChanged);
+		InventoryComponent = nullptr;
+	}
+
+	bUseExternalItems = true;
+	ExternalItems = InItems;
+	ExternalSlotCapacity = FMath::Clamp(
+		FMath::Max(InSlotCapacity, InItems.Num()),
+		1,
+		UTDInventoryComponent::MaxSlotCapacity);
+
+	RefreshInventory();
+}
+
+bool UTDInventoryContentWidget::HandleExternalSlotClick(
+	UTDInventorySlotListItem* Item)
+{
+	if (!bUseExternalItems
+		|| !IsValid(Item)
+		|| Item->GetTypedOuter<UTDInventoryContentWidget>() != this)
+	{
+		return false;
+	}
+
+	if (Item->bHasItem && Item->bInteractionEnabled)
+	{
+		OnExternalSlotClicked.Broadcast(
+			Item->SlotIndex,
+			Item->ItemInstance.ItemId);
+	}
+
+	// 비활성 외부 슬롯도 일반 인벤토리의 사용·장착·드래그로 넘어가면 안 됩니다.
+	return true;
+}
+
 void UTDInventoryContentWidget::RefreshFooter()
 {
+	if (bUseExternalItems)
+	{
+		if (GoldText)
+		{
+			GoldText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (CapacityText)
+		{
+			CapacityText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (ExpandInventoryButton)
+		{
+			ExpandInventoryButton->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
 	if (GoldText)
 	{
 		FNumberFormattingOptions Format;
@@ -338,6 +409,12 @@ void UTDInventoryContentWidget::RefreshFooter()
 
 void UTDInventoryContentWidget::CheckInventorySource()
 {
+	if (bUseExternalItems)
+	{
+		RefreshFooter();
+		return;
+	}
+
 	UTDInventoryComponent* PreviousInventory = InventoryComponent;
 	BindInventoryComponent();
 	UpdatePendingItemAction();
@@ -423,4 +500,60 @@ void UTDInventoryContentWidget::BuildInventoryFromTable(UDataTable* SourceTable)
 	}
 
 	InventoryTileView->SetListItems(ListItems);
+}
+
+void UTDInventoryContentWidget::BuildExternalInventory()
+{
+	if (!IsValid(InventoryTileView))
+	{
+		return;
+	}
+
+	SlotListItems.Reset();
+
+	TMap<int32, const FTDInventoryExternalItemView*> ItemsBySlot;
+	for (int32 Index = 0; Index < ExternalItems.Num(); ++Index)
+	{
+		const FTDInventoryExternalItemView& Item = ExternalItems[Index];
+		const int32 DisplaySlot = Item.SlotIndex >= 0 ? Item.SlotIndex : Index;
+
+		if (DisplaySlot >= 0 && DisplaySlot < ExternalSlotCapacity)
+		{
+			ItemsBySlot.Add(DisplaySlot, &Item);
+		}
+	}
+
+	TArray<UObject*> ListItems;
+	ListItems.Reserve(ExternalSlotCapacity);
+	SlotListItems.Reserve(ExternalSlotCapacity);
+
+	for (int32 SlotIndex = 0; SlotIndex < ExternalSlotCapacity; ++SlotIndex)
+	{
+		UTDInventorySlotListItem* SlotItem =
+			NewObject<UTDInventorySlotListItem>(this);
+		SlotItem->SlotIndex = SlotIndex;
+		SlotItem->bIsPreviewItem = true;
+
+		if (const FTDInventoryExternalItemView* const* Found =
+			ItemsBySlot.Find(SlotIndex))
+		{
+			const FTDInventoryExternalItemView& Source = **Found;
+			SlotItem->bHasItem = true;
+			SlotItem->ItemInstance.ItemId = Source.ItemId;
+			SlotItem->ItemInstance.SlotIndex = Source.SlotIndex;
+			SlotItem->ItemInstance.Count = FMath::Max(1, Source.Count);
+			SlotItem->DisplayName = Source.DisplayName;
+			SlotItem->Icon = Source.Icon;
+			SlotItem->Rarity = Source.Rarity;
+			SlotItem->InteractionHint = Source.InteractionHint;
+			SlotItem->bInteractionEnabled = Source.bInteractionEnabled;
+		}
+
+		SlotListItems.Add(SlotItem);
+		ListItems.Add(SlotItem);
+	}
+
+	InventoryTileView->SetListItems(ListItems);
+	RefreshFooter();
+	BP_OnInventoryRefreshed();
 }

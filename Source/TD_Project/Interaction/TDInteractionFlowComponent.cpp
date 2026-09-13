@@ -21,6 +21,7 @@
 #include "Widgets/SViewport.h"
 #include "World/TDNPCBase.h"
 #include "Enhance/TDEnhanceServiceComponent.h"
+#include "Shop/TDShopServiceComponent.h"
 
 UTDInteractionFlowComponent::UTDInteractionFlowComponent()
 {
@@ -488,6 +489,13 @@ void UTDInteractionFlowComponent::BeginDialogueFromSource(
 		GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
 	{
 		Enhance->EndService();
+	}
+
+	// 상점 이용 중 다시 말을 걸면 기존 상점 세션부터 닫습니다.
+	if (UTDShopServiceComponent* Shop =
+		GetOwner()->FindComponentByClass<UTDShopServiceComponent>())
+	{
+		Shop->EndService();
 	}
 	
 	DialogueSessionCounter =
@@ -1153,14 +1161,24 @@ void UTDInteractionFlowComponent::EndDialogueSession(
 		StartChapter(ChapterQuestId);
 	}
 
-	if (EndedSessionId != 0
-		&& IsValid(CompletedNPC)
-		&& CompletedNPC->IsEnhanceNPC())
+	if (EndedSessionId != 0 && IsValid(CompletedNPC))
 	{
-		if (UTDEnhanceServiceComponent* Enhance =
-			GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
+		// 하나의 대화 뒤에 두 서비스 창이 겹치지 않게 강화 NPC를 우선합니다.
+		if (CompletedNPC->IsEnhanceNPC())
 		{
-			Enhance->StartForNPC(CompletedNPC);
+			if (UTDEnhanceServiceComponent* Enhance =
+				GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
+			{
+				Enhance->StartForNPC(CompletedNPC);
+			}
+		}
+		else if (CompletedNPC->IsShopNPC())
+		{
+			if (UTDShopServiceComponent* Shop =
+				GetOwner()->FindComponentByClass<UTDShopServiceComponent>())
+			{
+				Shop->StartForNPC(CompletedNPC);
+			}
 		}
 	}
 }

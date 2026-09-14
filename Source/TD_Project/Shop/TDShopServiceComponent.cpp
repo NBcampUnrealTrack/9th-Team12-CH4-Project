@@ -287,6 +287,7 @@ FTDShopWindowView UTDShopServiceComponent::MakeView(
 				: Definition->DisplayName;
 			Entry.Icon = Definition->Icon;
 			Entry.Rarity = Definition->Rarity;
+			Entry.ItemType = Definition->ItemType;
 			Entry.Price = Source.Price;
 			Entry.bStackable = Definition->bStackable;
 		}
@@ -310,6 +311,8 @@ FTDShopWindowView UTDShopServiceComponent::MakeView(
 			: Definition->DisplayName;
 		Entry.Icon = Definition->Icon;
 		Entry.Rarity = Definition->Rarity;
+		Entry.ItemType = Definition->ItemType;
+		Entry.EnhanceLevel = Item.EnhanceLevel;
 		Entry.Count = Item.Count;
 		Entry.UnitSellPrice = UTDShopStatics::GetSellBackPrice(
 			Inventory,

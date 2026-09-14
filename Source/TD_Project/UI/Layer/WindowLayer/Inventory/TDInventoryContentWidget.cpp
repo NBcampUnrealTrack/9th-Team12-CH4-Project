@@ -164,6 +164,7 @@ void UTDInventoryContentWidget::NativeDestruct()
 	if (IsValid(InventoryComponent))
 	{
 		InventoryComponent->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
+		InventoryComponent->OnGoldChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
 	}
 
 	InventoryComponent = nullptr;
@@ -196,13 +197,16 @@ void UTDInventoryContentWidget::BindInventoryComponent()
 	if (IsValid(InventoryComponent))
 	{
 		InventoryComponent->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
+		InventoryComponent->OnGoldChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
 	}
 
 	InventoryComponent = NewInventory;
 	if (IsValid(InventoryComponent))
 	{
 		InventoryComponent->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::HandleInventoryChanged);
+		InventoryComponent->OnGoldChanged.AddUniqueDynamic(this, &ThisClass::HandleGoldChanged);
 	}
+	SetDisplayedGold(IsValid(InventoryComponent) ? InventoryComponent->GetGold() : 0);
 }
 
 void UTDInventoryContentWidget::SetInventoryOverrideTable(UDataTable* InTable)
@@ -304,6 +308,11 @@ void UTDInventoryContentWidget::HandleInventoryChanged()
 	}
 }
 
+void UTDInventoryContentWidget::HandleGoldChanged(int32 NewGold)
+{
+	SetDisplayedGold(NewGold);
+}
+
 void UTDInventoryContentWidget::SetDisplayedGold(int64 InGold)
 {
 	DisplayedGold = FMath::Max<int64>(0, InGold);
@@ -319,6 +328,7 @@ void UTDInventoryContentWidget::SetExternalItems(
 		InventoryComponent->OnInventoryChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleInventoryChanged);
+		InventoryComponent->OnGoldChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
 		InventoryComponent = nullptr;
 	}
 

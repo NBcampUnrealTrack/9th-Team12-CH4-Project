@@ -283,6 +283,17 @@ private:
 	/** 고른 슬롯 번호. 세이브를 다시 쓸 때 어느 캐릭터인지 알아야 하므로 서버가 들고 있는다. */
 	int32 SelectedSlotIndex = INDEX_NONE;
 
+	/**
+	 * 유니온 보너스를 다시 계산해 스탯에 등록한다. 서버 전용.
+	 *
+	 * 계정의 캐릭터 목록(CharacterSlots)에서 직업별 최고 레벨을 보고 DT_UnionBonus 를 적용한다.
+	 * 지금 캐릭터는 목록의 저장값 대신 실시간 레벨로 센다. 캐릭터 선택 직후와 레벨업 때 부른다.
+	 */
+	void RefreshUnionBonus();
+
+	/** RefreshUnionBonus 가 등록한 소스. 다음 갱신에 이 핸들로 갈아 끼운다. */
+	FTDStatSourceHandle UnionSourceHandle;
+
 	UFUNCTION()
 	void OnRep_CurrentZoneId();
 

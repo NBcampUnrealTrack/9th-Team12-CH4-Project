@@ -53,26 +53,28 @@ DAMAGE_START_RATIO = 0.4
 ACTIVES = [
     # ── 전사 ──
     ("Warrior_Blade", "검기", "전방으로 검기를 날려 적을 관통하며 공격력의 {Damage} 피해를 준다.",
-     "Warrior", 1, "ForwardBox", 600, 140, "Instant", 0.35, 0, 0, "Locked", (18, 60), None),
+     "Warrior", 1, "ForwardBox", 300, 250, "Instant", 0.35, 0, 0, "Locked", (18, 60), None),
 
-    ("Warrior_Guard", "방벽", "{CastTime}초 뒤 방벽을 세워 {Duration}초 동안 피해를 받지 않고 체력을 {Heal} 회복한다.",
-     "Warrior", 2, "Self", 0, 0, "Cast", 0.4, 0, 0, "Locked", (30, 90), None),
+    # 방벽은 즉발이다. 캐스팅이면 맞는 도중에 끊겨 정작 필요할 때 무적이 안 걸린다.
+    ("Warrior_Guard", "방벽", "방벽을 세워 {Duration}초 동안 피해를 받지 않고 체력을 {Heal} 회복한다.",
+     "Warrior", 2, "Self", 0, 0, "Instant", 0.1, 0, 0, "Locked", (30, 90), None),
 
-    ("Warrior_Cyclone", "폭풍베기", "주위를 휩쓸어 공격력의 {Damage} 피해를 준다.",
-     "Warrior", 3, "SelfRadius", 420, 0, "Instant", 0.5, 0, 0, "Locked", (60, 180), None),
+    # 폭풍베기는 몸 앞의 넓은 공간을 한 번에 터뜨린다. 이펙트는 상자 중심에 놓인다(VFX_OFFSET).
+    ("Warrior_Cyclone", "폭풍베기", "앞의 공간을 터뜨려 공격력의 {Damage} 피해를 준다.",
+     "Warrior", 3, "ForwardBox", 400, 300, "Instant", 0.5, 0, 0, "Locked", (60, 180), None),
 
     # ── 궁수 ──
-    ("Archer_Pierce", "관통사격", "적 하나를 꿰뚫어 공격력의 {Damage} 피해를 준다.",
+    ("Archer_Pierce", "스나이핑", "적 하나를 꿰뚫어 공격력의 {Damage} 피해를 준다.",
      "Archer", 1, "ForwardBox", 700, 80, "Instant", 0.3, 0, 0, "Locked", (16, 55), None),
 
-    ("Archer_Volley", "화살비", "넓은 범위에 화살을 퍼부어 공격력의 {Damage} 피해를 준다.",
+    ("Archer_Volley", "관통사격", "앞으로 길게 공격을 뻗어 공격력의 {Damage} 피해를 준다.",
      "Archer", 2, "ForwardBox", 700, 320, "Cast", 0.5, 0, 0, "Locked", (32, 95), None),
 
-    ("Archer_Storm", "폭풍의 화살", "사방으로 화살을 쏟아 공격력의 {Damage} 피해를 준다.",
+    ("Archer_Storm", "블리자드", "자신으로부터 뻗어나가는 얼음을 뽑아 공격력의 {Damage} 피해를 준다.",
      "Archer", 3, "SelfRadius", 600, 0, "Instant", 0.5, 0, 0, "Locked", (65, 190), None),
 
     # ── 마법사 ──
-    ("Mage_Field", "치유의 장", "주위에 장을 펼쳐 아군의 체력을 {Heal} 회복하고 적에게 공격력의 {Damage} 피해를 준다.",
+    ("Mage_Field", "치유의 늪", "주위에 장을 펼쳐 아군의 체력을 {Heal} 회복하고 적에게 공격력의 {Damage} 피해를 준다.",
      "Mage", 1, "SelfRadius", 400, 0, "Instant", 0.3, 0, 0, "Locked", (22, 70), None),
 
     ("Mage_Storm", "마력 폭풍", "{Duration}초 동안 주위에 폭풍을 일으켜 {Interval}초마다 공격력의 {Damage} 피해를 준다. "
@@ -125,6 +127,10 @@ COOLDOWN_OVERRIDE = {
 #   VFX_PATHS        {SkillId: 에셋 경로}
 #   VFX_BASE_SIZE    {SkillId: 이펙트가 원래 몇 cm 짜리인가}  Range / 이 값으로 키운다
 #   VFX_OFFSET       {SkillId: 몸에서 몇 cm 앞에서 시작하는가}  ForwardBox 에서만
+#   VFX_TRAVEL_TIME  {SkillId: 사거리 끝까지 몇 초에 날아가는가}  ForwardBox 에서만, 0 이면 제자리
+#
+# 값은 PIE 에서 TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간] 으로 맞춘 뒤 옮긴다.
+# 판정 범위(bDrawDebugShape)와 겹쳐 보면서 숫자를 바꾸면 재임포트 없이 바로 보인다.
 
 _SFX = "/Game/Art/SFX/NS_SFX_InUseSkill"
 
@@ -140,7 +146,21 @@ VFX_PATHS = {
     "Mage_Rally":      f"{_SFX}/NS_Skill_Yellow/NS_Skill_Yellow3.NS_Skill_Yellow3",
 }
 VFX_BASE_SIZE = {}
-VFX_OFFSET = {}
+
+VFX_OFFSET = {
+    # 몸 앞 공간에서 터지는 이펙트라 판정 상자 중심(사거리 400 의 절반)에 둔다.
+    # 사거리를 바꾸면 이 값도 절반으로 맞출 것.
+    "Warrior_Cyclone": 200,
+
+    # 화살은 손 근처에서 출발한다. 잠정치 — TD.SkillVFX 로 맞출 것.
+    "Archer_Pierce": 50,
+}
+
+VFX_TRAVEL_TIME = {
+    # 리본(꼬리)을 쓰는 에셋이라 이펙트 자체가 움직여야 앞으로 나간다.
+    # 700cm 를 0.25초 — 잠정치다. TD.SkillVFX 로 맞출 것.
+    "Archer_Pierce": 0.25,
+}
 
 
 # ── 패시브 ────────────────────────────────────────────────────
@@ -235,6 +255,7 @@ def build_skill_rows():
             cast_type, trim(cast_delay), trim(duration), trim(interval),
             movement, "()", VFX_PATHS.get(skill_id, ""),
             trim(VFX_BASE_SIZE.get(skill_id, 0)), trim(VFX_OFFSET.get(skill_id, 0)),
+            trim(VFX_TRAVEL_TIME.get(skill_id, 0)),
         ])
 
     for skill_id, name, class_id, stats in PASSIVES:
@@ -246,7 +267,7 @@ def build_skill_rows():
             "0", "0", "0", "0",
             "", "0", "0",
             "Instant", "0", "0", "0",
-            "Free", "()", "", "0", "0",
+            "Free", "()", "", "0", "0", "0",
         ])
 
     return rows
@@ -323,7 +344,7 @@ def main():
                "ManaCost", "ManaCostPerLevel", "Cooldown", "CooldownPerLevel",
                "ShapeTag", "Range", "Width",
                "CastType", "CastDelay", "ChannelDuration", "ChannelInterval",
-               "CastMovement", "ContextTags", "VFX", "VFXBaseSize", "VFXOffset"],
+               "CastMovement", "ContextTags", "VFX", "VFXBaseSize", "VFXOffset", "VFXTravelTime"],
               build_skill_rows())
 
     write_csv("DT_SkillEffect.csv",

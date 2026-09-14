@@ -240,4 +240,19 @@ struct FTDSkillRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	float VFXOffset = 0.f;
+
+	/**
+	 * ForwardBox 에서만 쓴다. 이펙트가 **몇 초에 걸쳐 사거리 끝까지 날아가는가**. 0 이면 제자리에 둔다.
+	 *
+	 * 앞으로 뻗는 이펙트는 두 종류다. 검기처럼 입자가 스스로 앞으로 날아가는 것은 제자리에
+	 * 두면 되고(0), 화살처럼 **이펙트 자체가 움직여야 꼬리(리본)가 그려지는 것**은 코드가
+	 * 옮겨 줘야 한다. 후자를 제자리에 두면 몸 앞에서 뿜기만 하고 나아가지 않는다.
+	 *
+	 * VFXOffset 에서 출발해 Range 에 닿으면 새 입자를 멈추고, 남은 입자는 스스로 사라진다.
+	 *
+	 * **표현만 날아간다.** 판정은 이 값과 무관하게 발동 순간에 난다 — 끝에 선 적도
+	 * 이펙트가 닿기 전에 이미 맞는다. 짧게(0.2~0.3초) 두면 차이가 보이지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast", meta = (ClampMin = "0"))
+	float VFXTravelTime = 0.f;
 };

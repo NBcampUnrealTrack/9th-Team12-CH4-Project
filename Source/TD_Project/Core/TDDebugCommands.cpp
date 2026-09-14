@@ -845,6 +845,115 @@ namespace TDDebugCommands
 			TEXT("스킬 '%s' 강화를 요청했다. (결과는 TD.DumpSkill, 스탯 반영은 TD.DumpStats)"), *Args[0]);
 	}
 
+	/**
+	 * 스킬 이펙트의 크기·위치를 테이블 재임포트 없이 맞춘다.
+	 *
+	 *   TD.SkillVFX                                      걸어 둔 임시 값 목록
+	 *   TD.SkillVFX <스킬ID>                             테이블 값과 지금 쓰는 값
+	 *   TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간]    임시 값을 건다. 빠진 인자는 지금 값 유지
+	 *   TD.SkillVFX clear                                전부 지운다
+	 *
+	 * 이 화면에만 걸린다. 맞으면 GenSkillTables.py 의 VFX_BASE_SIZE · VFX_OFFSET ·
+	 * VFX_TRAVEL_TIME 으로 옮겨 재임포트할 것 — 임시 값은 에디터를 끄면 사라진다.
+	 */
+	static void SkillVFX(const TArray<FString>& Args, UWorld* World)
+	{
+		TMap<FName, UTDSkillComponent::FDebugVFXTuning>& Tuning = UTDSkillComponent::GetDebugVFXTuning();
+
+		if (!Args.IsValidIndex(0))
+		{
+			if (Tuning.Num() == 0)
+			{
+				UE_LOG(LogTDDebug, Log,
+					TEXT("걸어 둔 임시 값이 없다. 사용법: TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간]"));
+				return;
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("── 이펙트 임시 값 ──   크기 / 오프셋 / 이동시간"));
+			for (const TPair<FName, UTDSkillComponent::FDebugVFXTuning>& Pair : Tuning)
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %-18s %g / %g / %g"),
+					*Pair.Key.ToString(), Pair.Value.BaseSize, Pair.Value.Offset, Pair.Value.TravelTime);
+			}
+			return;
+		}
+
+		if (Args[0].Equals(TEXT("clear"), ESearchCase::IgnoreCase))
+		{
+			Tuning.Reset();
+			UE_LOG(LogTDDebug, Log, TEXT("이펙트 임시 값을 전부 지웠다. 이제 테이블 값을 쓴다."));
+			return;
+		}
+
+		const FName SkillId(*Args[0]);
+		const UTDProgressionComponent* Progression = GetLocalProgression(World);
+		const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
+
+		if (Row == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.SkillVFX: '%s' 스킬을 찾지 못했다. (목록은 TD.DumpSkill)"), *Args[0]);
+			return;
+		}
+
+		const bool bForwardBox = Row->ShapeTag == TDTags::Skill_Shape_ForwardBox;
+
+		// 처음 거는 스킬이면 테이블 값에서 시작한다. 크기만 바꿀 때 나머지를 다시 적지 않아도 된다.
+		UTDSkillComponent::FDebugVFXTuning Current;
+		if (const UTDSkillComponent::FDebugVFXTuning* Existing = Tuning.Find(SkillId))
+		{
+			Current = *Existing;
+		}
+		else
+		{
+			Current.BaseSize = Row->VFXBaseSize;
+			Current.Offset = Row->VFXOffset;
+			Current.TravelTime = Row->VFXTravelTime;
+		}
+
+		if (Args.Num() == 1)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("'%s'  %s · 사거리 %g"),
+				*SkillId.ToString(), *Row->ShapeTag.ToString(), Row->Range);
+			UE_LOG(LogTDDebug, Log, TEXT("  테이블    크기 %g / 오프셋 %g / 이동시간 %g"),
+				Row->VFXBaseSize, Row->VFXOffset, Row->VFXTravelTime);
+			UE_LOG(LogTDDebug, Log, TEXT("  지금      크기 %g / 오프셋 %g / 이동시간 %g%s"),
+				Current.BaseSize, Current.Offset, Current.TravelTime,
+				Tuning.Contains(SkillId) ? TEXT("  (임시 값)") : TEXT(""));
+
+			if (!bForwardBox)
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  이 모양은 크기만 쓴다. 오프셋·이동시간은 ForwardBox 전용이다."));
+			}
+			return;
+		}
+
+		Current.BaseSize = FMath::Max(0.f, FCString::Atof(*Args[1]));
+
+		if (Args.IsValidIndex(2))
+		{
+			Current.Offset = FCString::Atof(*Args[2]);
+		}
+
+		if (Args.IsValidIndex(3))
+		{
+			Current.TravelTime = FMath::Max(0.f, FCString::Atof(*Args[3]));
+		}
+
+		Tuning.Add(SkillId, Current);
+
+		const float Scale = Current.BaseSize > 0.f && Row->Range > 0.f ? Row->Range / Current.BaseSize : 1.f;
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("'%s' 임시 값: 크기 %g (배율 %.2f) · 오프셋 %g · 이동시간 %g — 다음 시전부터 보인다."),
+			*SkillId.ToString(), Current.BaseSize, Scale, Current.Offset, Current.TravelTime);
+
+		if (!bForwardBox && (Current.Offset != 0.f || Current.TravelTime > 0.f))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("  '%s' 는 ForwardBox 가 아니라 오프셋·이동시간이 무시된다."), *SkillId.ToString());
+		}
+	}
+
 	/** 로컬 플레이어의 장착·사용 컴포넌트. 재굴림이 여기 있다(장착 아이템도 굴려야 하므로). */
 	static UTDItemUseComponent* GetLocalItemUse(UWorld* World)
 	{
@@ -2181,6 +2290,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSkillUp(
 	TEXT("TD.SkillUp"),
 	TEXT("스킬을 한 단계 올린다. 사용법: TD.SkillUp <스킬ID>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillUp));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDSkillVFX(
+	TEXT("TD.SkillVFX"),
+	TEXT("스킬 이펙트 크기·위치를 재임포트 없이 맞춘다. 사용법: TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간] | <스킬ID> | clear"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillVFX));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDReroll(
 	TEXT("TD.Reroll"),

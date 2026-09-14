@@ -117,6 +117,22 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Skill")
 	FTDOnSkillCastEnded OnCastEnded;
 
+	/**
+	 * TD.SkillVFX 가 넣는 임시 값. 이펙트 크기·위치를 테이블 재임포트 없이 맞출 때 쓴다.
+	 *
+	 * 스킬 하나의 VFXBaseSize · VFXOffset · VFXTravelTime 을 통째로 대신한다.
+	 * 이 머신의 화면에만 걸린다 — 이펙트는 머신마다 각자 그리므로 서버를 거칠 필요가 없다.
+	 * 캐릭터마다 따로 걸 이유가 없어 static 이다.
+	 */
+	struct FDebugVFXTuning
+	{
+		float BaseSize = 0.f;
+		float Offset = 0.f;
+		float TravelTime = 0.f;
+	};
+
+	static TMap<FName, FDebugVFXTuning>& GetDebugVFXTuning();
+
 protected:
 	/**
 	 * 판정 범위를 그려준다. 스프라이트가 없는 지금은 사거리를 눈으로 맞추는 유일한 방법이다.
@@ -251,6 +267,24 @@ private:
 
 	/** 정신집중 이펙트를 끈다. 시전이 끝나거나 끊길 때 부른다. */
 	void StopChannelVFX();
+
+	/**
+	 * 앞으로 날아가는 이펙트 하나(VFXTravelTime). 각 머신이 자기 화면에서만 움직인다.
+	 * 표현일 뿐이라 복제하지 않는다 — 판정은 서버가 이미 끝냈다.
+	 */
+	struct FTravelingVFX
+	{
+		TWeakObjectPtr<UNiagaraComponent> Component;
+		FVector Start = FVector::ZeroVector;
+		FVector End = FVector::ZeroVector;
+		float StartTime = 0.f;
+		float Duration = 0.f;
+	};
+
+	TArray<FTravelingVFX> TravelingVFX;
+
+	/** 날아가는 이펙트를 한 프레임만큼 옮긴다. 도착한 것은 새 입자를 멈추고 목록에서 뺀다. */
+	void TickTravelingVFX();
 
 	/**
 	 * 지금 떠 있는 정신집중 이펙트. 각 머신이 자기가 띄운 것을 들고 있다.

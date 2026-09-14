@@ -175,6 +175,14 @@ namespace TDTags
 	 */
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Skill);
 
+	/**
+	 * 계정의 다른 캐릭터들(유니온)에서 온 모디파이어.
+	 *
+	 * 효과마다 나누지 않고 한 소스로 묶는다. 레벨이 하나 오르면 어차피 계정 전체를 다시
+	 * 훑어 등록하는 편이 단순하다 — Source.Equipment 와 같은 판단이다.
+	 */
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Union);
+
 	
 	
 	

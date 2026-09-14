@@ -4,7 +4,7 @@ using UnrealBuildTool;
 
 public class TD_Project : ModuleRules
 {
-	public TD_Project(ReadOnlyTargetRules Target) : base(Target)	
+	public TD_Project(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -22,6 +22,7 @@ public class TD_Project : ModuleRules
 			"CommonUI",
 			"Slate",
 			"SlateCore",
+			"MoviePlayer",
 			"Paper2D",
 			"PaperZD",
 
@@ -36,7 +37,6 @@ public class TD_Project : ModuleRules
 			// 헤더가 보이는 것과 링크되는 것은 별개다(§11-A).
 			"DeveloperSettings"
 		});
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 	}
 }

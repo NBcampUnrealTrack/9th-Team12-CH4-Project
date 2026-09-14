@@ -40,6 +40,9 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	bool Login(ATDPlayerState* Player, const FString& LoginId, const FString& Password,
 		FGuid& OutAccountId, FString& OutError);
+	bool RegisterAccount(ATDPlayerState* Player, const FString& LoginId, const FString& Password, FString& OutError);
+    bool CreateCharacter(ATDPlayerState* Player, const FString& Name, FName ClassId, FString& OutError);
+    bool DeleteCharacter(ATDPlayerState* Player, const FGuid& CharacterId, FString& OutError);
 	void Logout(ATDPlayerState* Player);
     /** 서버에서 캐릭터 상태를 새로 만들 때 인증된 세션만 이전한다. */
     bool TransferSession(ATDPlayerState* Previous, ATDPlayerState* Next);

@@ -504,6 +504,17 @@ public:
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
     void ServerLogin(const FString& LoginId, const FString& Password);
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerRegisterAccount(const FString& LoginId, const FString& Password);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerCreateCharacter(const FString& Name, FName ClassId);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerDeleteCharacter(const FGuid& CharacterId);
+    UFUNCTION(Client, Reliable)
+    void ClientAccountActionResult(FName Action, bool bSuccess, const FString& Message);
+    int32 GetAccountReplySerial() const { return AccountReplySerial; }
+    FName GetAccountReplyAction() const { return AccountReplyAction; }
+    bool WasAccountActionSuccessful() const { return bAccountActionSuccessful; }
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
     void ServerSelectCharacter(int32 SlotIndex);
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
     void ServerSaveCharacter();
@@ -539,6 +550,10 @@ private:
     UPROPERTY(Replicated) FGuid DummyAccountId;
     FGuid DummyCharacterId;
     FString DummyMessage;
+    int32 AccountReplySerial = 0;
+    FName AccountReplyAction;
+    bool bAccountActionSuccessful = false;
+    double NextAccountMutationTime = 0.0;
 
 
 public:

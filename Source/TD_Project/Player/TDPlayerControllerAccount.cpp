@@ -104,6 +104,9 @@ void ATDPlayerController::ServerLogin_Implementation(const FString& LoginId, con
 void ATDPlayerController::ClientAccountMessage_Implementation(const FString& Message)
 {
     DummyMessage = Message;
+    ++AccountReplySerial;
+    AccountReplyAction = NAME_None;
+    bAccountActionSuccessful = false;
     UE_LOG(LogTemp, Log, TEXT("[DummyAccount] %s"), *Message);
 }
 
@@ -237,4 +240,48 @@ void ATDPlayerController::ServerLeaveCharacter_Implementation(bool bLogout)
     Next->ForceNetUpdate();
     ForceNetUpdate();
     ClientAccountMessage(bLogout ? TEXT("로그아웃했습니다.") : TEXT("캐릭터를 선택하세요."));
+}
+
+void ATDPlayerController::ServerRegisterAccount_Implementation(const FString& LoginId, const FString& Password)
+{
+    if (FPlatformTime::Seconds() < NextAccountMutationTime)
+    { ClientAccountActionResult(TEXT("Register"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
+    NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
+    auto* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
+    FString Error;
+    const bool bSuccess = Store && Store->RegisterAccount(GetPlayerState<ATDPlayerState>(), LoginId, Password, Error);
+    ClientAccountActionResult(TEXT("Register"), bSuccess, bSuccess ? TEXT("가입했습니다. 로그인해 주세요.") : (Error.IsEmpty() ? TEXT("계정 서비스를 사용할 수 없습니다.") : Error));
+}
+
+void ATDPlayerController::ServerCreateCharacter_Implementation(const FString& Name, FName ClassId)
+{
+    if (FPlatformTime::Seconds() < NextAccountMutationTime)
+    { ClientAccountActionResult(TEXT("Create"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
+    NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
+    auto* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
+    auto* State = GetPlayerState<ATDPlayerState>();
+    FString Error;
+    const bool bSuccess = Store && Store->CreateCharacter(State, Name, ClassId, Error);
+    if (bSuccess) { State->SetCharacterSlots(Store->ListCharacters(State)); State->ForceNetUpdate(); }
+    ClientAccountActionResult(TEXT("Create"), bSuccess, bSuccess ? TEXT("캐릭터를 생성했습니다. 목록에서 선택해 주세요.") : (Error.IsEmpty() ? TEXT("캐릭터를 생성하지 못했습니다.") : Error));
+}
+
+void ATDPlayerController::ClientAccountActionResult_Implementation(FName Action, bool bSuccess, const FString& Message)
+{
+    ClientAccountMessage_Implementation(Message);
+    AccountReplyAction = Action;
+    bAccountActionSuccessful = bSuccess;
+}
+
+void ATDPlayerController::ServerDeleteCharacter_Implementation(const FGuid& CharacterId)
+{
+    if (FPlatformTime::Seconds() < NextAccountMutationTime)
+    { ClientAccountActionResult(TEXT("Delete"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
+    NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
+    auto* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
+    auto* State = GetPlayerState<ATDPlayerState>();
+    FString Error;
+    const bool bSuccess = Store && Store->DeleteCharacter(State, CharacterId, Error);
+    if (bSuccess) { State->SetCharacterSlots(Store->ListCharacters(State)); State->ForceNetUpdate(); }
+    ClientAccountActionResult(TEXT("Delete"), bSuccess, bSuccess ? TEXT("캐릭터를 삭제했습니다.") : (Error.IsEmpty() ? TEXT("삭제 요청을 처리하지 못했습니다.") : Error));
 }

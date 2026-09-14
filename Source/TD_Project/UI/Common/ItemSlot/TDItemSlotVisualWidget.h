@@ -34,6 +34,13 @@ struct TD_PROJECT_API FTDItemSlotVisualData
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot")
 	FGameplayTag Rarity;
+
+	/** 인벤토리에서 장신구인 경우에만 켠다. 다른 공용 슬롯은 기본적으로 숨긴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot")
+	bool bShowEnhanceLevel = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TD|Item Slot", meta = (ClampMin = "0"))
+	int32 EnhanceLevel = 0;
 };
 
 /**
@@ -84,6 +91,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CountText;
+
+	/** 수량 위에 배치하는 장신구 강화 단계. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> EnhanceText;
 
 	// 선택 시  테두리
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))

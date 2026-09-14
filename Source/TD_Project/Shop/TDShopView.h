@@ -53,6 +53,9 @@ struct FTDShopBuyItemView
 	FGameplayTag Rarity;
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
+	FGameplayTag ItemType;
+
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
 	int32 Price = 0;
 
 	/** false인 장신구 같은 아이템은 한 개가 장바구니 한 칸을 차지합니다. */
@@ -83,7 +86,14 @@ struct FTDShopSellItemView
 	FGameplayTag Rarity;
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
+	FGameplayTag ItemType;
+
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
 	int32 Count = 0;
+
+	/** 판매할 실제 아이템의 강화 단계입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
+	int32 EnhanceLevel = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Shop")
 	int32 UnitSellPrice = 0;

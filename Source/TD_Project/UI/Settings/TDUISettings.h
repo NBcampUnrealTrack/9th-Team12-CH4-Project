@@ -28,6 +28,9 @@ public:
 		TSoftObjectPtr<UDataTable> TooltipItemTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
 		TSoftObjectPtr<UDataTable> TooltipItemStatTable;
+	/** 세트 이름 표시용. 효과 수치는 ItemUseComponent의 테이블을 사용한다. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
+		TSoftObjectPtr<UDataTable> TooltipItemSetTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")
 		TSoftObjectPtr<UDataTable> TooltipStatDefinitionTable;
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Tooltip")

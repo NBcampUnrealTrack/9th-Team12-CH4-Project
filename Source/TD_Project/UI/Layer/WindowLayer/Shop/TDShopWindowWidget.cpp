@@ -278,6 +278,7 @@ UTDInventorySlotListItem* UTDShopWindowWidget::MakeBuySlot(
 	Item->DisplayName = Source.DisplayName;
 	Item->Icon = Source.Icon;
 	Item->Rarity = Source.Rarity;
+	Item->ItemType = Source.ItemType;
 	Item->InteractionHint = bCartSlot
 		? FText::Format(
 			FText::FromString(
@@ -306,10 +307,12 @@ UTDInventorySlotListItem* UTDShopWindowWidget::MakeSellSlot(
 	Item->bHasItem = true;
 	Item->ItemInstance.SlotIndex = Source.SlotIndex;
 	Item->ItemInstance.ItemId = Source.ItemId;
+	Item->ItemInstance.EnhanceLevel = Source.EnhanceLevel;
 	Item->ItemInstance.Count = FMath::Max(1, Count);
 	Item->DisplayName = Source.DisplayName;
 	Item->Icon = Source.Icon;
 	Item->Rarity = Source.Rarity;
+	Item->ItemType = Source.ItemType;
 	Item->bInteractionEnabled = Source.bCanSell;
 
 	if (!Source.bCanSell)

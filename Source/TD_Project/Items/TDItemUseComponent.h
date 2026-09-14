@@ -194,6 +194,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
 	UDataTable* GetItemStatTable() const { return ItemStatTable; }
 
+	/** 실제 장착 효과 계산과 같은 세트 테이블을 UI에 제공한다. */
+	UDataTable* GetSetBonusTable() const { return SetBonusTable; }
+
 	// ── 세이브 구조체 ─────────────────────────────────────
 
 	void WriteSaveData(FTDPlayerSaveData& Out) const;

@@ -10,6 +10,7 @@
 
 class APlayerController;
 class UTDProgressionComponent;
+struct FTDItemRow;
 
 /**
  * 테이블의 문구에 실제 수치를 채워 넣는다.
@@ -91,6 +92,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Tooltip")
 	static TArray<FTDTooltipLine> MakeItemStatLines(const APlayerController* Owner,
 		FName ItemId, int32 EnhanceLevel);
+
+	/** 장신구 세트의 실제 착용 개수와 단계별 효과를 표시 데이터로만 변환한다. */
+	static TArray<FTDTooltipLine> MakeItemSetLines(const FTDItemRow& Item,
+		const UDataTable* SetTable, const UDataTable* BonusTable, int32 EquippedCount);
 
 	// ── 스킬 ──────────────────────────────────────────────
 

@@ -20,6 +20,9 @@ public:
 	UTDInventorySlotListItem* GetSlotListItem() const { return SlotListItem; }
 
 protected:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTDInventoryAccessorySlotTest;
+#endif
 	virtual void NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void NativeDestruct() override;
 	void RefreshItemTooltip();

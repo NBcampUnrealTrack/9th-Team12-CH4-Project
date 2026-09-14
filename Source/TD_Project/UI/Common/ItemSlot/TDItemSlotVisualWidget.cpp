@@ -136,6 +136,17 @@ void UTDItemSlotVisualWidget::RefreshVisual()
 		}
 	}
 
+	if (EnhanceText)
+	{
+		const bool bShowEnhance = SlotVisualData.bHasItem && SlotVisualData.bShowEnhanceLevel;
+		EnhanceText->SetText(bShowEnhance
+			? FText::Format(NSLOCTEXT("TDItemSlot", "EnhanceLevel", "+{0}"),
+				FText::AsNumber(FMath::Max(0, SlotVisualData.EnhanceLevel)))
+			: FText::GetEmpty());
+		EnhanceText->SetVisibility(bShowEnhance
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	BP_OnSlotVisualStateChanged(SlotVisualData, bSlotSelected, bSlotEnabled);
 	RefreshInteractionVisual();
 }

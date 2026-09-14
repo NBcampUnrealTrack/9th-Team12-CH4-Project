@@ -10,6 +10,7 @@ class UImage;
 class UTextBlock;
 class UVerticalBox;
 class UTexture2D;
+class UTDItemUseComponent;
 
 /** 아이템/스킬의 공용 표시 행. 아직 없는 아이콘은 비워 두면 된다. */
 USTRUCT(BlueprintType)
@@ -25,6 +26,8 @@ struct TD_PROJECT_API FTDTooltipLine
 	TSoftObjectPtr<UTexture2D> Icon;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tooltip")
 	FLinearColor ValueColor = FLinearColor(0.45f, 0.95f, 0.50f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tooltip")
+	bool bSectionHeader = false;
 };
 
 /** 강화나 서버 로직을 포함하지 않는 표시 전용 데이터. */
@@ -85,6 +88,7 @@ public:
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UImage> TooltipIcon;
@@ -111,6 +115,12 @@ protected:
 
 private:
 	void RefreshContent();
+	void BindEquipmentSource(UTDItemUseComponent* Source);
+	void RefreshEquipmentTooltip();
+	UFUNCTION()
+	void HandleEquipmentChanged();
+	TWeakObjectPtr<UTDItemUseComponent> EquipmentSource;
+	FTimerHandle EquipmentRefreshTimer;
 
 	UPROPERTY(Transient)
 	FTDTooltipData Data;

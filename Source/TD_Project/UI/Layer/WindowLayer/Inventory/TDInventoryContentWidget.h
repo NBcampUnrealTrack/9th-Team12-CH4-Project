@@ -146,6 +146,9 @@ protected:
 	int32 PreviewSlotCapacity = 40;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTDInventoryGoldBindingTest;
+#endif
 	void UpdatePendingItemAction();
 	// TileView Entry가 재사용돼도 잠금은 인벤토리 전체에서 공유한다.
 	bool bItemActionPending = false;
@@ -172,6 +175,9 @@ private:
 
 	UFUNCTION()
 	void HandleInventoryChanged();
+
+	UFUNCTION()
+	void HandleGoldChanged(int32 NewGold);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTDInventoryComponent> InventoryComponent;

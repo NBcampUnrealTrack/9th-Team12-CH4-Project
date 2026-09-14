@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "Blueprint/UserWidget.h"
 #include "Chat/TDChatFilter.h"
@@ -1843,6 +1844,35 @@ namespace TDDebugCommands
 		UE_LOG(LogTDDebug, Log, TEXT("서버에 부활을 요청했다. (결과는 서버 로그에)"));
 	}
 
+	/** 현재 플레이어의 존 태그와 실제 월드 위치를 함께 확인한다. */
+	static void DumpZone(const TArray<FString>& Args, UWorld* World)
+	{
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState =
+			Controller ? Controller->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (PlayerState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpZone: PlayerState 를 찾지 못했다."));
+			return;
+		}
+
+		const FString ZoneId = PlayerState->GetCurrentZoneId().IsValid()
+			? PlayerState->GetCurrentZoneId().ToString()
+			: TEXT("None");
+		const APawn* Pawn = Controller->GetPawn();
+
+		if (Pawn == nullptr)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("현재 존: '%s' / Pawn 없음"), *ZoneId);
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("현재 존: '%s' / 위치: %s"),
+			*ZoneId,
+			*Pawn->GetActorLocation().ToString());
+	}
+
 	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -2470,6 +2500,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
 	TEXT("TD.Respawn"),
 	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpZone(
+	TEXT("TD.DumpZone"),
+	TEXT("현재 플레이어의 존 태그와 월드 좌표를 출력한다. 사용법: TD.DumpZone"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpZone));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDZone(
 	TEXT("TD.Zone"),

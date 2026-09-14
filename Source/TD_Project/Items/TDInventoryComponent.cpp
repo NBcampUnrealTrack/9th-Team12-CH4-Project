@@ -1,5 +1,6 @@
 #include "Items/TDInventoryComponent.h"
 
+#include "Core/TDGameplayTags.h"
 #include "Data/TDEnhanceRow.h"
 #include "Data/TDItemRow.h"
 #include "Engine/DataTable.h"
@@ -8,6 +9,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDEnhanceStatics.h"
+#include "Items/TDItemUseComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/TDGameplayTags.h"
 
@@ -494,6 +496,16 @@ bool UTDInventoryComponent::AddItem(FName ItemId, int32 Count)
 		}
 	}
 
+	// 장신구는 얻는 순간 첫 옵션이 붙는다. 굴리는 코드와 옵션 테이블은 ItemUseComponent 에 있다.
+	//
+	// 새 아이템을 만드는 입구가 여기뿐이라 드롭·상점·상자·퀘스트가 전부 이 길로 온다.
+	// 거래소는 PutItemAt 으로 기존 인스턴스를 옮기고 세이브는 AddItem 을 거치지 않으므로,
+	// 이미 옵션이 붙은 물건이 다시 굴려지지 않는다.
+	const UTDItemUseComponent* ItemUse =
+		(Row->ItemType == TDTags::Item_Type_Accessory.GetTag() && GetOwner() != nullptr)
+			? GetOwner()->FindComponentByClass<UTDItemUseComponent>()
+			: nullptr;
+
 	while (ToAdd > 0)
 	{
 		const int32 EmptySlot = FindEmptySlotIndex();
@@ -509,6 +521,11 @@ bool UTDInventoryComponent::AddItem(FName ItemId, int32 Count)
 		NewItem.SlotIndex = EmptySlot;
 		NewItem.Count = FMath::Min(ToAdd, MaxStack);
 		ToAdd -= NewItem.Count;
+
+		if (ItemUse != nullptr)
+		{
+			ItemUse->RollInitialOptions(NewItem);
+		}
 
 		FTDItemInstance& Added = ItemContainer.Items.Add_GetRef(NewItem);
 		ItemContainer.MarkItemDirty(Added);

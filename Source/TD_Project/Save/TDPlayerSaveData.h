@@ -48,6 +48,9 @@ USTRUCT(BlueprintType)
 struct FTDCharacterSummary
 {
 	GENERATED_BODY()
+    /** Stable identity for character-list actions; never use a shifting array index for deletion. */
+    UPROPERTY(BlueprintReadOnly, Category="TD|Character")
+    FGuid CharacterId;
 
 	/** 코디. 장착 중인 아이템의 ItemId 로, 프리뷰 스프라이트를 갈아 끼우는 데 쓴다. */
 	UPROPERTY(BlueprintReadOnly, Category = "TD|Character")

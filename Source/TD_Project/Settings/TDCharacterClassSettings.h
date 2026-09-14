@@ -30,4 +30,12 @@ public:
 	/** DT_CharacterClass. RowName 이 곧 ClassId 다("Warrior" 등). */
 	UPROPERTY(config, EditAnywhere, Category = "Character")
 	TSoftObjectPtr<UDataTable> ClassTable;
+
+	/**
+	 * DT_UnionBonus. 직업을 몇 레벨까지 키우면 계정의 모든 캐릭터가 무엇을 얻는가.
+	 *
+	 * 비어 있으면 유니온 보너스가 붙지 않는다. 오류 없이 조용히 빠지므로 검증 스크립트가 잡는다.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Character")
+	TSoftObjectPtr<UDataTable> UnionBonusTable;
 };

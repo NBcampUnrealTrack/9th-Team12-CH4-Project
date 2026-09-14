@@ -16,6 +16,9 @@
 #include "Party/TDPartyComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "Stats/TDStatComponent.h"
+#include "Stats/TDUnionBonus.h"
+#include "Engine/DataTable.h"
+#include "Settings/TDCharacterClassSettings.h"
 #include "Quest/TDPersonalWorldStateComponent.h"
 #include "Quest/TDQuestComponent.h"
 
@@ -241,6 +244,10 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 		ProgressionComponent->SetLevel(Chosen.Level);
 	}
 
+	// 유니온도 여기서 붙인다. 최대 체력 보너스(전사 유니온)가 아래 재초기화에 들어가야
+	// 가득 찬 체력으로 시작한다 — 나중에 붙이면 최대치만 오르고 현재 체력은 모자란 채 시작한다.
+	RefreshUnionBonus();
+
 	// 캐릭터가 정해진 지금이 진짜 초기화 시점이다.
 	// 접속 직후에도 어트리뷰트가 한 번 채워지지만, 그때는 어느 캐릭터인지 몰라
 	// 레벨 1 기준으로 들어가 있다. 그대로 두면 25레벨 캐릭터가 반피로 시작한다.
@@ -277,6 +284,38 @@ bool ATDPlayerState::SelectCharacter(int32 SlotIndex)
 	return true;
 }
 
+void ATDPlayerState::RefreshUnionBonus()
+{
+	// 모디파이어 등록은 서버 몫이다. 캐릭터를 고르기 전에는 누구의 계정인지 셀 기준이 없다.
+	if (!HasAuthority() || !bCharacterSelected || StatComponent == nullptr)
+	{
+		return;
+	}
+
+	const UTDCharacterClassSettings* Settings = UTDCharacterClassSettings::Get();
+	const UDataTable* Table = Settings ? Settings->UnionBonusTable.LoadSynchronous() : nullptr;
+
+	if (Table == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("유니온: 프로젝트 세팅 > TD > Character 의 UnionBonusTable 이 비어 있어 보너스를 붙이지 않았다."));
+		return;
+	}
+
+	const int32 CurrentLevel = ProgressionComponent != nullptr ? ProgressionComponent->GetLevel() : 1;
+
+	TArray<FTDStatModifier> Modifiers =
+		TDUnion::BuildModifiers(Table, CharacterSlots, SelectedSlotIndex, CurrentLevel);
+
+	const int32 EffectCount = Modifiers.Num();
+
+	// 한 동작으로 갈아 끼운다. 걷어내고 다시 넣으면 그 사이 최대 체력이 잠깐 내려가
+	// 현재 체력이 깎인다(ReplaceSource 주석). 켜진 효과가 없으면 제거만 된다.
+	UnionSourceHandle = StatComponent->ReplaceSource(UnionSourceHandle, TDTags::Source_Union, MoveTemp(Modifiers));
+
+	UE_LOG(LogTemp, Log, TEXT("유니온: %s — 효과 %d개 적용"), *GetPlayerName(), EffectCount);
+}
+
 void ATDPlayerState::OnRep_CharacterSelected()
 {
 	OnCharacterSelected.Broadcast();
@@ -290,6 +329,10 @@ void ATDPlayerState::SetSavedVitalRatios(float InHealthRatio, float InManaRatio)
 
 void ATDPlayerState::HandleLevelUp(int32 NewLevel, int32 PreviousLevel)
 {
+	// 유니온은 레벨이 오를 때마다 다시 센다. 30·40·50 을 넘는 순간 지금 캐릭터에도 붙어야 한다.
+	// 아래의 시체 검사보다 앞에 둔다 — 스탯 갱신은 체력 회복과 달리 부활 수단이 되지 않는다.
+	RefreshUnionBonus();
+
 	if (!HasAuthority() || AbilitySystemComponent == nullptr)
 	{
 		return;

@@ -1,6 +1,7 @@
 #include "AI/TDSpawnPoint.h"
 
 #include "AI/TDSpawnSubsystem.h"
+#include "Character/TDBossCharacter.h"
 #include "Character/TDEnemyBase.h"
 #include "Components/BillboardComponent.h"
 #include "Engine/World.h"
@@ -88,6 +89,12 @@ void ATDSpawnPoint::HandleMonsterDeath()
 	// 죽은 몬스터와의 연결을 끊는다. 액터 자체는 시체 연출 후 SetLifeSpan 으로 알아서 사라진다.
 	CurrentMonster = nullptr;
 
+	// 보스방은 스스로 되살아나지 않는다. 존이 빈 뒤 ResetForZone 이 살린다.
+	if (!bAutoRespawn)
+	{
+		return;
+	}
+
 	GetWorldTimerManager().SetTimer(
 		RespawnTimerHandle, this, &ATDSpawnPoint::SpawnMonster, RespawnDelay, false);
 }
@@ -95,4 +102,28 @@ void ATDSpawnPoint::HandleMonsterDeath()
 void ATDSpawnPoint::CancelRespawn()
 {
 	GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
+}
+
+void ATDSpawnPoint::ResetForZone()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// 재스폰이 예약돼 있었으면 기다리지 않고 지금 한다.
+	CancelRespawn();
+
+	if (CurrentMonster == nullptr)
+	{
+		SpawnMonster();
+		return;
+	}
+
+	// 살아 있다. 이전 파티가 깎아 둔 체력·페이즈·분노가 남으면 안 된다.
+	// 일반 몬스터는 되돌릴 전투 상태가 없어 그대로 둔다.
+	if (ATDBossCharacter* Boss = Cast<ATDBossCharacter>(CurrentMonster))
+	{
+		Boss->ResetFight();
+	}
 }

@@ -34,7 +34,11 @@ public class TD_Project : ModuleRules
 
 			// UTDAudioSettings 가 UDeveloperSettings 를 상속한다.
 			// 헤더가 보이는 것과 링크되는 것은 별개다(§11-A).
-			"DeveloperSettings"
+			"DeveloperSettings",
+
+			// 보스방 재입장 기록이 계정 ID(FUniqueNetIdRepl::ToString)로 사람을 알아본다.
+			// FUniqueNetIdRepl 헤더는 Engine 을 타고 보이지만 ToString 은 이 모듈에서 export 된다.
+			"CoreOnline"
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

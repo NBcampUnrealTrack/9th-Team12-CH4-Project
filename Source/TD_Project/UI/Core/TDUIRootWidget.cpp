@@ -20,7 +20,21 @@
 #include "Components/Overlay.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
+#include "UI/Layer/TDHUDLayer.h"
 #include "UI/Layer/WindowLayer/Common/WindowBase/TDWindowBaseWidget.h"
+
+UTDBossHPWidget* UTDUIRootWidget::GetBossWidget() const
+{
+	if (!HUDLayer) return nullptr;
+	for (UWidget* Child : HUDLayer->GetAllChildren())
+	{
+		if (UTDHUDLayer* HUD = Cast<UTDHUDLayer>(Child))
+		{
+			if (UTDBossHPWidget* BossWidget = HUD->GetBossWidget()) return BossWidget;
+		}
+	}
+	return nullptr;
+}
 
 FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
@@ -62,8 +76,6 @@ void UTDUIRootWidget::NativeConstruct()
 void UTDUIRootWidget::NativeDestruct()
 {
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(HUDReadyTimer);
-    DisplayedPawn.Reset();
-    bPlayerHUDReady = false;
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		if (UTDUIManagerSubsystem* UIManager =
@@ -73,6 +85,8 @@ void UTDUIRootWidget::NativeDestruct()
 		}
 	}
 
+    DisplayedPawn.Reset();
+    bPlayerHUDReady = false;
 	Super::NativeDestruct();
 }
 
@@ -144,7 +158,10 @@ void UTDUIRootWidget::RefreshPlayerHUD()
         DisplayedPawn.Reset();
         return;
     }
-    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn) return;
+    if (bPlayerHUDReady && DisplayedPawn.Get() == CharacterPawn)
+    {
+        return;
+    }
     if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
     {
         if (UTDPlayerStatsSubsystem* Stats = LocalPlayer->GetSubsystem<UTDPlayerStatsSubsystem>())

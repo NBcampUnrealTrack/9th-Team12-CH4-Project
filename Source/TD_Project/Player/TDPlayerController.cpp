@@ -14,6 +14,7 @@
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
 #include "Shop/TDShopStatics.h"
+#include "Shop/TDShopServiceComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
 #include "World/TDTreasureChest.h"
@@ -25,6 +26,8 @@
 #include "World/TDNPCBase.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "Engine/LocalPlayer.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
 
 ATDPlayerController::ATDPlayerController()
 {
@@ -42,6 +45,11 @@ void ATDPlayerController::SetupInputComponent()
 
 void ATDPlayerController::ToggleMouseCursor()
 {
+ if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+  if (UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+   if (UI->IsChatInputActive()) return;
+    const ATDCharacterBase* ControlledCharacter = Cast<ATDCharacterBase>(GetPawn());
+    if (ControlledCharacter && ControlledCharacter->IsDead()) return;
 	if (!IsLocalController() || GetPawn() == nullptr)
 	{
 		return;
@@ -325,10 +333,17 @@ void ATDPlayerController::ServerDebugPartyExp_Implementation(int32 BaseAmount)
 void ATDPlayerController::ServerRequestRespawn_Implementation()
 {
 	// 치트가 아니므로 Shipping 가드를 두지 않는다.
+	bool bSucceeded = false;
 	if (ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr)
 	{
-		GameMode->RespawnPlayer(this);
+		bSucceeded = GameMode->RespawnPlayer(this);
 	}
+	ClientRespawnRequestResult(bSucceeded);
+}
+
+void ATDPlayerController::ClientRespawnRequestResult_Implementation(bool bSucceeded)
+{
+	OnRespawnRequestResult.Broadcast(bSucceeded);
 }
 
 void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
@@ -918,6 +933,15 @@ void ATDPlayerController::ClientMarketResult_Implementation(ETDMarketResult Resu
 
 void ATDPlayerController::ServerBuyFromShop_Implementation(FName ShopId, FName ItemId, int32 Count)
 {
+	const UTDShopServiceComponent* ShopService =
+		FindComponentByClass<UTDShopServiceComponent>();
+
+	if (!ShopService || !ShopService->IsActiveForShop(ShopId))
+	{
+		ClientShopResult(ETDShopResult::TooFar, ItemId, Count, 0);
+		return;
+	}
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 
 	int32 TotalPrice = 0;
@@ -932,6 +956,15 @@ void ATDPlayerController::ServerBuyFromShop_Implementation(FName ShopId, FName I
 
 void ATDPlayerController::ServerSellToShop_Implementation(FName ShopId, int32 InventorySlot, int32 Count)
 {
+	const UTDShopServiceComponent* ShopService =
+		FindComponentByClass<UTDShopServiceComponent>();
+
+	if (!ShopService || !ShopService->IsActiveForShop(ShopId))
+	{
+		ClientShopResult(ETDShopResult::TooFar, NAME_None, Count, 0);
+		return;
+	}
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 
 	// 어느 아이템이었는지 먼저 알아둔다. 팔고 나면 그 칸이 비어 되짚을 수 없다.

@@ -22,7 +22,7 @@ public:
 	ATDBossProjectile();
 
 	/** 스폰 직후 서버가 한 번 부른다. 방향·속도·배율을 확정한다. */
-	void Init(ATDCharacterBase* InShooter, const FVector& Direction, float InDamageScale, float Speed);
+	void Init(ATDCharacterBase* InShooter, const FVector& Direction, float InDamageScale, float Speed, float InKnockback);
 
 protected:
 	virtual void BeginPlay() override;
@@ -52,4 +52,6 @@ private:
 	TWeakObjectPtr<ATDCharacterBase> Shooter;
 	float DamageScale = 1.f;
 	TSet<TWeakObjectPtr<AActor>> HitActors;
+	
+	float Knockback = 0.f;
 };

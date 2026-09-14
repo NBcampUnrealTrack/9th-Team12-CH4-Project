@@ -36,6 +36,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Shop")
 	FName GetShopId() const { return ShopId; }
 
+	/** NPC 데이터 행이 정한 상점 ID를 BeginPlay에 적용합니다. */
+	void SetShopId(FName InShopId);
+
 	/**
 	 * 지금 살아 있는 상인 전부. 근접 검증이 이걸 훑는다.
 	 *

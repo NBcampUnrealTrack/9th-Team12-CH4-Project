@@ -184,6 +184,8 @@ namespace TDTags
 	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Union);
 
 	
+	TD_PROJECT_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_Boss);
+	
 	
 	
 	// ── 퀘스트 ────────────────────────────────────────────

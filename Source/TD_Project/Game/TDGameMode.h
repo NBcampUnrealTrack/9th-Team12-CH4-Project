@@ -133,8 +133,8 @@ public:
 		FName EntryName = NAME_None, AActor* EntryOverride = nullptr);
 
 	/**
-	 * 사망 후 부활 지점으로 보낸다. 지금 존의 RespawnZoneId 를 따르며,
-	 * 지정돼 있지 않으면 기본 시작 존으로 간다.
+	 * 사망 후 부활 지점으로 보낸다. 후보가 있으면 가장 가까운 지점을,
+	 * 없으면 RespawnZoneId 를 따른다. 지정돼 있지 않으면 기본 시작 존으로 간다.
 	 *
 	 * 부활 자체(체력 회복·상태 해제)는 하지 않는다. 위치만 옮긴다.
 	 */
@@ -155,11 +155,11 @@ public:
 	 * 남은 타이머는 캐릭터의 HandleRespawn 이 지운다.
 	 *
 	 * 하는 일:
-	 *   1. 사망 상태 해제 (조작 복구)
+	 *   1. 부활 목적지로 이동 (실패하면 사망 상태 유지)
 	 *   2. 체력·마나를 절반으로 회복
-	 *   3. 그 존의 RespawnZoneId 로 이동
+	 *   3. 사망 상태 해제 (조작 복구 및 자동 타이머 정리)
 	 *
-	 * @return 실제로 되살렸으면 true. 살아 있거나 Pawn 이 없으면 false.
+	 * @return 실제로 되살렸으면 true. 이동 실패 또는 유효한 사망 캐릭터가 없으면 false.
 	 */
 	bool RespawnPlayer(APlayerController* Player);
 
@@ -256,6 +256,18 @@ protected:
 	float RespawnVitalRatio = 0.5f;
 
 private:
+	/** 포탈과 부활의 이동 처리를 공유한다. 입장 레벨 면제는 서버의 부활 경로만 사용한다. */
+	ETDZoneTravelResult RequestZoneTravelInternal(APlayerController* Player, FGameplayTag TargetZoneId,
+		FName EntryName, AActor* EntryOverride, bool bIsRespawn);
+
+	/** 목적지 행에 설정한 부활 PlayerStartTag, 또는 기존 ZoneId 기본 지점. */
+	AActor* FindRespawnStart(FGameplayTag ZoneId) const;
+
+	/** 후보 목록의 순서는 같은 거리일 때의 우선순위다. 로드되지 않은 지점은 건너뛴다. */
+	AActor* FindNearestRespawnStart(const FVector& Location, const TArray<FGameplayTag>& CandidateZoneIds,
+		FGameplayTag& OutZoneId) const;
+
+
 	/**
 	 * 태그가 일치하는 PlayerStart 를 찾는다. 없으면 nullptr.
 	 *

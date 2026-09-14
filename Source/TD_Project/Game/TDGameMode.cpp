@@ -460,7 +460,13 @@ ETDZoneTravelResult ATDGameMode::ResolveRoomGroup(APlayerController* Player, FGa
 ETDZoneTravelResult ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
 	FName EntryName, AActor* EntryOverride)
 {
-	if (Player == nullptr || !TargetZoneId.IsValid())
+	return RequestZoneTravelInternal(Player, TargetZoneId, EntryName, EntryOverride, false);
+}
+
+ETDZoneTravelResult ATDGameMode::RequestZoneTravelInternal(APlayerController* Player, FGameplayTag TargetZoneId,
+	FName EntryName, AActor* EntryOverride, bool bIsRespawn)
+{
+	if (!HasAuthority() || Player == nullptr || !TargetZoneId.IsValid())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("존 이동: 대상이나 목적지가 비어 있다."));
 		return ETDZoneTravelResult::InternalError;
@@ -511,7 +517,7 @@ ETDZoneTravelResult ATDGameMode::RequestZoneTravel(APlayerController* Player, FG
 	}
 
 	// 입장 레벨 검사. 클라이언트가 보내는 것은 의도뿐이고 판정은 서버가 한다.
-	if (ZoneRow->RequiredLevel > 0)
+	if (!bIsRespawn && ZoneRow->RequiredLevel > 0)
 	{
 		const UTDProgressionComponent* Progression = PlayerState->GetProgressionComponent();
 		const int32 Level = Progression != nullptr ? Progression->GetLevel() : 1;
@@ -580,15 +586,60 @@ ETDZoneTravelResult ATDGameMode::RequestZoneTravel(APlayerController* Player, FG
 	return ETDZoneTravelResult::Success;
 }
 
+AActor* ATDGameMode::FindRespawnStart(FGameplayTag ZoneId) const
+{
+	const FTDZoneEnvironmentRow* Row = FindZoneRow(ZoneId);
+	if (Row == nullptr)
+	{
+		return nullptr;
+	}
+
+	return Row->RespawnPlayerStartTag.IsNone()
+		? FindZoneStart(ZoneId)
+		: FindPlayerStartByTag(Row->RespawnPlayerStartTag);
+}
+
+AActor* ATDGameMode::FindNearestRespawnStart(const FVector& Location,
+	const TArray<FGameplayTag>& CandidateZoneIds, FGameplayTag& OutZoneId) const
+{
+	OutZoneId = FGameplayTag();
+	AActor* Nearest = nullptr;
+	double NearestDistanceSquared = TNumericLimits<double>::Max();
+	for (const FGameplayTag& CandidateZoneId : CandidateZoneIds)
+	{
+		if (AActor* Start = FindRespawnStart(CandidateZoneId))
+		{
+			const double DistanceSquared = FVector::DistSquared(Location, Start->GetActorLocation());
+			if (DistanceSquared < NearestDistanceSquared)
+			{
+				Nearest = Start;
+				NearestDistanceSquared = DistanceSquared;
+				OutZoneId = CandidateZoneId;
+			}
+		}
+	}
+	return Nearest;
+}
+
 ETDZoneTravelResult ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 {
 	const ATDPlayerState* PlayerState = Player ? Player->GetPlayerState<ATDPlayerState>() : nullptr;
-	if (PlayerState == nullptr)
+	if (!HasAuthority() || PlayerState == nullptr || Player->GetPawn() == nullptr)
 	{
 		return ETDZoneTravelResult::InternalError;
 	}
 
 	const FTDZoneEnvironmentRow* CurrentRow = FindZoneRow(PlayerState->GetCurrentZoneId());
+	if (CurrentRow != nullptr && !CurrentRow->RespawnCandidateZoneIds.IsEmpty())
+	{
+		FGameplayTag NearestZone;
+		if (AActor* Start = FindNearestRespawnStart(Player->GetPawn()->GetActorLocation(),
+			CurrentRow->RespawnCandidateZoneIds, NearestZone))
+		{
+			return RequestZoneTravelInternal(Player, NearestZone, NAME_None, Start, true);
+		}
+		UE_LOG(LogTemp, Warning, TEXT("부활 후보 지점을 찾지 못해 지정된 부활 존을 사용한다."));
+	}
 
 	// 지금 존이 부활 지점을 지정했으면 그쪽, 아니면 기본 시작 존이다.
 	FGameplayTag RespawnZone = CurrentRow != nullptr ? CurrentRow->RespawnZoneId : FGameplayTag();
@@ -605,9 +656,13 @@ ETDZoneTravelResult ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 		return ETDZoneTravelResult::ZoneNotFound;
 	}
 
-	// 부활 지점은 입장 레벨을 따지지 않아야 하지만, 마을은 보통 제한이 없으므로
-	// 같은 경로를 쓴다. 제한이 걸린 존을 부활 지점으로 지정하면 그때 갈라낸다.
-	return RequestZoneTravel(Player, RespawnZone);
+	AActor* Start = FindRespawnStart(RespawnZone);
+	if (Start == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("존 '%s'의 부활 PlayerStart를 찾지 못했다."), *RespawnZone.ToString());
+		return ETDZoneTravelResult::NoEntryPoint;
+	}
+	return RequestZoneTravelInternal(Player, RespawnZone, NAME_None, Start, true);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -616,7 +671,7 @@ ETDZoneTravelResult ATDGameMode::TravelToRespawnZone(APlayerController* Player)
 
 bool ATDGameMode::RespawnPlayer(APlayerController* Player)
 {
-	if (Player == nullptr)
+	if (!HasAuthority() || Player == nullptr)
 	{
 		return false;
 	}
@@ -640,9 +695,14 @@ bool ATDGameMode::RespawnPlayer(APlayerController* Player)
 		return false;
 	}
 
-	// 1. 사망 상태를 먼저 푼다. 이동을 막아둔 채로 텔레포트하면 도착 지점에서
-	//    움직이지 못하는 상태가 남을 수 있다.
-	Character->HandleRespawn();
+	// 1. 사망 상태에서 목적지를 확인하고 이동한다. 실패하면 회복과 상태 해제를 하지 않는다.
+	const ETDZoneTravelResult TravelResult = TravelToRespawnZone(Player);
+	if (TravelResult != ETDZoneTravelResult::Success)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("부활 이동 실패 (사유 %d). 사망 상태를 유지한다."),
+			static_cast<int32>(TravelResult));
+		return false;
+	}
 
 	// 2. 체력·마나를 절반으로. 패널티가 없는 대신 만피로 살아나지는 않는다.
 	if (UAbilitySystemComponent* ASC = PlayerState->GetAbilitySystemComponent())
@@ -656,16 +716,8 @@ bool ATDGameMode::RespawnPlayer(APlayerController* Player)
 			UTDAttributeSet::GetManaAttribute(), MaxMana * RespawnVitalRatio);
 	}
 
-	// 3. 부활 지점으로. 그 존이 RespawnZoneId 를 지정하지 않았으면 기본 시작 존이다.
-	//    이동에 실패해도 부활 자체는 유지한다 — 살아 있는데 못 움직이는 것보다
-	//    제자리에서라도 살아나는 편이 낫다.
-	const ETDZoneTravelResult TravelResult = TravelToRespawnZone(Player);
-	if (TravelResult != ETDZoneTravelResult::Success)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("부활은 했지만 부활 지점으로 이동하지 못했다 (사유 %d). 죽은 자리에서 되살아난다."),
-			static_cast<int32>(TravelResult));
-	}
+	// 3. 위치와 생명력이 준비된 뒤 사망 해제 이벤트와 기존 타이머 정리를 실행한다.
+	Character->HandleRespawn();
 
 	UE_LOG(LogTemp, Log, TEXT("부활: %s (체력·마나 %.0f%%)"),
 		*PlayerState->GetPlayerName(), RespawnVitalRatio * 100.f);

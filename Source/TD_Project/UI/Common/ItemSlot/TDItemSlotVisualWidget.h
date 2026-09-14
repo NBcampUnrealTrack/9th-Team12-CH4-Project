@@ -47,7 +47,7 @@ class TD_PROJECT_API UTDItemSlotVisualWidget : public UUserWidget
 public:
 	/** 퀵슬롯의 정의 ID. 인벤토리는 바깥쪽 Entry에 툴팁을 붙인다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
-	void SetItemTooltipSource(FName ItemId, FText Hint);
+	void SetItemTooltipSource(FName ItemId, FText Hint, int32 EnhanceLevel = 0);
 
 	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
 	void SetSlotVisualData(const FTDItemSlotVisualData& InData);
@@ -111,6 +111,7 @@ protected:
 
 private:
 	FName TooltipItemId;
+	int32 TooltipEnhanceLevel = 0;
 	FText TooltipHint;
 	void RefreshItemTooltip();
 

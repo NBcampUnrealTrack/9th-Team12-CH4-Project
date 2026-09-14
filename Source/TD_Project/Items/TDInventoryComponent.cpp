@@ -11,6 +11,7 @@
 #include "Items/TDEnhanceStatics.h"
 #include "Items/TDItemUseComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Core/TDGameplayTags.h"
 
 namespace
 {
@@ -204,69 +205,18 @@ void UTDInventoryComponent::ServerEnhanceItem_Implementation(int32 SlotIndex)
 		return;
 	}
 
-	FTDItemInstance* Item = FindMutableBySlot(SlotIndex);
-	if (Item == nullptr)
-	{
-		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::ItemNotFound, 0);
-		return;
-	}
+	const FTDItemInstance* Item = FindBySlot(SlotIndex);
+	const int32 CurrentLevel = Item ? Item->EnhanceLevel : 0;
 
-	const int32 TargetLevel = Item->EnhanceLevel + 1;
-	const FTDEnhanceRow* Row = FindEnhanceRow(TargetLevel);
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("직접 강화 요청은 지원하지 않습니다. 대장간 강화창을 이용하세요."));
 
-	if (Row == nullptr)
-	{
-		// 데이터 누락(EnhanceTable 미지정 등)과 "이미 최고 레벨"을 구분하지 않는다.
-		// 둘 다 결과는 같다 — 이 이상은 못 올린다. 원인은 서버 로그로 남긴다.
-		UE_LOG(LogTemp, Warning,
-			TEXT("강화 실패: 레벨 %d 로 가는 행이 DT_Enhance 에 없다. "
-			     "EnhanceTable 미지정이거나 최고 레벨이다."), TargetLevel);
-		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::MaxLevelReached, Item->EnhanceLevel);
-		return;
-	}
-
-	if (!SpendGold(Row->Cost))
-	{
-		ClientItemEnhanced(SlotIndex, ETDEnhanceResult::NotEnoughGold, Item->EnhanceLevel);
-		return;
-	}
-
-	// 실패해도 이미 골드는 나갔다 — 시도 자체의 대가다(FTDEnhanceRow::Cost 주석 참조).
-	const FTDEnhanceRollResult RollResult = TDEnhance::Roll(*Row,
-		FMath::FRand(), FMath::FRand(), FMath::FRand());
-
-	ETDEnhanceResult FinalResult = ETDEnhanceResult::FailedNoChange;
-
-	switch (RollResult.Outcome)
-	{
-	case ETDEnhanceOutcome::Success:
-		Item->EnhanceLevel = TargetLevel;
-		FinalResult = ETDEnhanceResult::Success;
-		break;
-
-	case ETDEnhanceOutcome::Downgraded:
-		Item->EnhanceLevel = FMath::Max(0, Item->EnhanceLevel - RollResult.DowngradeTiers);
-		FinalResult = ETDEnhanceResult::Downgraded;
-		break;
-
-	case ETDEnhanceOutcome::FailedNoChange:
-	default:
-		FinalResult = ETDEnhanceResult::FailedNoChange;
-		break;
-	}
-
-	// 강화 레벨이 바뀌지 않았어도(FailedNoChange) 골드는 줄었으므로 알림은 항상 낸다.
-	MarkItemDirty(*Item);
-
-	UE_LOG(LogTemp, Log, TEXT("강화: 슬롯 %d '%s' — %s (%d강 → %d강, 비용 %d)"),
-		SlotIndex, *Item->ItemId.ToString(),
-		*UEnum::GetDisplayValueAsText(FinalResult).ToString(),
-		TargetLevel - 1, Item->EnhanceLevel, Row->Cost);
-
-	// 알림은 ClientItemEnhanced 안에서 한 번만 낸다(ETDZoneTravelResult 와 같은 패턴).
-	// 여기서 한 번 더 브로드캐스트하면 리슨 서버의 호스트 화면에서 두 번 뜬다 —
-	// Client RPC 는 소유자 자신에게는 네트워크를 타지 않고 그 자리에서 바로 실행되기 때문이다.
-	ClientItemEnhanced(SlotIndex, FinalResult, Item->EnhanceLevel);
+	ClientItemEnhanced(
+		SlotIndex,
+		ETDEnhanceResult::InternalError,
+		CurrentLevel);
 }
 
 void UTDInventoryComponent::ClientItemEnhanced_Implementation(int32 SlotIndex,
@@ -342,6 +292,14 @@ int32 UTDInventoryComponent::GetItemCount(FName ItemId) const
 
 void UTDInventoryComponent::BroadcastInventoryChanged()
 {
+	if (HasAuthorityToModify())
+	{
+		InventoryRevision =
+			InventoryRevision >= MAX_int64
+				? 1
+				: InventoryRevision + 1;
+	}
+
 	OnInventoryChanged.Broadcast();
 }
 
@@ -355,6 +313,95 @@ void UTDInventoryComponent::MarkContainerDirty()
 {
 	ItemContainer.MarkArrayDirty();
 	BroadcastInventoryChanged();
+}
+
+bool UTDInventoryComponent::CanAddItems(
+	const TMap<FName, int32>& Items) const
+{
+	if (!HasAuthorityToModify() || Items.IsEmpty())
+	{
+		return false;
+	}
+
+	int64 TotalNeededSlots = 0;
+
+	for (const TPair<FName, int32>& Pair : Items)
+	{
+		if (Pair.Key.IsNone() || Pair.Value <= 0)
+		{
+			return false;
+		}
+
+		const FTDItemRow* Row = FindItemRow(Pair.Key);
+
+		if (Row == nullptr)
+		{
+			return false;
+		}
+
+		const int64 MaxStack = Row->bStackable
+			? FMath::Max(1, Row->MaxStackSize)
+			: 1;
+
+		int64 Remaining = Pair.Value;
+
+		if (Row->bStackable)
+		{
+			for (const FTDItemInstance& Item : ItemContainer.Items)
+			{
+				if (Item.ItemId == Pair.Key && Item.Count < MaxStack)
+				{
+					Remaining -= MaxStack - Item.Count;
+
+					if (Remaining <= 0)
+					{
+						break;
+					}
+				}
+			}
+		}
+
+		if (Remaining > 0)
+		{
+			TotalNeededSlots +=
+				(Remaining + MaxStack - 1) / MaxStack;
+		}
+
+		if (TotalNeededSlots
+			> static_cast<int64>(SlotCapacity - ItemContainer.Items.Num()))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UTDInventoryComponent::AddItems(
+	const TMap<FName, int32>& Items)
+{
+	if (!CanAddItems(Items))
+	{
+		return false;
+	}
+
+	// CanAddItems가 모든 종류를 합쳐 검사했으므로 아래 AddItem은 전부 성공합니다.
+	// 게임 스레드에서 연속 실행되어 중간에 다른 요청이 끼어들 수 없습니다.
+	for (const TPair<FName, int32>& Pair : Items)
+	{
+		if (!AddItem(Pair.Key, Pair.Value))
+		{
+			UE_LOG(
+				LogTemp,
+				Error,
+				TEXT("AddItems: 사전 공간 검사 뒤 지급에 실패했다. ItemId=%s Count=%d"),
+				*Pair.Key.ToString(),
+				Pair.Value);
+			return false;
+		}
+	}
+
+	return true;
 }
 
 bool UTDInventoryComponent::AddItem(FName ItemId, int32 Count)
@@ -740,4 +787,121 @@ void UTDInventoryComponent::ReadSaveData(const FTDPlayerSaveData& In)
 
 	Gold = FMath::Clamp(In.Gold, 0, MaxGold);
 	OnGoldChanged.Broadcast(Gold);
+}
+
+ETDEnhanceResult UTDInventoryComponent::EnhanceItemForService(
+	int32 SlotIndex,
+	int32& OutNewLevel)
+{
+	OutNewLevel = 0;
+
+	if (!HasAuthorityToModify())
+	{
+		return ETDEnhanceResult::InternalError;
+	}
+
+	FTDItemInstance* Item = FindMutableBySlot(SlotIndex);
+
+	if (Item == nullptr)
+	{
+		return ETDEnhanceResult::ItemNotFound;
+	}
+
+	OutNewLevel = Item->EnhanceLevel;
+
+	const FTDItemRow* Definition =
+		FindItemDefinition(Item->ItemId);
+
+	if (Definition == nullptr
+		|| Definition->ItemType
+			!= TDTags::Item_Type_Accessory.GetTag()
+		|| Definition->bStackable
+		|| Item->Count != 1)
+	{
+		return ETDEnhanceResult::InternalError;
+	}
+
+	if (EnhanceTable == nullptr
+		|| Item->EnhanceLevel < 0
+		|| Item->EnhanceLevel >= MAX_int32)
+	{
+		return ETDEnhanceResult::InternalError;
+	}
+
+	const int32 TargetLevel = Item->EnhanceLevel + 1;
+
+	const FTDEnhanceRow* FoundRow =
+		FindEnhanceRow(TargetLevel);
+
+	if (FoundRow == nullptr)
+	{
+		return ETDEnhanceResult::MaxLevelReached;
+	}
+
+	// 판정 도중 사용할 값을 복사합니다.
+	const FTDEnhanceRow Rule = *FoundRow;
+
+	if (Rule.Cost < 0
+		|| !FMath::IsFinite(Rule.SuccessRate)
+		|| Rule.SuccessRate < 0.0f
+		|| Rule.SuccessRate > 1.0f
+		|| !FMath::IsFinite(Rule.DowngradeChanceOnFail)
+		|| Rule.DowngradeChanceOnFail < 0.0f
+		|| Rule.DowngradeChanceOnFail > 1.0f
+		|| Rule.MinDowngradeTiers < 0
+		|| Rule.MaxDowngradeTiers < Rule.MinDowngradeTiers)
+	{
+		return ETDEnhanceResult::InternalError;
+	}
+
+	if (!CanAfford(Rule.Cost))
+	{
+		return ETDEnhanceResult::NotEnoughGold;
+	}
+
+	const FTDEnhanceRollResult RollResult =
+		TDEnhance::Roll(
+			Rule,
+			FMath::FRand(),
+			FMath::FRand(),
+			FMath::FRand());
+
+	ETDEnhanceResult Result =
+		ETDEnhanceResult::FailedNoChange;
+
+	int32 NewLevel = Item->EnhanceLevel;
+
+	switch (RollResult.Outcome)
+	{
+	case ETDEnhanceOutcome::Success:
+		NewLevel = TargetLevel;
+		Result = ETDEnhanceResult::Success;
+		break;
+
+	case ETDEnhanceOutcome::Downgraded:
+		NewLevel = FMath::Max(
+			0,
+			Item->EnhanceLevel - RollResult.DowngradeTiers);
+		Result = ETDEnhanceResult::Downgraded;
+		break;
+
+	case ETDEnhanceOutcome::FailedNoChange:
+	default:
+		Result = ETDEnhanceResult::FailedNoChange;
+		break;
+	}
+
+	/*
+	 * 골드와 아이템을 모두 바꾼 뒤 변경 알림을 보냅니다.
+	 * 알림을 받은 다른 시스템이 절반만 변경된 상태를 읽지 않게 합니다.
+	 */
+	Gold -= Rule.Cost;
+	Item->EnhanceLevel = NewLevel;
+	OutNewLevel = NewLevel;
+
+	// 이 호출 이후에는 Item 포인터를 다시 사용하지 않습니다.
+	MarkItemDirty(*Item);
+	OnGoldChanged.Broadcast(Gold);
+
+	return Result;
 }

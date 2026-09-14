@@ -1,4 +1,5 @@
-#include "UI/TEST/TDUI_Login_PlayerController.h"
+#include "Player/TDPlayerController.h"
+#include "UI/Settings/TDUISettings.h"
 #include "UI/TEST/TDLoginWidget.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
 #include "Engine/LocalPlayer.h"
@@ -19,13 +20,13 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 
-void ATDUI_Login_PlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+void ATDPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME_CONDITION(ATDUI_Login_PlayerController, DummyAccountId, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(ATDPlayerController, DummyAccountId, COND_OwnerOnly);
 }
 
-void ATDUI_Login_PlayerController::ServerSelectCharacter_Implementation(int32 SlotIndex)
+void ATDPlayerController::ServerSelectCharacter_Implementation(int32 SlotIndex)
 {
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     UTDAccountSubSystem* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
@@ -76,7 +77,7 @@ void ATDUI_Login_PlayerController::ServerSelectCharacter_Implementation(int32 Sl
     else ClientAccountMessage(TEXT("월드 스폰에 실패했습니다. GameMode와 PlayerStart를 확인하세요."));
 }
 
-void ATDUI_Login_PlayerController::ServerLogin_Implementation(const FString& LoginId, const FString& Password)
+void ATDPlayerController::ServerLogin_Implementation(const FString& LoginId, const FString& Password)
 {
 
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
@@ -100,13 +101,13 @@ void ATDUI_Login_PlayerController::ServerLogin_Implementation(const FString& Log
     ForceNetUpdate();
 }
 
-void ATDUI_Login_PlayerController::ClientAccountMessage_Implementation(const FString& Message)
+void ATDPlayerController::ClientAccountMessage_Implementation(const FString& Message)
 {
     DummyMessage = Message;
     UE_LOG(LogTemp, Log, TEXT("[DummyAccount] %s"), *Message);
 }
 
-bool ATDUI_Login_PlayerController::SaveCharacter()
+bool ATDPlayerController::SaveCharacter()
 {
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     if (!State || !HasAuthority() || !State->HasSelectedCharacter() || !DummyCharacterId.IsValid()) return false;
@@ -134,12 +135,12 @@ bool ATDUI_Login_PlayerController::SaveCharacter()
     return bSaved;
 }
 
-void ATDUI_Login_PlayerController::ServerSaveCharacter_Implementation()
+void ATDPlayerController::ServerSaveCharacter_Implementation()
 {
     ClientAccountMessage(SaveCharacter() ? TEXT("더미 메모리에 저장했습니다.") : TEXT("저장할 더미 캐릭터가 없습니다."));
 }
 
-void ATDUI_Login_PlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void ATDPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     if (HasAuthority() && GetGameInstance())
     {
@@ -148,44 +149,49 @@ void ATDUI_Login_PlayerController::EndPlay(const EEndPlayReason::Type EndPlayRea
     Super::EndPlay(EndPlayReason);
 }
 
-void ATDUI_Login_PlayerController::BeginPlay()
+void ATDPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 #if !UE_BUILD_SHIPPING
-    if (IsLocalController())
+    if (IsLocalController() && bStartAccountFlowOnBeginPlay)
     {
         // 기존 UI 테스트 맵의 즉시 캐릭터 선택이 먼저 끝나도록 다음 틱에서 검사한다.
-        GetWorldTimerManager().SetTimerForNextTick(this, &ATDUI_Login_PlayerController::TDLoginScreen);
+        GetWorldTimerManager().SetTimerForNextTick(this, &ATDPlayerController::TDLoginScreen);
     }
 #endif
 }
 
-void ATDUI_Login_PlayerController::TDLoginScreen()
+void ATDPlayerController::TDLoginScreen()
 {
 #if !UE_BUILD_SHIPPING
     if (ULocalPlayer* Local = GetLocalPlayer())
     {
-        Local->GetSubsystem<UTDUIManagerSubsystem>()->StartAccountFlow(DummyLoginWidgetClass);
+        TSubclassOf<UTDLoginWidget> WidgetClass = DummyLoginWidgetClass;
+        if (!WidgetClass)
+        {
+            WidgetClass = GetDefault<UTDUISettings>()->LoginWidgetClass.LoadSynchronous();
+        }
+        if (WidgetClass) Local->GetSubsystem<UTDUIManagerSubsystem>()->StartAccountFlow(WidgetClass);
     }
 #endif
 }
 
-void ATDUI_Login_PlayerController::TDSave()
+void ATDPlayerController::TDSave()
 {
     ServerSaveCharacter();
 }
 
-void ATDUI_Login_PlayerController::TDCharacterSelect()
+void ATDPlayerController::TDCharacterSelect()
 {
     ServerLeaveCharacter(false);
 }
 
-void ATDUI_Login_PlayerController::TDLogout()
+void ATDPlayerController::TDLogout()
 {
     ServerLeaveCharacter(true);
 }
 
-void ATDUI_Login_PlayerController::ServerLeaveCharacter_Implementation(bool bLogout)
+void ATDPlayerController::ServerLeaveCharacter_Implementation(bool bLogout)
 {
     ATDPlayerState* Previous = GetPlayerState<ATDPlayerState>();
     UTDAccountSubSystem* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;

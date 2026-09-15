@@ -56,7 +56,10 @@ TSharedPtr<FJsonValue> WriteValue(FProperty *P, const void *V)
     if (auto *S = CastField<FStructProperty>(P))
     {
         if (S->Struct == FGameplayTag::StaticStruct())
-            return MakeShared<FJsonValueString>(static_cast<const FGameplayTag *>(V)->ToString());
+        {
+            const auto &Tag = *static_cast<const FGameplayTag *>(V);
+            return MakeShared<FJsonValueString>(Tag.IsValid() ? Tag.ToString() : FString());
+        }
         if (S->Struct == FGameplayTagContainer::StaticStruct())
         {
             TArray<TSharedPtr<FJsonValue>> Values;
@@ -126,6 +129,9 @@ bool ReadValue(FProperty *P, void *V, const TSharedPtr<FJsonValue> &J)
             FString Name;
             if (!J->TryGetString(Name))
                 return false;
+            // Legacy saves serialized the empty tag's FName as "None".
+            if (Name == TEXT("None"))
+                Name.Empty();
             auto Tag = Name.IsEmpty() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(FName(*Name), false);
             if (!Name.IsEmpty() && !Tag.IsValid())
                 return false;

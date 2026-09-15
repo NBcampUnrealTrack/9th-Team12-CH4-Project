@@ -7,6 +7,11 @@ use serde_json::json;
 pub struct ApiError(pub StatusCode, pub &'static str);
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        tracing::warn!(
+            status = self.0.as_u16(),
+            code = self.1,
+            "API request rejected"
+        );
         (self.0, Json(json!({"error":{"code":self.1}}))).into_response()
     }
 }

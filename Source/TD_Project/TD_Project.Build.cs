@@ -7,6 +7,8 @@ public class TD_Project : ModuleRules
 	public TD_Project(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		if (Target.bBuildEditor)
+			PrivateDependencyModuleNames.Add("UnrealEd");
 
 		PublicIncludePaths.Add(ModuleDirectory);
 

@@ -37,6 +37,10 @@ class TD_PROJECT_API UTDBackendSaveSubsystem : public UGameInstanceSubsystem
     bool bStopping = false;
     TMap<TWeakObjectPtr<ATDPlayerController>, TSharedPtr<FTDBackendSession>> Sessions;
     FTSTicker::FDelegateHandle TickHandle;
+#if WITH_EDITOR
+    FDelegateHandle PrePIEEndedHandle;
+    void OnPrePIEEnded(bool bSimulating);
+#endif
     TSharedPtr<FTDBackendSession> Session(ATDPlayerController *PC);
     void Request(const TSharedPtr<FTDBackendSession> &S, const FString &Method, const FString &Path,
                  const FString &Body, FReply Reply, int32 Retries = 0);
@@ -47,5 +51,6 @@ class TD_PROJECT_API UTDBackendSaveSubsystem : public UGameInstanceSubsystem
     void Report(const TSharedPtr<FTDBackendSession> &S, const FString &Message);
     bool WriteRecovery(const TSharedPtr<FTDBackendSession> &S);
     void Quarantine(const TSharedPtr<FTDBackendSession> &S);
+    void RecoverBeforeLoad(const TSharedPtr<FTDBackendSession> &S, TFunction<void()> Continue);
     bool Tick(float Delta);
 };

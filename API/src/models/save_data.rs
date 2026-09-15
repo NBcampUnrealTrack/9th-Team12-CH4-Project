@@ -110,7 +110,7 @@ impl SaveData {
             "SaveVersion":2,"ClassId":class_id,"Level":1,"Exp":0,"SkillLevels":[],
             "InventorySlotCapacity":40,"InventoryItems":[],"EquippedItems":[],
             "HealthRatio":1.0,"ManaRatio":1.0,"LastZoneId":"Zone.Region1.Town",
-            "LastLocation":{"X":0.0,"Y":0.0,"Z":0.0},"bHasSavedLocation":false,
+            "LastLocation":{"X":-738.964579,"Y":1455.173839,"Z":10285.933642},"bHasSavedLocation":true,
             "QuestProgressTags":[],"ClaimedChestIds":[],"ChestClaimRecords":[],"SeenChapterIds":[],
             "NpcGiftRecords":[],"QuickSlots":[],"Gold":0,"QuestStates":[],"AffectionStates":[]
         }))
@@ -234,6 +234,13 @@ mod tests {
     fn initial_round_trip() {
         let d = SaveData::initial("Warrior");
         assert!(d.validate().is_ok());
+        let json = d.json();
+        assert_eq!(json["LastZoneId"], "Zone.Region1.Town");
+        assert_eq!(
+            json["LastLocation"],
+            serde_json::json!({"X":-738.964579,"Y":1455.173839,"Z":10285.933642})
+        );
+        assert_eq!(json["bHasSavedLocation"], true);
         assert_eq!(
             serde_json::from_value::<SaveData>(d.json()).unwrap().json(),
             d.json()

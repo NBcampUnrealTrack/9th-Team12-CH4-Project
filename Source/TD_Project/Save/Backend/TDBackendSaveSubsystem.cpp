@@ -13,6 +13,11 @@
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "Engine/GameInstance.h"
+#if WITH_EDITOR
+#include "Editor.h"
+#include "HttpManager.h"
+#include "HAL/PlatformProcess.h"
+#endif
 
 struct FTDBackendSession
 {
@@ -25,7 +30,8 @@ struct FTDBackendSession
     FString Wanted, Sent, PendingBody;
     bool Busy = false, Saving = false, Leaving = false, Logout = false, Detached = false, Blocked = false,
          Renewing = false, WorldClosed = false, LeaseLost = false;
-    double NextRenew = 0;
+    double NextRenew = 0, LeaseDeadline = 0, NextCleanup = 0, NextAutoSave = 0, DisconnectDeadline = 0;
+    FString LastAcknowledged;
 };
 namespace
 {
@@ -132,9 +138,44 @@ void UTDBackendSaveSubsystem::Initialize(FSubsystemCollectionBase &Collection)
 #endif
     BaseUrl.RemoveFromEnd(TEXT("/"));
     TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &ThisClass::Tick), 1.0f);
+#if WITH_EDITOR
+    PrePIEEndedHandle = FEditorDelegates::PrePIEEnded.AddUObject(this, &ThisClass::OnPrePIEEnded);
+#endif
 }
+#if WITH_EDITOR
+void UTDBackendSaveSubsystem::OnPrePIEEnded(bool)
+{
+    // PrePIEEnded runs before Pawn/world teardown: capture while gameplay objects still exist.
+    TArray<TWeakObjectPtr<ATDPlayerController>> Controllers;
+    Sessions.GetKeys(Controllers);
+    for (const auto &Controller : Controllers)
+        if (auto *PC = Controller.Get())
+            Disconnect(PC);
+    if (Sessions.IsEmpty())
+        return;
+    UE_LOG(LogTemp, Display, TEXT("[BackendSave] PIE ending: waiting up to 5 seconds for final save, lease release and logout."));
+    const double Deadline = FPlatformTime::Seconds() + 5.0;
+    while (!Sessions.IsEmpty() && FPlatformTime::Seconds() < Deadline)
+    {
+        // Pump HTTP completion delegates only; do not re-enter the world/editor tick.
+        FHttpModule::Get().GetHttpManager().Tick(0.01f);
+        FPlatformProcess::Sleep(0.01f);
+    }
+    if (Sessions.IsEmpty())
+    {
+        UE_LOG(LogTemp, Display, TEXT("[BackendSave] PIE shutdown storage cleanup completed."));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BackendSave] PIE shutdown timed out: cleanup not confirmed. Recovery files retained; leases expire after their last renewal."));
+    }
+}
+#endif
 void UTDBackendSaveSubsystem::Deinitialize()
 {
+#if WITH_EDITOR
+    FEditorDelegates::PrePIEEnded.Remove(PrePIEEndedHandle);
+#endif
     bStopping = true;
     FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
     Sessions.Empty();
@@ -193,6 +234,16 @@ void UTDBackendSaveSubsystem::Request(const TSharedPtr<FTDBackendSession> &S, co
             if (!Self || Self->bStopping)
                 return;
             const int32 Code = Ok && Resp ? Resp->GetResponseCode() : 0;
+            if (Code < 200 || Code >= 300)
+            {
+                FString ErrorCode = TEXT("unknown");
+                const auto Json = Resp && Resp->GetContentLength() <= 1024 * 1024 ? Parse(Resp->GetContentAsString()) : nullptr;
+                const TSharedPtr<FJsonObject> *Error = nullptr;
+                if (Json && Json->TryGetObjectField(TEXT("error"), Error))
+                    (*Error)->TryGetStringField(TEXT("code"), ErrorCode);
+                // Never print request bodies, headers or credentials.
+                UE_LOG(LogTemp, Warning, TEXT("[BackendSave] %s %s HTTP=%d error=%s"), *Method, *UrlPath, Code, *ErrorCode.Left(80));
+            }
             if ((Code == 0 || Code >= 500) && Retries > 0)
             {
                 Self->Request(S, Method, UrlPath, Body, *Done, Retries - 1);
@@ -261,7 +312,12 @@ void UTDBackendSaveSubsystem::Refresh(const TSharedPtr<FTDBackendSession> &S, FN
                 S->Busy = false;
                 auto *P = S->PC.Get();
                 if (!P || S->Detached)
+                {
+                    S->Detached = true;
+                    S->Logout = true;
+                    FinishLeave(S);
                     return;
+                }
                 const TArray<TSharedPtr<FJsonValue>> *Rows = nullptr;
                 TArray<FTDCharacterSummary> List;
                 TSet<FGuid> Ids;
@@ -338,22 +394,30 @@ void UTDBackendSaveSubsystem::Select(ATDPlayerController *PC, int32 ListIndex)
     const FGuid Id = S->Character;
     Request(
         S, TEXT("POST"), Path(Id, TEXT("/lease")), {},
-        [this, S, Id, ListIndex](int32 Code, const TSharedPtr<FJsonObject> &)
+        [this, S, Id, ListIndex](int32 Code, const TSharedPtr<FJsonObject> &Response)
         {
             if (Code != 204)
             {
                 S->Busy = false;
                 S->Character.Invalidate();
                 S->Lease.Empty();
-                Report(S, TEXT("캐릭터가 사용 중이거나 연결할 수 없습니다."));
+                FString Reason;
+                const TSharedPtr<FJsonObject> *Error = nullptr;
+                if (Response && Response->TryGetObjectField(TEXT("error"), Error))
+                    (*Error)->TryGetStringField(TEXT("code"), Reason);
+                Report(S, Reason == TEXT("character_in_use")
+                    ? TEXT("이전 접속 정리 중이거나 다른 서버에서 사용 중입니다. 잠시 후 다시 시도하세요. 강제 종료된 서버의 잠금은 마지막 갱신 후 120초에 만료됩니다.")
+                    : FString::Printf(TEXT("캐릭터 접속 실패 (HTTP %d, %s). 서버 로그를 확인하세요."), Code, *Reason.Left(80)));
                 return;
             }
             S->NextRenew = FPlatformTime::Seconds() + 30;
+            S->LeaseDeadline = FPlatformTime::Seconds() + 90;
             if (S->Detached)
             {
                 FinishLeave(S);
                 return;
             }
+            RecoverBeforeLoad(S, [this, S, Id, ListIndex]() {
             Request(
                 S, TEXT("GET"), Path(Id, TEXT("/save")), {},
                 [this, S, Id, ListIndex](int32 Status, const TSharedPtr<FJsonObject> &R)
@@ -377,6 +441,8 @@ void UTDBackendSaveSubsystem::Select(ATDPlayerController *PC, int32 ListIndex)
                         return;
                     }
                     S->Revision = Revision;
+                    S->LastAcknowledged = JsonText(TDBackendSaveCodec::Encode(Record.Data));
+                    S->NextAutoSave = FPlatformTime::Seconds() + 30;
                     S->RecoveryId = FGuid::NewGuid();
                     S->Blocked = false;
                     S->WorldClosed = false;
@@ -394,6 +460,7 @@ void UTDBackendSaveSubsystem::Select(ATDPlayerController *PC, int32 ListIndex)
                     }
                 },
                 2);
+            });
         },
         2);
 }
@@ -411,7 +478,10 @@ void UTDBackendSaveSubsystem::Create(ATDPlayerController *PC, const FString &Nam
             {
                 S->Busy = false;
                 if (S->Detached)
+                {
+                    FinishLeave(S);
                     return;
+                }
                 if (Code == 201)
                     Refresh(S, TEXT("Create"));
                 else
@@ -435,7 +505,10 @@ void UTDBackendSaveSubsystem::Delete(ATDPlayerController *PC, const FGuid &Id)
             {
                 S->Busy = false;
                 if (S->Detached)
+                {
+                    FinishLeave(S);
                     return;
+                }
                 if (Code == 204)
                     Refresh(S, TEXT("Delete"));
                 else
@@ -480,6 +553,7 @@ bool UTDBackendSaveSubsystem::WriteRecovery(const TSharedPtr<FTDBackendSession> 
     auto J = MakeShared<FJsonObject>();
     J->SetStringField(TEXT("character_id"), S->Character.ToString(EGuidFormats::DigitsWithHyphens));
     J->SetObjectField(TEXT("latest_data"), Parse(S->Wanted));
+    J->SetNumberField(TEXT("base_revision"), S->Revision);
     if (!S->PendingBody.IsEmpty())
         J->SetObjectField(TEXT("pending_request"), Parse(S->PendingBody));
     // No bearer token, lease token, or server key is written to the recovery file.
@@ -489,6 +563,105 @@ bool UTDBackendSaveSubsystem::WriteRecovery(const TSharedPtr<FTDBackendSession> 
                                        FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
         return false;
     return IFileManager::Get().Move(*File, *(File + TEXT(".tmp")), true, true);
+}
+void UTDBackendSaveSubsystem::RecoverBeforeLoad(const TSharedPtr<FTDBackendSession> &S, TFunction<void()> Continue)
+{
+    const FString Dir = FPaths::ProjectSavedDir() / TEXT("BackendOutbox");
+    TArray<FString> Files;
+    IFileManager::Get().FindFiles(Files, *(Dir / (S->Character.ToString(EGuidFormats::Digits) + TEXT("-*.json"))), true, false);
+    if (Files.IsEmpty())
+    {
+        Continue();
+        return;
+    }
+    auto Fail = [this, S]()
+    {
+        Report(S, TEXT("미완료 저장 복구를 확인하지 못했습니다. 기존 파일을 보존하고 접속을 중단합니다. 서버 Saved/BackendOutbox와 오류 로그를 확인하세요."));
+        FinishLeave(S);
+    };
+    // Never guess between different sessions' competing recovery snapshots.
+    if (Files.Num() != 1)
+    {
+        Fail();
+        return;
+    }
+    const FString File = Dir / Files[0];
+    FString Text;
+    if (IFileManager::Get().FileSize(*File) > 3 * 1024 * 1024 || !FFileHelper::LoadFileToString(Text, *File))
+    {
+        Fail();
+        return;
+    }
+    const auto Journal = Parse(Text);
+    FGuid Character;
+    const TSharedPtr<FJsonObject> *Latest = nullptr;
+    FTDPlayerSaveData Checked;
+    if (!ReadGuid(Journal, TEXT("character_id"), Character) || Character != S->Character ||
+        !Journal->TryGetObjectField(TEXT("latest_data"), Latest) || !TDBackendSaveCodec::Decode(*Latest, Checked))
+    {
+        Fail();
+        return;
+    }
+    const FString LatestText = JsonText(TDBackendSaveCodec::Encode(Checked));
+    const TSharedPtr<FJsonObject> *Pending = nullptr;
+    TSharedPtr<FJsonObject> Payload;
+    if (Journal->TryGetObjectField(TEXT("pending_request"), Pending))
+        Payload = *Pending;
+    else
+    {
+        double Base;
+        if (!Journal->TryGetNumberField(TEXT("base_revision"), Base) || Base < 0 || Base > 9007199254740990.0 || Base != FMath::FloorToDouble(Base))
+        {
+            Fail();
+            return;
+        }
+        Payload = MakeShared<FJsonObject>();
+        Payload->SetNumberField(TEXT("expected_revision"), Base);
+        Payload->SetStringField(TEXT("request_id"), FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens));
+        Payload->SetObjectField(TEXT("data"), Parse(LatestText));
+        Journal->SetObjectField(TEXT("pending_request"), Payload);
+        if (!FFileHelper::SaveStringToFile(JsonText(Journal), *(File + TEXT(".tmp")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) ||
+            !IFileManager::Get().Move(*File, *(File + TEXT(".tmp")), true, true))
+        {
+            Fail();
+            return;
+        }
+    }
+    const auto Id = S->Character;
+    // Replay the original request ID and revision under a newly acquired lease, never rebase a stale save.
+    Request(S, TEXT("PUT"), Path(Id, TEXT("/save")), JsonText(Payload),
+        [this, S, Id, File, Journal, LatestText, Continue, Fail](int32 Code, const TSharedPtr<FJsonObject> &Receipt)
+        {
+            int64 Acknowledged;
+            if (Code != 200 || !ReadRevision(Receipt, Acknowledged)) { Fail(); return; }
+            Request(S, TEXT("GET"), Path(Id, TEXT("/save")), {},
+                [this, S, Id, File, Journal, LatestText, Continue, Fail, Acknowledged](int32 Status, const TSharedPtr<FJsonObject> &Loaded)
+                {
+                    int64 Current;
+                    const TSharedPtr<FJsonObject> *Data = nullptr;
+                    FTDPlayerSaveData CheckedData;
+                    if (Status != 200 || !ReadRevision(Loaded, Current) || Current != Acknowledged ||
+                        !Loaded->TryGetObjectField(TEXT("data"), Data) || !TDBackendSaveCodec::Decode(*Data, CheckedData))
+                    { Fail(); return; }
+                    if (JsonText(TDBackendSaveCodec::Encode(CheckedData)) == LatestText)
+                    {
+                        if (!IFileManager::Get().Delete(*File, true, true)) { Fail(); return; }
+                        UE_LOG(LogTemp, Display, TEXT("[BackendSave] Crash recovery acknowledged for %s at revision %lld."), *Id.ToString(), Current);
+                        if (S->Detached) FinishLeave(S); else Continue();
+                        return;
+                    }
+                    auto Next = MakeShared<FJsonObject>();
+                    Next->SetStringField(TEXT("request_id"), FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens));
+                    Next->SetNumberField(TEXT("expected_revision"), Current);
+                    Next->SetObjectField(TEXT("data"), Parse(LatestText));
+                    Journal->SetObjectField(TEXT("pending_request"), Next);
+                    if (!FFileHelper::SaveStringToFile(JsonText(Journal), *(File + TEXT(".tmp")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) ||
+                        !IFileManager::Get().Move(*File, *(File + TEXT(".tmp")), true, true))
+                    { Fail(); return; }
+                    // The next pass persists latest_data using the now-journaled, idempotent request.
+                    RecoverBeforeLoad(S, Continue);
+                }, 2);
+        }, 2);
 }
 void UTDBackendSaveSubsystem::Quarantine(const TSharedPtr<FTDBackendSession> &S)
 {
@@ -543,13 +716,14 @@ void UTDBackendSaveSubsystem::StartSave(const TSharedPtr<FTDBackendSession> &S)
                 return;
             }
             S->Revision = Revision;
+            S->LastAcknowledged = S->Sent;
             S->PendingBody.Empty();
             if (S->LeaseLost)
             {
                 Quarantine(S);
                 return;
             }
-            if (!S->Detached && !Capture(S, S->Wanted))
+            if (S->Leaving && !S->Detached && !Capture(S, S->Wanted))
             {
                 S->Blocked = true;
                 Report(S, TEXT("최신 상태를 수집할 수 없습니다."));
@@ -604,6 +778,7 @@ void UTDBackendSaveSubsystem::Leave(ATDPlayerController *PC, bool bLogout)
 void UTDBackendSaveSubsystem::FinishLeave(const TSharedPtr<FTDBackendSession> &S)
 {
     S->Busy = true;
+    S->NextCleanup = FPlatformTime::Seconds() + 5;
     // Close gameplay immediately after the acknowledged snapshot, before the release HTTP wait.
     if (!S->WorldClosed)
     {
@@ -631,8 +806,17 @@ void UTDBackendSaveSubsystem::FinishLeave(const TSharedPtr<FTDBackendSession> &S
             S->Busy = true;
             Request(
                 S, TEXT("POST"), TEXT("/v1/auth/logout"), {},
-                [this, S](int32, const TSharedPtr<FJsonObject> &)
+                [this, S](int32 Status, const TSharedPtr<FJsonObject> &)
                 {
+                    // An already revoked/expired bearer is also fully logged out.
+                    if (Status != 204 && Status != 401)
+                    {
+                        S->Busy = false;
+                        S->Leaving = true;
+                        S->NextCleanup = FPlatformTime::Seconds() + 5;
+                        Report(S, TEXT("로그아웃 완료를 확인하지 못했습니다. 서버에서 재시도합니다."));
+                        return;
+                    }
                     S->Token.Empty();
                     S->Busy = false;
                     if (S->Detached)
@@ -665,6 +849,7 @@ void UTDBackendSaveSubsystem::Disconnect(ATDPlayerController *PC)
     }
     S->Detached = true;
     S->Logout = true;
+    S->DisconnectDeadline = FPlatformTime::Seconds() + 60;
     if (S->Character.IsValid() && !S->Busy && !S->Saving && !S->Blocked && !S->Wanted.IsEmpty())
         StartSave(S);
     else if (!S->Character.IsValid() && !S->Busy)
@@ -673,9 +858,37 @@ void UTDBackendSaveSubsystem::Disconnect(ATDPlayerController *PC)
 bool UTDBackendSaveSubsystem::Tick(float)
 {
     const double Now = FPlatformTime::Seconds();
-    for (auto &Pair : Sessions)
+    // HTTP failures can invoke callbacks synchronously and remove sessions.
+    TArray<TSharedPtr<FTDBackendSession>> Snapshot;
+    Sessions.GenerateValueArray(Snapshot);
+    for (const auto &S : Snapshot)
     {
-        auto S = Pair.Value;
+        if ((S->Detached || S->Leaving) && !S->Busy && !S->Saving && !S->Character.IsValid() && Now >= S->NextCleanup)
+        {
+            FinishLeave(S);
+            continue;
+        }
+        if (S->Character.IsValid() && !S->WorldClosed && !S->Blocked &&
+            ((S->LeaseDeadline > 0 && Now >= S->LeaseDeadline) ||
+             (S->Detached && S->DisconnectDeadline > 0 && Now >= S->DisconnectDeadline)))
+        {
+            // Do not keep disconnected characters locked indefinitely during an outage.
+            if (S->Saving || S->Busy)
+                S->LeaseLost = true;
+            else
+                Quarantine(S);
+            continue;
+        }
+        if (S->Character.IsValid() && !S->Detached && !S->Leaving && !S->Busy && !S->Blocked && Now >= S->NextAutoSave)
+        {
+            S->NextAutoSave = Now + 30;
+            FString Latest;
+            if (Capture(S, Latest) && Latest != S->LastAcknowledged)
+            {
+                S->Wanted = MoveTemp(Latest);
+                if (S->Saving) WriteRecovery(S); else StartSave(S);
+            }
+        }
         if (!S->Character.IsValid() || S->Busy || S->Renewing || Now < S->NextRenew)
             continue;
         if (S->WorldClosed)
@@ -705,8 +918,12 @@ bool UTDBackendSaveSubsystem::Tick(float)
                     }
                     Quarantine(S);
                 }
-                else if (Code == 204 && !S->Saving && !S->PendingBody.IsEmpty())
-                    StartSave(S);
+                else if (Code == 204)
+                {
+                    S->LeaseDeadline = FPlatformTime::Seconds() + 90;
+                    if (!S->Saving && !S->PendingBody.IsEmpty())
+                        StartSave(S);
+                }
             },
             2);
     }
@@ -1020,8 +1237,11 @@ bool FTDBackendControllerTest::RunTest(const FString &)
                     return true;
                 }
                 PS->GetInventoryComponent()->AddGold(100);
-                R->PC->ServerSaveCharacter_Implementation();
+                R->Session->NextAutoSave = 0;
+                R->Service->Tick(0);
+                TestTrue(TEXT("Changed data starts scheduled save"), R->Session->Saving);
                 PS->GetInventoryComponent()->AddGold(25);
+                R->PC->ServerSaveCharacter_Implementation();
                 break;
             case 7:
                 TestTrue(TEXT("Queued latest snapshot acknowledged"), R->Session->Revision >= 2);
@@ -1067,10 +1287,36 @@ bool FTDBackendControllerTest::RunTest(const FString &)
                 TestEqual(TEXT("Disconnect gold persisted"), PS->GetInventoryComponent()->GetGold(), 175);
                 TestEqual(TEXT("Disconnect captured Pawn before destruction"), R->PC->GetPawn()->GetActorLocation(),
                           FVector(321, 654, 987));
-                R->PC->ServerLeaveCharacter_Implementation(true);
+                // Simulate a crash journal followed by an available lease, without saving this snapshot to DB.
+                PS->GetInventoryComponent()->AddGold(7);
+                R->Service->Capture(R->Session, R->Session->Wanted);
+                TestTrue(TEXT("Crash journal recorded"), R->Service->WriteRecovery(R->Session));
+                R->Session->Busy = true;
+                R->Service->Request(R->Session, TEXT("DELETE"), Path(R->Selected, TEXT("/lease")), {},
+                    [this, R](int32 Code, const TSharedPtr<FJsonObject> &)
+                    {
+                        TestEqual(TEXT("Crash fixture releases lease"), Code, 204);
+                        R->Session->Character.Invalidate();
+                        R->Session->Lease.Empty();
+                        R->Session->Busy = false;
+                        R->PC->Destroy();
+                    });
+                break;
+            case 13:
+                R->PC = R->World->SpawnActor<ATDPlayerController>();
+                R->PC->bStartAccountFlowOnBeginPlay = false;
+                R->PC->ServerLogin_Implementation(R->Login, TEXT("TestPassword123!"));
+                R->Session = R->Service->Session(R->PC);
+                break;
+            case 14:
+                R->PC->ServerSelectCharacter_Implementation(1);
+                break;
+            case 15:
+                TestEqual(TEXT("Crash journal recovered before spawn"), PS->GetInventoryComponent()->GetGold(), 182);
+                R->Service->OnPrePIEEnded(false);
+                TestTrue(TEXT("PIE shutdown drained sessions"), R->Service->Sessions.IsEmpty());
                 break;
             default:
-                TestFalse(TEXT("Final logout clears identity"), R->PC->IsLoggedIn());
                 TestTrue(TEXT("Final logout clears token"), R->Session->Token.IsEmpty());
                 R->Cleanup();
                 return true;

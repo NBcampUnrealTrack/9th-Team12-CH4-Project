@@ -177,6 +177,9 @@ bool UTDAccountSubSystem::CreateCharacter(ATDPlayerState* Player, const FString&
     FTDDummyCharacterRecord Character;
     Character.CharacterId = FGuid::NewGuid(); Character.CharacterName = Name;
     Character.Data.ClassId = ClassId;
+    Character.Data.LastZoneId = FGameplayTag::RequestGameplayTag(TEXT("Zone.Region1.Town"));
+    Character.Data.LastLocation = FVector(-738.964579, 1455.173839, 10285.933642);
+    Character.Data.bHasSavedLocation = true;
     Character.Data.QuickSlots.SetNum(6);
     FTDDummyAccountRecord* Mutable = Accounts.FindByPredicate([&](const auto& Entry) { return Entry.AccountId == Account->AccountId; });
     Mutable->Characters.Add(MoveTemp(Character)); OutError.Empty(); return true;

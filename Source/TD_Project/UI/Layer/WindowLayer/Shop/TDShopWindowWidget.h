@@ -110,6 +110,10 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UTextBlock> TXT_Gold;
 
+	/** 상단의 현재 보유 골드. 구매/판매 페이지가 함께 사용합니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> TXT_Gold_1;
+	
 	/** DT에 등록된 실제 상품만 표시하고 영역을 넘으면 스크롤합니다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UTileView> TV_BuyItems;

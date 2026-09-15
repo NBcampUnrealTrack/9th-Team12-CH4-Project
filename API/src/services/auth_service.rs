@@ -42,6 +42,11 @@ fn normalize_login_id(s: &str) -> ApiResult<String> {
         Ok(s)
     }
 }
+fn valid_password(password: &str, require_minimum_length: bool) -> bool {
+    let minimum_length = if require_minimum_length { 8 } else { 1 };
+    (minimum_length..=64).contains(&password.len())
+        && password.bytes().all(|byte| byte.is_ascii_graphic())
+}
 pub async fn register_account(
     state: &AppState,
     client_ip: IpAddr,
@@ -49,8 +54,8 @@ pub async fn register_account(
 ) -> ApiResult<RegisterResponse> {
     check_login_rate_limit(state, client_ip).await?;
     let login = normalize_login_id(&request.login_id)?;
-    if !(8..=128).contains(&request.password.len()) {
-        return Err(bad_request("password_length_8_to_128_bytes"));
+    if !valid_password(&request.password, true) {
+        return Err(bad_request("password_ascii_8_to_64_chars"));
     }
     let permit = state
         .password_tasks
@@ -89,7 +94,7 @@ pub async fn login_account(
 ) -> ApiResult<LoginResponse> {
     check_login_rate_limit(state, client_ip).await?;
     let login = normalize_login_id(&request.login_id)?;
-    if request.password.len() > 128 {
+    if !valid_password(&request.password, false) {
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     }
     let row = sqlx::query("SELECT id,password_hash FROM td_accounts WHERE login_id=$1")
@@ -143,6 +148,20 @@ pub async fn login_account(
         token_type: "Bearer",
         expires_in: 86400,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_password;
+
+    #[test]
+    fn password_policy_accepts_only_printable_ascii() {
+        assert!(valid_password("Abcd123!", true));
+        assert!(!valid_password("Short1!", true));
+        assert!(!valid_password("Password WithSpace1!", true));
+        assert!(!valid_password("한글Password1!", true));
+        assert!(!valid_password(&"a".repeat(65), true));
+    }
 }
 pub async fn logout_account(state: &AppState, access_token: &str) -> ApiResult<()> {
     authenticate_session(state, access_token).await?;

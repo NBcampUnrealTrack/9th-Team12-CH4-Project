@@ -4,6 +4,7 @@
 #include "Character/TDCharacterBase.h"
 #include "TDPlayerCharacter.generated.h"
 
+class ATDPlayerState;
 class UInputAction;
 class UInputMappingContext;
 class UTDInteractionComponent;
@@ -164,6 +165,27 @@ protected:
 private:
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */
 	void InitAbilityActorInfo();
+
+	// ── 직업 외형 ─────────────────────────────────────────
+	// 직업 → 애니메이션 BP 는 DT_CharacterClass → VisualData(UTDCharacterClassData) 에서 읽는다.
+	// PlayerState 가 확실히 붙는 두 순간(PossessedBy · OnRep_PlayerState)에 걸어서, 스폰·복제 순서와
+	// 무관하게 한 번은 적용된다. 애니메이션 종류는 복제되지 않으므로 각 머신이 스스로 넣는다.
+
+	/** PlayerState 의 직업 변경 알림에 연결하고 지금 직업을 적용한다. 여러 번 불려도 한 번만 연결한다. */
+	void BindClassAppearance();
+
+	/**
+	 * 직업 변경 알림 수신. 이름을 HandleClassChanged 로 두면 BP_Player 의 같은 이름 커스텀 이벤트와
+	 * 겹쳐 BP 컴파일이 깨진다(2026-09-16) — UFUNCTION 은 자식 BP 의 이벤트·함수 이름과 겹치면 안 된다.
+	 */
+	UFUNCTION()
+	void OnAppearanceClassChanged(FName NewClassId);
+
+	/** 직업이 아직 없으면(None) 건너뛴다 — 도착하면 알림으로 다시 온다. 같은 애니메이션이면 다시 넣지 않는다. */
+	void ApplyClassAppearance(FName ClassId);
+
+	/** 알림을 연결한 PlayerState. 바뀌면 옛 연결을 끊는다. */
+	TWeakObjectPtr<ATDPlayerState> AppearanceSource;
 
 	/**
 	 * 죽은 뒤 조작을 막고 이동을 멈춘다. 되살아나면 반대로 되돌린다.

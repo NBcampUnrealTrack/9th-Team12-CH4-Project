@@ -13,6 +13,12 @@
 #include "Player/TDPlayerState.h"
 #include "Interaction/TDInteractionComponent.h"
 #include "Character/TDSilhouetteComponent.h"
+#include "Character/TDCharacterClassData.h"
+#include "Data/TDCharacterClassRow.h"
+#include "Engine/DataTable.h"
+#include "PaperZDAnimationComponent.h"
+#include "PaperZDAnimInstance.h"
+#include "Settings/TDCharacterClassSettings.h"
 #include "Skill/TDSkillComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
@@ -83,6 +89,7 @@ void ATDPlayerCharacter::PossessedBy(AController* NewController)
 	// 서버 경로. 컨트롤러가 빙의하면서 PlayerState 연결이 끝난 시점이다.
 	InitAbilityActorInfo();
 	BindToStatComponent();
+	BindClassAppearance();
 }
 
 void ATDPlayerCharacter::OnRep_PlayerState()
@@ -92,6 +99,75 @@ void ATDPlayerCharacter::OnRep_PlayerState()
 	// 클라이언트 경로. 이제야 PlayerState 와 그 안의 컴포넌트들에 접근할 수 있다.
 	InitAbilityActorInfo();
 	BindToStatComponent();
+	BindClassAppearance();
+}
+
+// ── 직업 외형 ─────────────────────────────────────────────
+
+void ATDPlayerCharacter::BindClassAppearance()
+{
+	ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
+	if (State == nullptr)
+	{
+		return;
+	}
+
+	// 직업 값이 PlayerState 보다 늦게 도착하는 경우가 있어 알림에도 걸어 둔다.
+	if (AppearanceSource.Get() != State)
+	{
+		if (ATDPlayerState* Previous = AppearanceSource.Get())
+		{
+			Previous->OnCharacterClassChanged.RemoveDynamic(this, &ATDPlayerCharacter::OnAppearanceClassChanged);
+		}
+
+		State->OnCharacterClassChanged.AddUniqueDynamic(this, &ATDPlayerCharacter::OnAppearanceClassChanged);
+		AppearanceSource = State;
+	}
+
+	ApplyClassAppearance(State->GetCharacterClassId());
+}
+
+void ATDPlayerCharacter::OnAppearanceClassChanged(FName NewClassId)
+{
+	ApplyClassAppearance(NewClassId);
+}
+
+void ATDPlayerCharacter::ApplyClassAppearance(FName ClassId)
+{
+	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
+	if (ClassId.IsNone() || Animation == nullptr)
+	{
+		return;
+	}
+
+	// 파티창·HUD 초상화와 같은 경로로 읽는다(UTDPlayerStatsViewModel). 직업 → 그림의 짝이 한 곳에 모인다.
+	const UDataTable* ClassTable = UTDCharacterClassSettings::Get()->ClassTable.LoadSynchronous();
+	const FTDCharacterClassRow* Row = ClassTable != nullptr
+		? ClassTable->FindRow<FTDCharacterClassRow>(ClassId, TEXT("ATDPlayerCharacter::ApplyClassAppearance"), false)
+		: nullptr;
+	const UTDCharacterClassData* Visuals = Row != nullptr ? Row->VisualData.LoadSynchronous() : nullptr;
+	const TSubclassOf<UPaperZDAnimInstance> AnimClass = Visuals != nullptr ? Visuals->AnimInstanceClass.LoadSynchronous() : nullptr;
+
+	if (AnimClass == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("외형: '%s' 의 애니메이션을 찾지 못해 기본 외형으로 남는다 — "
+			     "DT_CharacterClass 행 · VisualData · 그 에셋의 AnimInstanceClass 를 확인할 것."),
+			*ClassId.ToString());
+		return;
+	}
+
+	// 다시 넣으면 애니메이션 인스턴스가 새로 만들어져 재생 중이던 동작이 끊긴다.
+	if (Animation->GetAnimInstanceClass() == AnimClass)
+	{
+		return;
+	}
+
+	Animation->SetAnimInstanceClass(AnimClass);
+
+	UE_LOG(LogTemp, Log, TEXT("외형 적용(%s): %s — %s → %s"),
+		GetNetMode() == NM_Client ? TEXT("클라") : TEXT("서버"),
+		*GetName(), *ClassId.ToString(), *AnimClass->GetName());
 }
 
 void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

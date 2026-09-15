@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "TDCharacterClassData.generated.h"
 
+class UPaperZDAnimInstance;
 class UTexture2D;
 
 /**
@@ -42,4 +43,16 @@ public:
 	/** 전신. 캐릭터 선택 화면에서 크게 보여주는 그림. 셋 중 가장 무겁다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portrait")
 	TSoftObjectPtr<UTexture2D> FullBody;
+
+	// ── 외형 ──────────────────────────────────────────────
+
+	/**
+	 * 월드에 보이는 캐릭터의 PaperZD 애니메이션 BP(ABP_Black 등).
+	 *
+	 * ATDPlayerCharacter 가 PlayerState 가 붙는 순간(서버 PossessedBy · 클라 OnRep_PlayerState)과
+	 * 직업이 바뀔 때 넣는다. BeginPlay 에서 넣으면 서버에서는 아직 PlayerState 가 없어(스폰이 빙의보다
+	 * 먼저다) 기본 외형으로 남는다 — 마법사가 가끔 전사로 보이던 버그(2026-09-16).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
+	TSoftClassPtr<UPaperZDAnimInstance> AnimInstanceClass;
 };

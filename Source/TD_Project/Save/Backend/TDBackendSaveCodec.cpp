@@ -7,6 +7,41 @@ constexpr double MaxExactInteger = 9007199254740991.0;
 TSharedPtr<FJsonValue> WriteValue(FProperty *P, const void *V);
 bool ReadValue(FProperty *P, void *V, const TSharedPtr<FJsonValue> &J);
 
+// FName display casing can depend on name-pool insertion order in packaged builds.
+// Compare property identities as FNames, but emit literal API contract spellings.
+const TCHAR *WireFieldName(const FProperty *Property)
+{
+    struct FWireField
+    {
+        FName PropertyName;
+        const TCHAR *JsonName;
+    };
+    static const FWireField Fields[] = {
+#define TD_SAVE_FIELD(Name) {FName(TEXT(#Name)), TEXT(#Name)}
+        TD_SAVE_FIELD(SaveVersion), TD_SAVE_FIELD(ClassId), TD_SAVE_FIELD(Level),
+        TD_SAVE_FIELD(Exp), TD_SAVE_FIELD(SkillLevels), TD_SAVE_FIELD(InventorySlotCapacity),
+        TD_SAVE_FIELD(InventoryItems), TD_SAVE_FIELD(EquippedItems), TD_SAVE_FIELD(HealthRatio),
+        TD_SAVE_FIELD(ManaRatio), TD_SAVE_FIELD(LastZoneId), TD_SAVE_FIELD(LastLocation),
+        TD_SAVE_FIELD(bHasSavedLocation), TD_SAVE_FIELD(QuestProgressTags), TD_SAVE_FIELD(ClaimedChestIds),
+        TD_SAVE_FIELD(ChestClaimRecords), TD_SAVE_FIELD(SeenChapterIds), TD_SAVE_FIELD(NpcGiftRecords),
+        TD_SAVE_FIELD(QuickSlots), TD_SAVE_FIELD(Gold), TD_SAVE_FIELD(QuestStates),
+        TD_SAVE_FIELD(AffectionStates), TD_SAVE_FIELD(ItemId), TD_SAVE_FIELD(SlotIndex),
+        TD_SAVE_FIELD(Count), TD_SAVE_FIELD(EnhanceLevel), TD_SAVE_FIELD(OptionRarity),
+        TD_SAVE_FIELD(Options), TD_SAVE_FIELD(OptionId), TD_SAVE_FIELD(Value),
+        TD_SAVE_FIELD(SkillId), TD_SAVE_FIELD(ChestId), TD_SAVE_FIELD(LastClaimKstDayKey),
+        TD_SAVE_FIELD(NPCId), TD_SAVE_FIELD(LastGiftKstDayKey), TD_SAVE_FIELD(Points),
+        TD_SAVE_FIELD(QuestId), TD_SAVE_FIELD(StateTag), TD_SAVE_FIELD(ObjectiveProgress),
+        TD_SAVE_FIELD(AcceptSequence), TD_SAVE_FIELD(CompletedKstDayKey), TD_SAVE_FIELD(Type),
+        TD_SAVE_FIELD(Id)
+#undef TD_SAVE_FIELD
+    };
+    for (const FWireField &Field : Fields)
+        if (Property->GetFName() == Field.PropertyName)
+            return Field.JsonName;
+    // A new save property must be added to the API contract explicitly.
+    return nullptr;
+}
+
 TSharedPtr<FJsonObject> WriteStruct(const UStruct *S, const void *V)
 {
     auto J = MakeShared<FJsonObject>();
@@ -15,10 +50,13 @@ TSharedPtr<FJsonObject> WriteStruct(const UStruct *S, const void *V)
         // The save payload consists of editable data fields; FastArray bookkeeping is excluded.
         if (!It->HasAnyPropertyFlags(CPF_Edit))
             continue;
+        const TCHAR *Name = WireFieldName(*It);
+        if (!Name)
+            return nullptr;
         auto Field = WriteValue(*It, It->ContainerPtrToValuePtr<void>(V));
         if (!Field)
             return nullptr;
-        J->SetField(It->GetAuthoredName(), Field);
+        J->SetField(Name, Field);
     }
     return J;
 }
@@ -32,7 +70,10 @@ bool ReadStruct(const UStruct *S, void *V, const TSharedPtr<FJsonObject> &J)
         if (!It->HasAnyPropertyFlags(CPF_Edit))
             continue;
         ++Count;
-        auto Field = J->TryGetField(It->GetAuthoredName());
+        const TCHAR *Name = WireFieldName(*It);
+        if (!Name)
+            return false;
+        auto Field = J->TryGetField(Name);
         if (!Field || !ReadValue(*It, It->ContainerPtrToValuePtr<void>(V), Field))
             return false;
     }

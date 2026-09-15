@@ -1126,6 +1126,7 @@ bool FTDBackendHttpTest::RunTest(const FString &)
 #include "GameFramework/PlayerStart.h"
 #include "Items/TDInventoryComponent.h"
 
+#if WITH_EDITOR
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTDBackendControllerTest, "TD.Save.Backend.ControllerFlow",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FTDBackendControllerTest::RunTest(const FString &)
@@ -1325,4 +1326,5 @@ bool FTDBackendControllerTest::RunTest(const FString &)
         }));
     return true;
 }
+#endif // WITH_EDITOR
 #endif

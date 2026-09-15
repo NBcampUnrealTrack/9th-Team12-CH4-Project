@@ -912,7 +912,8 @@ void UTDSkillComponent::PlaySkillSFX(ATDCharacterBase& Owner, const FTDSkillRow&
 		Sound, Owner.GetRootComponent(), NAME_None, FVector::ZeroVector,
 		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
 
-	// 정신집중은 끝나는 시점을 모른다. 시전 종료 방송이 이펙트와 함께 끈다.
+	// 정신집중은 한 번 틀어 지속시간 동안 이어지는 소리(루프음·긴 소리)를 쓴다(2026-09-15 결정).
+	// 끝나는 시점을 모르므로 들고 있다가 시전 종료 방송이 이펙트와 함께 끈다.
 	if (Audio != nullptr && Row.CastType == ETDSkillCastType::Channel)
 	{
 		StopChannelSFX();

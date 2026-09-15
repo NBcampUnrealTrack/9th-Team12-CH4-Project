@@ -15,6 +15,9 @@ struct FOnAttributeChangeData;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnBossEvent, ETDBossEvent, Event, int32, Param);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnBossPatternTelegraph,
 	int32, PatternIndex, FVector, Center, FVector, Direction, float, Duration);
+/** 추가 타격 예고. Center 는 그 판정의 중심(발 높이), Duration 뒤에 떨어진다. 바닥 인디케이터를 붙이는 지점. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FTDOnBossExtraTelegraph,
+	int32, PatternIndex, int32, ExtraIndex, FVector, Center, FVector, Direction, float, Duration);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnBossPhaseChanged, int32, NewPhase);
 DECLARE_MULTICAST_DELEGATE_OneParam(FTDOnBossPatternFinished, int32 /*PatternIndex*/);
 
@@ -79,6 +82,7 @@ public:
 	// ── 델리게이트 ────────────────────────────────────────
 	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossEvent OnBossEvent;
 	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossPatternTelegraph OnPatternTelegraph;
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossExtraTelegraph OnExtraTelegraph;
 	UPROPERTY(BlueprintAssignable, Category = "TD|Boss") FTDOnBossPhaseChanged OnPhaseChanged;
 	FTDOnBossPatternFinished OnPatternFinished;
 
@@ -128,6 +132,25 @@ protected:
 	/** 돌진 중 몸에 닿은 캐릭터를 밀어내는 속도. 겹치지 않고 튕겨 나간다. */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
 	float DashShove = 900.f;
+
+	/** 잠수 시작: 이 시간(초) 동안 제자리에서 땅속(EmergeDepth)으로 가라앉은 뒤 사라진다. 0 이면 바로 사라짐. 선딜(TelegraphTime)에 포함된다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
+	float DiveTime = 0.4f;
+
+	/** 가라앉는 동안 머리를 이만큼 아래로 기울인다(도). 0 이면 수평 그대로. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0", ClampMax = "80"))
+	float DiveTiltDegrees = 30.f;
+
+	/** 가라앉기 시작 순간 발밑에 한 번 터지는 이펙트(물보라). 모든 기기에 방송. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion")
+	TSoftObjectPtr<UNiagaraSystem> DiveVFX;
+
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0.01"))
+	float DiveVFXScale = 1.f;
+
+	/** 물보라를 이 시간 뒤에 끈다(초). 0 = 이펙트가 알아서 끝남. 무한 루프 이펙트면 반드시 준다. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
+	float DiveVFXDuration = 0.f;
 
 	/** 솟구침: 이 깊이(cm)에서 시작해 */
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Motion", meta = (ClampMin = "0"))
@@ -183,6 +206,8 @@ protected:
 	UFUNCTION(NetMulticast, Reliable) void MulticastExtraStrike(int32 PatternIndex, int32 ExtraIndex, FVector Center, FVector Direction);
 	/** 취소·사망·리셋: 떠 있는 예고 VFX 를 전 머신에서 지운다. */
 	UFUNCTION(NetMulticast, Reliable) void MulticastClearTelegraphs();
+	/** 한 번 터지고 스스로 사라지는 이펙트를 모든 기기에서 그 자리에 스폰. 잠수 물보라 등. */
+	UFUNCTION(NetMulticast, Reliable) void MulticastOneShotVFX(UNiagaraSystem* System, FVector Location, float Scale, float KillAfter);
 	UFUNCTION(NetMulticast, Unreliable) void MulticastCameraShake(FVector Epicenter, float Scale);
 	UFUNCTION() void OnRep_Phase();
 
@@ -206,9 +231,14 @@ protected:
 	void StrikeArea(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing,
 		float DamageScale, float Knockback, float KnockUpRatio, TSet<TWeakObjectPtr<AActor>>* AlreadyHit);
 	void DrawArea(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing, const FColor& Color, float Duration) const;
-	/** 영역 모양대로 VFX 를 띄운다. KeepIn 이 있으면 컴포넌트를 거기 모아 나중에 지운다(예고). */
+	/**
+	 * 영역 모양대로 VFX 를 띄운다. KeepIn 이 있으면 컴포넌트를 거기 모아 나중에 지운다(예고).
+	 * ReferenceSize > 0 이면 판정 크기 / 기준 크기로 자동 배율. Duration 은 User.Duration 으로 넘긴다.
+	 * AutoKillAfter > 0 이면 그 시간 뒤 끈다 — 무한 루프 이펙트가 남지 않게.
+	 */
 	void SpawnAreaVFX(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing,
-		UNiagaraSystem* System, float Scale, int32 PointCount, TArray<TObjectPtr<UNiagaraComponent>>* KeepIn);
+		UNiagaraSystem* System, float Scale, float HeightScale, int32 PointCount, int32 RingLayers, float ReferenceSize,
+		float HeightOffset, float Duration, float AutoKillAfter, TArray<TObjectPtr<UNiagaraComponent>>* KeepIn);
 	void ScheduleExtraStrikes(int32 PatternIndex, const FVector& PrimaryBase, const FVector& Facing);
 	void DoExtraStrike(int32 PatternIndex, int32 ExtraIndex, FVector Center, FVector Facing);
 
@@ -218,6 +248,9 @@ protected:
 	void TickDash(float DeltaSeconds);
 	void EndDash(bool bHitWall);
 	void StartBurrow(const FTDBossPatternSpec& Spec);
+	void TickDive(float DeltaSeconds);
+	/** 가라앉기 끝: 숨기고 땅속 이동으로 넘어간다. */
+	void FinishDive();
 	void TickBurrow(float DeltaSeconds);
 	void StartEmerge();
 	void TickEmerge(float DeltaSeconds);
@@ -266,7 +299,9 @@ private:
 	FVector DashDirection = FVector::ForwardVector;
 	int32 DashesLeft = 1;
 
-	// 잠수: 땅속 이동 → 솟구침(상승·하강) → 착지
+	// 잠수: 가라앉기(보임) → 땅속 이동(숨김) → 솟구침(상승·하강) → 착지
+	bool bDiving = false;
+	float DiveElapsed = 0.f;
 	bool bBurrowed = false;
 	bool bEmerging = false;
 	FVector BurrowFrom = FVector::ZeroVector;

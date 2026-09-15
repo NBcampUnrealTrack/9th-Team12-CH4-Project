@@ -80,12 +80,13 @@ void ATDBossCharacter::Tick(float DeltaSeconds)
 	}
 
 	if (bDashing)         TickDash(DeltaSeconds);
+	else if (bDiving)     TickDive(DeltaSeconds);
 	else if (bBurrowed)   TickBurrow(DeltaSeconds);
 	else if (bEmerging)   TickEmerge(DeltaSeconds);
 	else if (bReturning)  TickReturn();
 
 	// 선딜(재조준 포함) 동안 몸을 판정 방향으로 돌린다. 판정은 이미 고정 — 그림만 따라간다.
-	if (CurrentPatternPhase == ETDBossPatternPhase::Telegraph && !bBurrowed)
+	if (CurrentPatternPhase == ETDBossPatternPhase::Telegraph && !bBurrowed && !bDiving)
 	{
 		TickTurn(DeltaSeconds);
 	}
@@ -109,7 +110,7 @@ bool ATDBossCharacter::IsBusy() const
 bool ATDBossCharacter::IsInvulnerable() const
 {
 	// 시간 무적(방벽 스킬, 부모)에 보스 고유 무적을 더한다. Super 를 빼면 보스만 방벽이 안 먹는다.
-	return Super::IsInvulnerable() || bInEntrance || bInPhaseTransition || bBurrowed || bEmerging || bReturning;
+	return Super::IsInvulnerable() || bInEntrance || bInPhaseTransition || bDiving || bBurrowed || bEmerging || bReturning;
 }
 
 float ATDBossCharacter::GetIncomingDamageMultiplier() const
@@ -148,7 +149,8 @@ FVector ATDBossCharacter::GetHomeNavLocation() const
 float ATDBossCharacter::GetFloorZ() const
 {
 	const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f;
-	const float CenterZ = (bBurrowed || bEmerging) ? BurrowTo.Z : GetActorLocation().Z;
+	// 가라앉는 중·땅속·솟구침 중엔 몸이 위아래로 움직이므로 잠수 전 캡슐 높이(BurrowTo.Z)를 기준으로 삼는다.
+	const float CenterZ = (bDiving || bBurrowed || bEmerging) ? BurrowTo.Z : GetActorLocation().Z;
 	return CenterZ - HalfHeight;
 }
 
@@ -528,6 +530,12 @@ void ATDBossCharacter::EndBurrowTravel()
 		return;
 	}
 	const FTDBossPatternSpec& Spec = Patterns[CurrentPattern];
+
+	// 선딜이 가라앉는 시간보다 짧으면 아직 보이는 채일 수 있다 — 먼저 숨기고 땅속 상태로.
+	if (bDiving)
+	{
+		FinishDive();
+	}
 
 	// 출현 자리는 **지금** 대상 위치. 잠수 중에 걸어 나간 만큼 따라간다 — 피할 시간은 아래 예고 시간뿐이다.
 	ATDCharacterBase* Target = PatternTarget.Get();
@@ -910,7 +918,8 @@ void ATDBossCharacter::DrawArea(const FTDBossHitArea& Area, const FVector& Cente
 }
 
 void ATDBossCharacter::SpawnAreaVFX(const FTDBossHitArea& Area, const FVector& Center, const FVector& Facing,
-	UNiagaraSystem* System, float Scale, int32 PointCount, TArray<TObjectPtr<UNiagaraComponent>>* KeepIn)
+	UNiagaraSystem* System, float Scale, float HeightScale, int32 PointCount, int32 RingLayers, float ReferenceSize,
+	float HeightOffset, float Duration, float AutoKillAfter, TArray<TObjectPtr<UNiagaraComponent>>* KeepIn)
 {
 	if (System == nullptr || GetWorld() == nullptr)
 	{
@@ -922,40 +931,118 @@ void ATDBossCharacter::SpawnAreaVFX(const FTDBossHitArea& Area, const FVector& C
 		Flat = GetActorForwardVector().GetSafeNormal2D();
 	}
 
+	// 지점 여러 개로 "채우기": 큰 판정을 작은 이펙트 하나로 늘리면 흐려지니, 여러 개를 타일처럼 깐다.
+	//  - Box   : 길이(X) 방향으로 PointCount 칸. 각 칸이 길이/PointCount 를 덮는다.
+	//  - Sphere: 중심 하나 + 링 줄(RingLayers)마다 둘레에 PointCount 비례 개수.
+	//  - Ring  : 줄(RingLayers)마다 둘레에 PointCount 비례 개수.
+	const bool bBox = Area.Shape == ETDBossHitShape::Box;
+	const bool bRing = Area.Shape == ETDBossHitShape::Ring;
+	const bool bTiled = PointCount > 0;
+	const int32 RingLayerCount = (bTiled && !bBox) ? FMath::Max(1, RingLayers) : 1;
+	const float Outer = bRing ? Area.RingOuterRadius : Area.SphereRadius;
+	const float Inner = bRing ? Area.RingInnerRadius : 0.f;
+
+	// 이펙트 하나가 덮어야 할 크기. User 파라미터로도 넘기고, 기준 크기가 있으면 배율도 여기서 계산한다.
+	const float TileHalfX = (bBox && bTiled) ? Area.BoxExtent.X / PointCount : Area.BoxExtent.X;
+	const float RadialSize = (bTiled && !bBox) ? (Outer - Inner) * 0.5f / RingLayerCount : Outer;
+	FVector FinalScale(Scale);
+	if (ReferenceSize > 0.f)
+	{
+		if (bBox)
+		{
+			FinalScale = FVector(TileHalfX / ReferenceSize, Area.BoxExtent.Y / ReferenceSize, 1.f) * Scale;
+		}
+		else
+		{
+			FinalScale = FVector(RadialSize / ReferenceSize) * Scale;
+		}
+	}
+	FinalScale.Z *= FMath::Max(HeightScale, 0.01f);   // 세로만 따로 — 물기둥 높이, 파도 높이
+
 	auto SpawnAt = [&](const FVector& Location, const FVector& Dir)
 	{
+		// 높이 오프셋은 배율과 무관하게 cm 그대로 — 원점이 가운데인 이펙트를 바닥 위로 올리는 용도.
 		UNiagaraComponent* Comp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this, System, Location, Dir.Rotation(), FVector(Scale), true, true);
-		if (Comp != nullptr && KeepIn != nullptr)
+			this, System, Location + FVector(0.f, 0.f, HeightOffset), Dir.Rotation(), FinalScale, true, true);
+		if (Comp == nullptr)
+		{
+			return;
+		}
+
+		// 이펙트가 이 이름의 User 파라미터를 갖고 있으면 값이 들어가고, 없으면 조용히 무시된다.
+		Comp->SetVariableFloat(FName(TEXT("Radius")), RadialSize);
+		Comp->SetVariableFloat(FName(TEXT("InnerRadius")), Inner);
+		Comp->SetVariableFloat(FName(TEXT("Length")), TileHalfX * 2.f);
+		Comp->SetVariableFloat(FName(TEXT("Width")), Area.BoxExtent.Y * 2.f);
+		Comp->SetVariableFloat(FName(TEXT("Duration")), Duration);
+
+		if (KeepIn != nullptr)
 		{
 			KeepIn->Add(Comp);
 		}
+		if (AutoKillAfter > 0.f)
+		{
+			// 루프 이펙트는 스스로 안 끝난다. 시간이 되면 끄고(남은 입자는 자연 소멸) 자동 파괴에 맡긴다.
+			TWeakObjectPtr<UNiagaraComponent> WeakComp = Comp;
+			FTimerHandle Handle;
+			GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [WeakComp]()
+			{
+				if (WeakComp.IsValid())
+				{
+					WeakComp->Deactivate();
+				}
+			}), AutoKillAfter, false);
+		}
 	};
 
-	if (Area.Shape == ETDBossHitShape::Box)
+	if (bBox)
 	{
 		const int32 Count = FMath::Max(1, Area.BoxDirections);
+		const int32 Tiles = bTiled ? PointCount : 1;
 		for (int32 Index = 0; Index < Count; ++Index)
 		{
 			const FVector Dir = Flat.RotateAngleAxis(360.f / Count * Index, FVector::UpVector);
-			SpawnAt(Center + Dir * Area.ForwardOffset, Dir);
+			const FVector BoxCenter = Center + Dir * Area.ForwardOffset;
+			for (int32 Tile = 0; Tile < Tiles; ++Tile)
+			{
+				// 박스 뒤끝(-X)부터 앞끝(+X)까지 칸 가운데에 하나씩.
+				const float Along = -Area.BoxExtent.X + TileHalfX * (2 * Tile + 1);
+				SpawnAt(BoxCenter + Dir * Along, Dir);
+			}
 		}
 		return;
 	}
 
 	const FVector AreaCenter = Center + Flat * Area.ForwardOffset;
-	if (Area.Shape == ETDBossHitShape::Ring && PointCount > 0)
+	if (!bTiled)
 	{
-		// 물기둥처럼 둘레에 여러 개. 링 두께의 가운데 반지름에 균등 배치.
-		const float Mid = (Area.RingInnerRadius + Area.RingOuterRadius) * 0.5f;
-		for (int32 Index = 0; Index < PointCount; ++Index)
-		{
-			const FVector Dir = Flat.RotateAngleAxis(360.f / PointCount * Index, FVector::UpVector);
-			SpawnAt(AreaCenter + Dir * Mid, Dir);
-		}
+		SpawnAt(AreaCenter, Flat);
 		return;
 	}
-	SpawnAt(AreaCenter, Flat);
+
+	// 원판은 중심에도 하나. 링은 안쪽이 비어 있으니 중심은 건너뛴다.
+	if (!bRing)
+	{
+		SpawnAt(AreaCenter, Flat);
+	}
+
+	// 링 두께를 줄로 나눠 각 줄의 가운데 반지름에 균등 배치. 바깥 줄일수록 둘레가 기니까
+	// 지점 수를 반지름에 비례해 늘린다 — PointCount 는 "가운데 줄" 기준. 줄마다 반 칸씩 엇갈려 빈틈을 줄인다.
+	const float Mid = (Inner + Outer) * 0.5f;
+	const float LayerThickness = (Outer - Inner) / RingLayerCount;
+	for (int32 Layer = 0; Layer < RingLayerCount; ++Layer)
+	{
+		const float R = Inner + LayerThickness * (Layer + 0.5f);
+		const int32 Count = Mid > KINDA_SMALL_NUMBER
+			? FMath::Max(1, FMath::RoundToInt(PointCount * R / Mid))
+			: PointCount;
+		const float Stagger = (Layer % 2) * 180.f / Count;
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			const FVector Dir = Flat.RotateAngleAxis(360.f / Count * Index + Stagger, FVector::UpVector);
+			SpawnAt(AreaCenter + Dir * R, Dir);
+		}
+	}
 }
 
 void ATDBossCharacter::ScheduleExtraStrikes(int32 PatternIndex, const FVector& PrimaryBase, const FVector& Facing)
@@ -1115,17 +1202,60 @@ void ATDBossCharacter::StartBurrow(const FTDBossPatternSpec& Spec)
 	// 목적지는 캡슐 중심 높이(착지가 안 묻히게). 판정 높이는 GetFloorZ 가 따로 계산한다.
 	BurrowFrom = GetActorLocation();
 	BurrowTo = FVector(PatternTargetLocation.X, PatternTargetLocation.Y, GetActorLocation().Z);
-	bBurrowed = true;
-	BurrowElapsed = 0.f;
-	BurrowDuration = FMath::Max(ScaledTelegraph(Spec.TelegraphTime), 0.01f);
 
-	// 땅속: 안 보이고, 안 부딪히고, 안 맞는다. 숨김은 복제되는 속성이라 클라도 따라온다.
+	// 선딜 = 가라앉기(보임) + 땅속 이동(숨김). 가라앉기가 선딜보다 길면 남는 이동 시간은 0 에 가깝다.
+	const float Telegraph = FMath::Max(ScaledTelegraph(Spec.TelegraphTime), 0.01f);
+	const float Dive = FMath::Min(DiveTime, Telegraph);
+	BurrowElapsed = 0.f;
+	BurrowDuration = FMath::Max(Telegraph - Dive, 0.01f);
+
+	// 가라앉는 동안: 안 움직이고, 안 부딪히고, 안 맞는다(IsInvulnerable). 아직 보인다.
 	SetMovementFrozen(true);
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
 		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
+
+	// 물보라: 발밑 바닥에 한 번.
+	if (UNiagaraSystem* DiveSystem = DiveVFX.LoadSynchronous())
+	{
+		MulticastOneShotVFX(DiveSystem, FVector(BurrowFrom.X, BurrowFrom.Y, GetFloorZ()), DiveVFXScale, DiveVFXDuration);
+	}
+
+	if (Dive <= 0.f)
+	{
+		FinishDive();
+		return;
+	}
+	bDiving = true;
+	DiveElapsed = 0.f;
+}
+
+void ATDBossCharacter::TickDive(float DeltaSeconds)
+{
+	DiveElapsed += DeltaSeconds;
+	const float A = FMath::Clamp(DiveElapsed / FMath::Max(DiveTime, 0.01f), 0.f, 1.f);
+
+	// 점점 빨라지며 가라앉고(A²), 머리는 아래로 기운다.
+	const float Z = FMath::Lerp(0.f, -EmergeDepth, A * A);
+	SetActorLocation(BurrowFrom + FVector(0.f, 0.f, Z), false, nullptr, ETeleportType::TeleportPhysics);
+	const float Yaw = GetActorRotation().Yaw;
+	SetActorRotation(FRotator(-DiveTiltDegrees * A, Yaw, 0.f));
+
+	if (A >= 1.f)
+	{
+		FinishDive();
+	}
+}
+
+void ATDBossCharacter::FinishDive()
+{
+	// 땅속: 숨기고(복제되는 속성이라 클라도 따라온다) 이동 시작점 높이로 돌려놓는다. 기울기도 원복.
+	bDiving = false;
+	bBurrowed = true;
 	SetActorHiddenInGame(true);
+	SetActorRotation(FRotator(0.f, GetActorRotation().Yaw, 0.f));
+	SetActorLocation(BurrowFrom, false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void ATDBossCharacter::TickBurrow(float DeltaSeconds)
@@ -1208,13 +1338,20 @@ void ATDBossCharacter::FinishEmerge()
 void ATDBossCharacter::AbortBurrow()
 {
 	// 취소·사망·리셋: 어느 단계든 즉시 지상으로.
-	if (!bBurrowed && !bEmerging)
+	if (!bDiving && !bBurrowed && !bEmerging)
 	{
 		return;
 	}
+	// 가라앉다 취소되면 BurrowTo 는 아직 대상 자리다 — 출발 자리로 되돌린다. 기울기도 원복.
+	if (bDiving)
+	{
+		BurrowTo = BurrowFrom;
+	}
+	bDiving = false;
 	bBurrowed = false;
 	bEmerging = false;
 	SetActorHiddenInGame(false);
+	SetActorRotation(FRotator(0.f, GetActorRotation().Yaw, 0.f));
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
 		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -1241,6 +1378,20 @@ void ATDBossCharacter::FireProjectiles(const FTDBossPatternSpec& Spec)
 	const FVector Muzzle = GetActorLocation() + Facing * (Radius + ProjectileMuzzleForward)
 		+ FVector(0.f, 0.f, ProjectileMuzzleHeight);
 
+	// 좌우 조준은 선딜에 굳힌 Facing 그대로. 위아래만 대상 몸통 높이로 기울인다 —
+	// 총구가 입(캡슐 중심보다 위)에 있으면 수평으로 쏠 때 작은 캐릭터 머리 위로 지나가 버린다.
+	FVector Aim = Facing;
+	{
+		const ATDCharacterBase* Target = PatternTarget.Get();
+		const FVector TargetPoint = (Target != nullptr && !Target->IsDead()) ? Target->GetActorLocation() : PatternTargetLocation;
+		const float Flat = FVector::Dist2D(Muzzle, TargetPoint);
+		if (Flat > KINDA_SMALL_NUMBER)
+		{
+			const float Pitch = FMath::Atan2(TargetPoint.Z - Muzzle.Z, Flat);
+			Aim = Facing * FMath::Cos(Pitch) + FVector(0.f, 0.f, FMath::Sin(Pitch));
+		}
+	}
+
 	// 탄 수: 스펙이 정했으면 그 값, 아니면 페이즈 규칙.
 	const int32 Count = Spec.ProjectileCount > 0
 		? Spec.ProjectileCount
@@ -1254,7 +1405,7 @@ void ATDBossCharacter::FireProjectiles(const FTDBossPatternSpec& Spec)
 
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
-		const FVector Direction = Facing.RotateAngleAxis(StartAngle + ProjectileSpreadAngle * Index, FVector::UpVector);
+		const FVector Direction = Aim.RotateAngleAxis(StartAngle + ProjectileSpreadAngle * Index, FVector::UpVector);
 		ATDBossProjectile* Projectile = GetWorld()->SpawnActor<ATDBossProjectile>(
 			ProjectileClass, Muzzle, Direction.Rotation(), Params);
 		if (Projectile != nullptr)
@@ -1435,7 +1586,8 @@ void ATDBossCharacter::MulticastPatternTelegraph_Implementation(int32 PatternInd
 
 	if (UNiagaraSystem* System = Spec.TelegraphVFX.LoadSynchronous())
 	{
-		SpawnAreaVFX(Area, Center, Direction, System, Spec.TelegraphVFXScale, Spec.VFXPointCount, &TelegraphVFXComponents);
+		SpawnAreaVFX(Area, Center, Direction, System, Spec.TelegraphVFXScale, Spec.VFXHeightScale, Spec.VFXPointCount, Spec.VFXRingLayers,
+			Spec.VFXReferenceSize, Spec.VFXHeightOffset, Duration, 0.f, &TelegraphVFXComponents);
 	}
 }
 
@@ -1449,7 +1601,8 @@ void ATDBossCharacter::MulticastPatternStrike_Implementation(int32 PatternIndex,
 		const FTDBossPatternSpec& Spec = Patterns[PatternIndex];
 		if (UNiagaraSystem* System = Spec.StrikeVFX.LoadSynchronous())
 		{
-			SpawnAreaVFX(MakePrimaryArea(Spec), Center, Direction, System, Spec.StrikeVFXScale, Spec.VFXPointCount, nullptr);
+			SpawnAreaVFX(MakePrimaryArea(Spec), Center, Direction, System, Spec.StrikeVFXScale, Spec.VFXHeightScale, Spec.VFXPointCount, Spec.VFXRingLayers,
+				Spec.VFXReferenceSize, Spec.VFXHeightOffset, Spec.StrikeVFXDuration, Spec.StrikeVFXDuration, nullptr);
 		}
 	}
 }
@@ -1464,6 +1617,10 @@ void ATDBossCharacter::MulticastExtraTelegraph_Implementation(int32 PatternIndex
 	UE_LOG(LogTemp, Log, TEXT("[Boss] %s  Extra %d/%d (%s) telegraph at %s, lands in %.2fs"),
 		*GetName(), PatternIndex, ExtraIndex, *Extra.Name.ToString(), *Center.ToCompactString(), Duration);
 
+	// BP 에는 판정 중심(기준점 + 정면 오프셋)을 준다. 본 예고(OnPatternTelegraph)와 같은 약속.
+	OnExtraTelegraph.Broadcast(PatternIndex, ExtraIndex,
+		Center + Direction.GetSafeNormal2D() * Extra.Area.ForwardOffset, Direction, Duration);
+
 	ClearExtraTelegraphVFX(ExtraIndex);
 	if (UNiagaraSystem* System = Extra.TelegraphVFX.LoadSynchronous())
 	{
@@ -1471,8 +1628,8 @@ void ATDBossCharacter::MulticastExtraTelegraph_Implementation(int32 PatternIndex
 		{
 			ExtraTelegraphVFX.SetNum(ExtraIndex + 1);
 		}
-		SpawnAreaVFX(Extra.Area, Center, Direction, System, Extra.TelegraphVFXScale, Extra.VFXPointCount,
-			&ExtraTelegraphVFX[ExtraIndex].Components);
+		SpawnAreaVFX(Extra.Area, Center, Direction, System, Extra.TelegraphVFXScale, Extra.VFXHeightScale, Extra.VFXPointCount, Extra.VFXRingLayers,
+			Extra.VFXReferenceSize, Extra.VFXHeightOffset, Duration, 0.f, &ExtraTelegraphVFX[ExtraIndex].Components);
 	}
 }
 
@@ -1488,7 +1645,8 @@ void ATDBossCharacter::MulticastExtraStrike_Implementation(int32 PatternIndex, i
 	ClearExtraTelegraphVFX(ExtraIndex);
 	if (UNiagaraSystem* System = Extra.StrikeVFX.LoadSynchronous())
 	{
-		SpawnAreaVFX(Extra.Area, Center, Direction, System, Extra.StrikeVFXScale, Extra.VFXPointCount, nullptr);
+		SpawnAreaVFX(Extra.Area, Center, Direction, System, Extra.StrikeVFXScale, Extra.VFXHeightScale, Extra.VFXPointCount, Extra.VFXRingLayers,
+			Extra.VFXReferenceSize, Extra.VFXHeightOffset, Extra.StrikeVFXDuration, Extra.StrikeVFXDuration, nullptr);
 	}
 }
 
@@ -1562,5 +1720,28 @@ void ATDBossCharacter::PlayShakeLocally(const FVector& Epicenter, float Scale) c
 		{
 			PC->ClientStartCameraShake(CameraShakeClass, Scale * Falloff);
 		}
+	}
+}
+
+void ATDBossCharacter::MulticastOneShotVFX_Implementation(UNiagaraSystem* System, FVector Location, float Scale, float KillAfter)
+{
+	if (System == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+	UNiagaraComponent* Comp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, System, Location, FRotator::ZeroRotator,
+		FVector(FMath::Max(Scale, 0.01f)), /*bAutoDestroy*/ true, /*bAutoActivate*/ true);
+	if (Comp != nullptr && KillAfter > 0.f)
+	{
+		// 루프 이펙트는 스스로 안 끝난다. 시간이 되면 끄고(남은 입자는 자연 소멸) 자동 파괴에 맡긴다.
+		TWeakObjectPtr<UNiagaraComponent> WeakComp = Comp;
+		FTimerHandle Handle;
+		GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [WeakComp]()
+		{
+			if (WeakComp.IsValid())
+			{
+				WeakComp->Deactivate();
+			}
+		}), KillAfter, false);
 	}
 }

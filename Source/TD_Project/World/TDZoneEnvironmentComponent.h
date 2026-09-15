@@ -11,6 +11,8 @@ class ADirectionalLight;
 class AExponentialHeightFog;
 class ASkyLight;
 class USpringArmComponent;
+class UAudioComponent;
+class USoundBase;
 
 /**
  * 존이 바뀔 때 화면을 그 존에 맞게 바꾼다. **클라이언트 전용 표현이다.**
@@ -41,6 +43,7 @@ public:
 	UTDZoneEnvironmentComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -53,6 +56,15 @@ public:
 	void ReapplyCurrentZone();
 
 private:
+	bool CanPlayBGM() const;
+	void ApplyBGM(const TSoftObjectPtr<USoundBase>& Sound);
+	void StopBGM();
+	bool bBGMReady = false;
+
+	/** One non-spatialized voice owned by this local controller, surviving Pawn respawns. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> BGMComponent;
+
 	/** PlayerState 의 존 변경 알림을 받는다. */
 	UFUNCTION()
 	void HandleZoneChanged(FGameplayTag NewZoneId);

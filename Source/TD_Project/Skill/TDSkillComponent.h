@@ -11,6 +11,7 @@ class UTDProgressionComponent;
 struct FTDSkillRow;
 struct FTDSkillEffectRow;
 class UNiagaraComponent;
+class UAudioComponent;
 
 /**
  * 시전이 시작됐을 때. 캐스팅 바·시전 애니메이션·이펙트가 구독한다. 전 머신에서 불린다.
@@ -171,7 +172,7 @@ protected:
 	void MulticastOnCastEnded(FName SkillId, bool bFired, float Cooldown);
 
 	/**
-	 * 첫 판정 순간. 이펙트를 띄운다(DT_Skill.VFX).
+	 * 첫 판정 순간. 이펙트를 띄우고 효과음을 낸다(DT_Skill.VFX · SFX).
 	 *
 	 * 위 둘과 달리 Unreliable 이다 — 연출뿐이라 놓쳐도 판정은 서버가 이미 끝냈다.
 	 *
@@ -293,4 +294,13 @@ private:
 	 * 시전 종료 방송에서 끈다. 약한 참조인 이유는 이펙트가 스스로 사라질 수 있어서다.
 	 */
 	TWeakObjectPtr<UNiagaraComponent> ActiveChannelVFX;
+
+	/** 발동 효과음(DT_Skill.SFX)을 시전자에 붙여 낸다. 정신집중이면 끌 수 있게 들고 있는다. */
+	void PlaySkillSFX(ATDCharacterBase& Owner, const FTDSkillRow& Row);
+
+	/** 정신집중 효과음을 줄여 끈다. 정신집중 이펙트와 같은 자리에서 부른다. */
+	void StopChannelSFX();
+
+	/** 지금 나고 있는 정신집중 효과음. ActiveChannelVFX 와 같은 이유로 약한 참조다. */
+	TWeakObjectPtr<UAudioComponent> ActiveChannelSFX;
 };

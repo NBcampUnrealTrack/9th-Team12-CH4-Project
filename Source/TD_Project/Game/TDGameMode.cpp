@@ -236,6 +236,11 @@ AActor* ATDGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	return Super::ChoosePlayerStart_Implementation(Player);
 }
 
+bool ATDGameMode::ShouldSpawnAtStartSpot(AController* Player)
+{
+	return false;
+}
+
 // ══════════════════════════════════════════════════════════════
 //  존 이동
 //  나중에 컴포넌트로 뗄 때 이 블록을 통째로 옮긴다.

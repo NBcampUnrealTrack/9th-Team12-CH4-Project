@@ -98,6 +98,17 @@ pub async fn delete_character(
         .bind(account_id)
         .fetch_one(&mut *transaction)
         .await?;
+    sqlx::query("SELECT id FROM td_characters WHERE id=$1 AND account_id=$2 FOR UPDATE")
+        .bind(character_id)
+        .bind(account_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(ApiError(StatusCode::NOT_FOUND, "character_not_found"))?;
+    let in_use: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM td_character_leases WHERE character_id=$1 AND expires_at>now())")
+        .bind(character_id).fetch_one(&mut *transaction).await?;
+    if in_use {
+        return Err(ApiError(StatusCode::CONFLICT, "character_in_use"));
+    }
     let result = sqlx::query("DELETE FROM td_characters WHERE id=$1 AND account_id=$2")
         .bind(character_id)
         .bind(account_id)

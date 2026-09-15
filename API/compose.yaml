@@ -4,14 +4,17 @@ services:
     image: postgres:18.4-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-td_project}
-      POSTGRES_USER: ${POSTGRES_USER:-td_api}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./sql:/var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      test:
+        [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 3s
       retries: 15
@@ -19,8 +22,8 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-td_api}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-td_project}
-      GAME_SERVER_API_KEY: ${GAME_SERVER_API_KEY:?Run scripts/setup.ps1 first}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GAME_SERVER_API_KEY: ${GAME_SERVER_API_KEY}
       RUST_LOG: info
     ports:
       - "127.0.0.1:${API_PORT:-18080}:8080"

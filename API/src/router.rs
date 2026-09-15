@@ -22,9 +22,32 @@ pub fn create_router(state: AppState) -> Router {
             get(save_controller::load_save).put(save_controller::save_character),
         )
         .route(
+            "/v1/characters/{id}/lease",
+            post(save_controller::claim_lease)
+                .put(save_controller::renew_lease)
+                .delete(save_controller::release_lease),
+        )
+        .route(
             "/v1/characters/{id}",
             delete(character_controller::delete_character),
         )
         .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(axum::middleware::from_fn(log_request))
         .with_state(state)
+}
+
+async fn log_request(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let method = request.method().clone();
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".to_owned());
+    let started = std::time::Instant::now();
+    let response = next.run(request).await;
+    tracing::info!(%method, %route, status = response.status().as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "HTTP request completed");
+    response
 }

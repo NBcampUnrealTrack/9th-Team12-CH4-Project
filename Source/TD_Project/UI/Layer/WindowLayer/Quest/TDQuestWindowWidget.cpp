@@ -175,18 +175,15 @@ void UTDQuestWindowWidget::NativeConstruct()
     RefreshQuestWindow();
     TryBindQuestComponent();
 
-    // 플레이어 정보가 아직 준비되지 않았다면 잠시 뒤 다시 연결합니다.
-    if (!BoundQuestComponent.IsValid())
+    // The HUD/window can survive a character switch; keep watching its owner.
+    if (UWorld* CurrentWorld = GetWorld())
     {
-        if (UWorld* CurrentWorld = GetWorld())
-        {
-            CurrentWorld->GetTimerManager().SetTimer(
-                BindRetryTimer,
-                this,
-                &UTDQuestWindowWidget::TryBindQuestComponent,
-                0.25f,
-                true);
-        }
+        CurrentWorld->GetTimerManager().SetTimer(
+            BindRetryTimer,
+            this,
+            &UTDQuestWindowWidget::TryBindQuestComponent,
+            0.25f,
+            true);
     }
 }
 
@@ -235,7 +232,7 @@ void UTDQuestWindowWidget::NativeDestruct()
 
 void UTDQuestWindowWidget::TryBindQuestComponent()
 {
-    if (!bWidgetsReady || BoundQuestComponent.IsValid())
+    if (!bWidgetsReady)
     {
         return;
     }
@@ -243,28 +240,28 @@ void UTDQuestWindowWidget::TryBindQuestComponent()
     ATDPlayerState* TDState =
         GetOwningPlayerState<ATDPlayerState>();
 
-    if (!TDState)
+    UTDQuestComponent* QuestComponent = IsValid(TDState) && TDState->HasSelectedCharacter()
+        ? TDState->GetQuestComponent() : nullptr;
+    if (BoundQuestComponent.Get() == QuestComponent && !BoundQuestComponent.IsStale())
     {
         return;
     }
 
-    UTDQuestComponent* QuestComponent = TDState->GetQuestComponent();
-
-    if (!QuestComponent)
-    {
-        return;
-    }
-
+    if (UTDQuestComponent* Previous = BoundQuestComponent.Get())
+        Previous->OnQuestListChanged.RemoveDynamic(this, &UTDQuestWindowWidget::RefreshQuestWindow);
+    CloseAbandonConfirmation();
+    if (UWorld* CurrentWorld = GetWorld())
+        CurrentWorld->GetTimerManager().ClearTimer(AbandonWaitTimer);
+    SubQuest1Id = NAME_None;
+    SubQuest2Id = NAME_None;
+    PendingAbandonQuestId = NAME_None;
     BoundQuestComponent = QuestComponent;
+    TXT_Message->SetText(FText::GetEmpty());
 
-    QuestComponent->OnQuestListChanged.AddUniqueDynamic(
+    if (QuestComponent)
+        QuestComponent->OnQuestListChanged.AddUniqueDynamic(
         this,
         &UTDQuestWindowWidget::RefreshQuestWindow);
-
-    if (UWorld* CurrentWorld = GetWorld())
-    {
-        CurrentWorld->GetTimerManager().ClearTimer(BindRetryTimer);
-    }
 
     RefreshQuestWindow();
 }

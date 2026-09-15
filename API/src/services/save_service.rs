@@ -31,6 +31,7 @@ pub async fn save_character(
     account_id: Uuid,
     character_id: Uuid,
     request: SaveRequest,
+    lease: Option<&str>,
 ) -> ApiResult<SaveResponse> {
     request.data.validate().map_err(bad_request)?;
     if request.expected_revision < 0 {
@@ -48,6 +49,19 @@ pub async fn save_character(
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or(ApiError(StatusCode::NOT_FOUND, "character_not_found"))?;
+    // Lock the lease through commit so release/expiry cannot authorize a stale writer.
+    let active = sqlx::query("SELECT token_hash,expires_at>now() AS live FROM td_character_leases WHERE character_id=$1 FOR UPDATE")
+        .bind(character_id).fetch_optional(&mut *transaction).await?;
+    match (lease, active) {
+        (Some(token), Some(active))
+            if active.get::<bool, _>("live")
+                && active.get::<String, _>("token_hash") == hash_text(token) => {}
+        (Some(_), _) => return Err(ApiError(StatusCode::CONFLICT, "lease_lost")),
+        (None, Some(active)) if active.get::<bool, _>("live") => {
+            return Err(ApiError(StatusCode::CONFLICT, "character_in_use"));
+        }
+        _ => {}
+    }
     let previous_receipt = sqlx::query(
         "SELECT payload_hash,revision FROM td_save_receipts WHERE character_id=$1 AND request_id=$2",
     )

@@ -135,6 +135,17 @@ FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, floa
 	return FText::Format(bPercent ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"), Sign, Amount);
 }
 
+FText UTDTooltipStatics::FormatStatName(FGameplayTag StatTag)
+{
+	// 세트 효과 줄(MakeItemSetLines)과 같은 규칙이다 — 이름이 비어 있으면 태그를 그대로 보여 준다.
+	// 빈 칸으로 두면 "무엇이 오르는지" 가 사라져 데이터 누락을 화면에서 알아챌 수 없다.
+	const FTDStatRow* Meta = FindStatMeta(StatTag);
+
+	return Meta != nullptr && !Meta->DisplayName.IsEmpty()
+		? Meta->DisplayName
+		: FText::FromString(StatTag.ToString());
+}
+
 // ── 아이템 추가 옵션 ──────────────────────────────────────
 
 FText UTDTooltipStatics::FormatItemOption(const APlayerController* Owner, const FTDItemOption& Option)

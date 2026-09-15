@@ -71,4 +71,8 @@ public:
 	/** 하단 퀘스트 버튼으로 열 퀘스트 창입니다. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
 	TSoftClassPtr<UTDWindowBaseWidget> QuestWindowClass;
+
+	/** 유니온 창. 부모 클래스가 UTDUnionWindowWidget 인 WBP 를 지정한다. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> UnionWindowClass;
 };

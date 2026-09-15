@@ -125,6 +125,7 @@ void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
 	case ETDNavMenuType::Character:
 	case ETDNavMenuType::System:
 	case ETDNavMenuType::Quest:
+	case ETDNavMenuType::Union:
 		ToggleWindow(MenuType);
 		break;
 
@@ -204,6 +205,11 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	case ETDNavMenuType::Quest:
 		MenuName = TEXT("퀘스트");
 		SettingName = TEXT("Quest Window Class");
+		break;
+
+	case ETDNavMenuType::Union:
+		MenuName = TEXT("유니온");
+		SettingName = TEXT("Union Window Class");
 		break;
 
 	default:
@@ -352,6 +358,12 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 	case ETDNavMenuType::Quest:
 		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>()){
 			return UISettings->QuestWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	case ETDNavMenuType::Union:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>()){
+			return UISettings->UnionWindowClass.LoadSynchronous();
 		}
 		return nullptr;
 

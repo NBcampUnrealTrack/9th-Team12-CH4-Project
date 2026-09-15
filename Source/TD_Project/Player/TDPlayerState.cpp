@@ -83,6 +83,7 @@ void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 	// 캐릭터 목록은 본인만 본다. 남이 어떤 캐릭터를 가졌는지 알 이유가 없다.
 	DOREPLIFETIME_CONDITION(ATDPlayerState, CharacterSlots, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ATDPlayerState, SelectedSlotIndex, COND_OwnerOnly);
 
 	// 스탯창은 자기 것만 본다. 남에게 보여야 하는 것은 전투력뿐이고 그쪽은 위에서 전원에게 간다.
 	DOREPLIFETIME_CONDITION(ATDPlayerState, ReplicatedStats, COND_OwnerOnly);

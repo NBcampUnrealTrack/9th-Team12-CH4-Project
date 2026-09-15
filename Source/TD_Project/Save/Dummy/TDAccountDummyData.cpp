@@ -89,16 +89,18 @@ EDataValidationResult UTDAccountDummyData::IsDataValid(FDataValidationContext& C
     TSet<FGuid> AccountIds, CharacterIds;
     for (const auto& Account : Accounts)
     {
-        if (Account.LoginId.IsEmpty() || Account.Password.IsEmpty()
-            || Account.LoginId.Len() > 64 || Account.Password.Len() > 128
-            || Logins.Contains(Account.LoginId) || !Account.AccountId.IsValid()
+        const FString NormalizedLoginId = UTDAccountSubSystem::NormalizeLoginId(Account.LoginId);
+        // 기존 공개 테스트 계정은 짧은 암호를 허용하되, 신규 계정과 같은 문자 종류와 최대 길이를 적용한다.
+        if (!UTDAccountSubSystem::IsValidLoginId(NormalizedLoginId) || Account.Password.IsEmpty()
+            || !UTDAccountSubSystem::IsValidPassword(Account.Password, false)
+            || Logins.Contains(NormalizedLoginId) || !Account.AccountId.IsValid()
             || AccountIds.Contains(Account.AccountId)
             || Account.Characters.Num() > UTDAccountSubSystem::MaxCharacters)
         {
             Context.AddError(FText::FromString(TEXT("계정 ID/로그인 중복, 빈 로그인 정보 또는 캐릭터 6개 제한을 확인하세요.")));
             bValid = false;
         }
-        Logins.Add(Account.LoginId);
+        Logins.Add(NormalizedLoginId);
         AccountIds.Add(Account.AccountId);
         for (const auto& Character : Account.Characters)
         {

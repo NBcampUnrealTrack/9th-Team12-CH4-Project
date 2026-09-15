@@ -5,6 +5,8 @@
 #include "Combat/TDCombatStatics.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 ATDBossProjectile::ATDBossProjectile()
 {
@@ -46,7 +48,8 @@ void ATDBossProjectile::Init(ATDCharacterBase* InShooter, const FVector& Directi
 
 	Movement->InitialSpeed = Speed;
 	Movement->MaxSpeed = Speed;
-	Movement->Velocity = Direction.GetSafeNormal2D() * Speed;
+	// 위아래 기울기를 살린다 — 보스가 입 높이에서 대상 몸통으로 내리꽂도록 조준해 준다.
+	Movement->Velocity = Direction.GetSafeNormal() * Speed;
 }
 
 void ATDBossProjectile::BeginPlay()
@@ -99,6 +102,8 @@ void ATDBossProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComp, AActo
 		}
 	}
 
+	// 명중 이펙트는 파괴보다 먼저 방송한다(Reliable 이라 채널이 닫히기 전에 나간다).
+	MulticastImpact(GetActorLocation());
 	if (!bPierce)
 	{
 		Destroy();
@@ -109,6 +114,17 @@ void ATDBossProjectile::HandleStop(const FHitResult& ImpactResult)
 {
 	if (HasAuthority())
 	{
+		MulticastImpact(ImpactResult.bBlockingHit ? FVector(ImpactResult.ImpactPoint) : GetActorLocation());
 		Destroy();   // 벽
 	}
+}
+
+void ATDBossProjectile::MulticastImpact_Implementation(FVector Location)
+{
+	if (UNiagaraSystem* System = ImpactVFX.LoadSynchronous())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, System, Location, FRotator::ZeroRotator,
+			FVector(ImpactVFXScale), /*bAutoDestroy*/ true, /*bAutoActivate*/ true);
+	}
+	OnImpact(Location);
 }

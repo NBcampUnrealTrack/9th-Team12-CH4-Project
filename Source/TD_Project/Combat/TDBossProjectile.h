@@ -7,6 +7,7 @@
 class USphereComponent;
 class UProjectileMovementComponent;
 class ATDCharacterBase;
+class UNiagaraSystem;
 
 /**
  * 보스 원거리 패턴(물대포)의 탄. 판정만 있고 그림은 BP 자식이 붙인다.
@@ -47,6 +48,20 @@ protected:
 	/** 켜면 맞아도 안 사라지고 관통한다(한 대상 1회). */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Projectile")
 	bool bPierce = false;
+
+	/** 명중·벽 충돌 순간 그 자리에 한 번 터지는 이펙트. 서버가 모두에게 방송한다. 날아가는 그림(궤적)은 BP 에 Niagara 컴포넌트를 붙이면 된다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Projectile|VFX")
+	TSoftObjectPtr<UNiagaraSystem> ImpactVFX;
+
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Projectile|VFX", meta = (ClampMin = "0.01"))
+	float ImpactVFXScale = 1.f;
+
+	/** 명중·벽 충돌 순간 모든 기기에서 한 번. 소리·데칼 등 BP 추가 연출용. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "TD|Projectile|VFX")
+	void OnImpact(FVector Location);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastImpact(FVector Location);
 
 private:
 	TWeakObjectPtr<ATDCharacterBase> Shooter;

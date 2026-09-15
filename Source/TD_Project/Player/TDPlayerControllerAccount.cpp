@@ -19,6 +19,16 @@
 #include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "Save/Backend/TDBackendSaveSubsystem.h"
+
+namespace
+{
+UTDBackendSaveSubsystem* Backend(ATDPlayerController* PC)
+{
+    auto* Service=PC->GetGameInstance()?PC->GetGameInstance()->GetSubsystem<UTDBackendSaveSubsystem>():nullptr;
+    return Service&&Service->IsEnabled()?Service:nullptr;
+}
+}
 
 void ATDPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -28,6 +38,7 @@ void ATDPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 void ATDPlayerController::ServerSelectCharacter_Implementation(int32 SlotIndex)
 {
+    if(auto* Service=Backend(this)){Service->Select(this,SlotIndex);return;}
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     UTDAccountSubSystem* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
     FTDDummyCharacterRecord Record;
@@ -37,6 +48,13 @@ void ATDPlayerController::ServerSelectCharacter_Implementation(int32 SlotIndex)
         ClientAccountMessage(TEXT("캐릭터를 불러오지 못했습니다. 로그인과 슬롯 번호를 확인하세요."));
         return;
     }
+    ApplyAccountRecord(Record,SlotIndex);
+}
+
+void ATDPlayerController::ApplyAccountRecord(const FTDDummyCharacterRecord& Record,int32 SlotIndex)
+{
+    auto* State=GetPlayerState<ATDPlayerState>();
+    if(!State||!State->GetCharacterSlots().IsValidIndex(SlotIndex))return;
     const FTDPlayerSaveData& Data = Record.Data;
     State->GetProgressionComponent()->ReadSaveData(Data);
     // 기본 선택 함수가 경험치를 레벨 시작점으로 덮지 않도록 복원된 레벨과 목록을 맞춘다.
@@ -79,6 +97,7 @@ void ATDPlayerController::ServerSelectCharacter_Implementation(int32 SlotIndex)
 
 void ATDPlayerController::ServerLogin_Implementation(const FString& LoginId, const FString& Password)
 {
+    if(auto* Service=Backend(this)){Service->Login(this,LoginId,Password);return;}
 
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     if (!State) return;
@@ -112,11 +131,22 @@ void ATDPlayerController::ClientAccountMessage_Implementation(const FString& Mes
 
 bool ATDPlayerController::SaveCharacter()
 {
+    if(auto* Service=Backend(this))return Service->Save(this);
     ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
     if (!State || !HasAuthority() || !State->HasSelectedCharacter() || !DummyCharacterId.IsValid()) return false;
     UTDAccountSubSystem* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
     if (!Store) return false;
     FTDPlayerSaveData Data;
+    if(!CaptureAccountData(Data))return false;
+    const bool bSaved = Store->SaveCharacter(State, DummyCharacterId, Data);
+    if (bSaved) State->SetCharacterSlots(Store->ListCharacters(State));
+    return bSaved;
+}
+
+bool ATDPlayerController::CaptureAccountData(FTDPlayerSaveData& Data) const
+{
+    auto* State=GetPlayerState<ATDPlayerState>();
+    if(!HasAuthority()||!State||!State->HasSelectedCharacter()||!DummyCharacterId.IsValid())return false;
     State->GetProgressionComponent()->WriteSaveData(Data);
     State->GetInventoryComponent()->WriteSaveData(Data);
     State->GetItemUseComponent()->WriteSaveData(Data);
@@ -133,18 +163,26 @@ bool ATDPlayerController::SaveCharacter()
     const float MaxMana = State->GetAbilitySystemComponent()->GetNumericAttribute(UTDAttributeSet::GetMaxManaAttribute());
     Data.HealthRatio = MaxHealth > 0.f ? FMath::Clamp(State->GetAbilitySystemComponent()->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()) / MaxHealth, 0.f, 1.f) : 1.f;
     Data.ManaRatio = MaxMana > 0.f ? FMath::Clamp(State->GetAbilitySystemComponent()->GetNumericAttribute(UTDAttributeSet::GetManaAttribute()) / MaxMana, 0.f, 1.f) : 1.f;
-    const bool bSaved = Store->SaveCharacter(State, DummyCharacterId, Data);
-    if (bSaved) State->SetCharacterSlots(Store->ListCharacters(State));
-    return bSaved;
+    return true;
 }
 
 void ATDPlayerController::ServerSaveCharacter_Implementation()
 {
+    if(auto* Service=Backend(this)){if(!Service->Save(this))ClientAccountMessage(TEXT("저장 요청을 시작할 수 없습니다."));return;}
     ClientAccountMessage(SaveCharacter() ? TEXT("더미 메모리에 저장했습니다.") : TEXT("저장할 더미 캐릭터가 없습니다."));
+}
+
+void ATDPlayerController::Destroyed()
+{
+    // APlayerController::Destroyed destroys/unpossesses the Pawn before EndPlay.
+    // Capture position and component data while both are still available.
+    if(HasAuthority())if(auto* Service=Backend(this))Service->Disconnect(this);
+    Super::Destroyed();
 }
 
 void ATDPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if(HasAuthority())if(auto* Service=Backend(this))Service->Disconnect(this);
     if (HasAuthority() && GetGameInstance())
     {
         if (UTDAccountSubSystem* Store = GetGameInstance()->GetSubsystem<UTDAccountSubSystem>()) Store->Logout(GetPlayerState<ATDPlayerState>());
@@ -196,6 +234,7 @@ void ATDPlayerController::TDLogout()
 
 void ATDPlayerController::ServerLeaveCharacter_Implementation(bool bLogout)
 {
+    if(auto* Service=Backend(this)){Service->Leave(this,bLogout);return;}
     ATDPlayerState* Previous = GetPlayerState<ATDPlayerState>();
     UTDAccountSubSystem* Store = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTDAccountSubSystem>() : nullptr;
     if (!Previous || !Store || !IsLoggedIn()) return;
@@ -244,6 +283,7 @@ void ATDPlayerController::ServerLeaveCharacter_Implementation(bool bLogout)
 
 void ATDPlayerController::ServerRegisterAccount_Implementation(const FString& LoginId, const FString& Password)
 {
+    if(auto* Service=Backend(this)){Service->Login(this,LoginId,Password,true);return;}
     if (FPlatformTime::Seconds() < NextAccountMutationTime)
     { ClientAccountActionResult(TEXT("Register"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
     NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
@@ -255,6 +295,7 @@ void ATDPlayerController::ServerRegisterAccount_Implementation(const FString& Lo
 
 void ATDPlayerController::ServerCreateCharacter_Implementation(const FString& Name, FName ClassId)
 {
+    if(auto* Service=Backend(this)){Service->Create(this,Name,ClassId);return;}
     if (FPlatformTime::Seconds() < NextAccountMutationTime)
     { ClientAccountActionResult(TEXT("Create"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
     NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
@@ -275,6 +316,7 @@ void ATDPlayerController::ClientAccountActionResult_Implementation(FName Action,
 
 void ATDPlayerController::ServerDeleteCharacter_Implementation(const FGuid& CharacterId)
 {
+    if(auto* Service=Backend(this)){Service->Delete(this,CharacterId);return;}
     if (FPlatformTime::Seconds() < NextAccountMutationTime)
     { ClientAccountActionResult(TEXT("Delete"), false, TEXT("잠시 후 다시 시도해 주세요.")); return; }
     NextAccountMutationTime = FPlatformTime::Seconds() + 1.0;
@@ -284,4 +326,21 @@ void ATDPlayerController::ServerDeleteCharacter_Implementation(const FGuid& Char
     const bool bSuccess = Store && Store->DeleteCharacter(State, CharacterId, Error);
     if (bSuccess) { State->SetCharacterSlots(Store->ListCharacters(State)); State->ForceNetUpdate(); }
     ClientAccountActionResult(TEXT("Delete"), bSuccess, bSuccess ? TEXT("캐릭터를 삭제했습니다.") : (Error.IsEmpty() ? TEXT("삭제 요청을 처리하지 못했습니다.") : Error));
+}
+
+void ATDPlayerController::FinishBackendLeave(const TArray<FTDCharacterSummary>& Characters,bool bLogout)
+{
+    auto* Previous=GetPlayerState<ATDPlayerState>();if(!Previous)return;
+    if(Previous->HasSelectedCharacter())
+    {
+        InitPlayerState();auto* Next=GetPlayerState<ATDPlayerState>();
+        if(!Next||Next==Previous){SetPlayerState(Previous);ClientAccountMessage(TEXT("캐릭터 선택 상태를 만들지 못했습니다. 재접속해 주세요."));return;}
+        Next->SetPlayerId(Previous->GetPlayerId());Next->SetUniqueId(Previous->GetUniqueId());
+        if(Previous->GetPartyComponent())Previous->GetPartyComponent()->ServerLeaveParty();
+        APawn* CharacterPawn=GetPawn();UnPossess();if(CharacterPawn)CharacterPawn->Destroy();Previous->Destroy();
+    }
+    DummyCharacterId.Invalidate();
+    if(bLogout)DummyAccountId.Invalidate();
+    GetPlayerState<ATDPlayerState>()->SetCharacterSlots(bLogout?TArray<FTDCharacterSummary>():Characters);
+    ForceNetUpdate();ClientAccountMessage(bLogout?TEXT("저장 후 로그아웃했습니다."):TEXT("캐릭터를 선택하세요."));
 }

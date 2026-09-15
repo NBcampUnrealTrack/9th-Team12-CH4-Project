@@ -39,6 +39,34 @@ namespace
 ATDPlayerController* UTDAccountScreenPresenter::Controller() const
 { return Host.IsValid() ? Cast<ATDPlayerController>(Host->GetOwningPlayer()) : nullptr; }
 
+void UTDAccountScreenPresenter::SetButtonSelected(int32 PageIndex, const FString& Name, bool bSelected)
+{
+    UButton* Button = Find<UButton>(Pages[PageIndex], Name);
+    if (!Button) return;
+    const TWeakObjectPtr<UButton> Key(Button);
+    if (!OriginalButtonStyles.Contains(Key)) OriginalButtonStyles.Add(Key, Button->GetStyle());
+    FButtonStyle Style = OriginalButtonStyles.FindChecked(Key);
+    if (bSelected)
+    {
+        // Reuse the WBP's editable pressed appearance; do not hardcode theme colors.
+        Style.Normal = Style.Pressed;
+        Style.Hovered = Style.Pressed;
+        Style.NormalForeground = Style.PressedForeground;
+        Style.HoveredForeground = Style.PressedForeground;
+    }
+    Button->SetStyle(Style);
+    if (PageIndex == 3)
+    {
+        if (UTextBlock* Label = Find<UTextBlock>(Pages[PageIndex], Name + TEXT("Text")))
+        {
+            const TWeakObjectPtr<UTextBlock> TextKey(Label);
+            if (!OriginalTextColors.Contains(TextKey)) OriginalTextColors.Add(TextKey, Label->GetColorAndOpacity());
+            // The text must inherit the button foreground for selected/hover/pressed styles to work.
+            Label->SetColorAndOpacity(FSlateColor::UseForeground());
+        }
+    }
+}
+
 bool UTDAccountScreenPresenter::Initialize(UUserWidget* InHost)
 {
     Host = InHost;
@@ -92,6 +120,12 @@ bool UTDAccountScreenPresenter::Initialize(UUserWidget* InHost)
 
 void UTDAccountScreenPresenter::Shutdown()
 {
+    for (const auto& Pair : OriginalButtonStyles)
+        if (UButton* Button = Pair.Key.Get()) Button->SetStyle(Pair.Value);
+    OriginalButtonStyles.Empty();
+    for (const auto& Pair : OriginalTextColors)
+        if (UTextBlock* Label = Pair.Key.Get()) Label->SetColorAndOpacity(Pair.Value);
+    OriginalTextColors.Empty();
     for (UUserWidget* Widget : Pages)
     {
         if (!Widget) continue;
@@ -161,6 +195,7 @@ void UTDAccountScreenPresenter::RenderRoster()
         Portrait(Pages[2],Prefix+TEXT("FullBody"),bExists?Slots[I].ClassId:NAME_None);
         Text(Pages[2],Prefix+TEXT("Label"),bExists?FText::FromString(FString::Printf(TEXT("Lv.%d  %s"),Slots[I].Level,*Slots[I].CharacterName)):FText::FromString(TEXT("＋ 새 캐릭터")));
         Find<UWidget>(Pages[2],Prefix+TEXT("ButtonSelected"))->SetVisibility(I==SelectedSlot ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        SetButtonSelected(2, Prefix+TEXT("Button"), I==SelectedSlot);
     }
     Text(Pages[2],TEXT("RosterCount"),FText::FromString(FString::Printf(TEXT("%d / 6"),Slots.Num())));
     if (Slots.IsValidIndex(SelectedSlot))
@@ -247,7 +282,10 @@ void UTDAccountScreenPresenter::SelectClass(FName Id)
     if (bPending || !ClassRow(Id)) return;
     SelectedClass=Id;Portrait(Pages[3],TEXT("SelectedFullBody"),Id);Text(Pages[3],TEXT("SelectedClassCaption"),ClassRow(Id)->DisplayName);
     for (FName C : {FName(TEXT("Warrior")),FName(TEXT("Mage")),FName(TEXT("Archer"))})
+    {
         Find<UWidget>(Pages[3],TEXT("Choose")+C.ToString()+TEXT("Selected"))->SetVisibility(C==Id ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        SetButtonSelected(3, TEXT("Choose")+C.ToString(), C==Id);
+    }
 }
 void UTDAccountScreenPresenter::Warrior(){SelectClass(TEXT("Warrior"));}
 void UTDAccountScreenPresenter::Mage(){SelectClass(TEXT("Mage"));}

@@ -162,6 +162,16 @@ VFX_TRAVEL_TIME = {
     "Archer_Pierce": 0.25,
 }
 
+# ── 효과음 ────────────────────────────────────────────────────
+#
+#   SFX_PATHS        {SkillId: 사운드 에셋 경로}  발동 순간(이펙트와 같은 순간)에 한 번 난다
+#
+# VFX 와 같은 규칙이다 — **에디터에서 넣었다면 여기에도 적을 것.** 재생성하면 비워진다.
+# 경로는 "/Game/.../SW_Slash.SW_Slash" 형태. 사운드 에셋의 Submix 를 SM_SFX 로 둬야 볼륨 설정이 먹는다.
+# (2026-09-15 기준 스킬 효과음 에셋이 아직 없어 비어 있다.)
+
+SFX_PATHS = {}
+
 
 # ── 패시브 ────────────────────────────────────────────────────
 #
@@ -256,6 +266,7 @@ def build_skill_rows():
             movement, "()", VFX_PATHS.get(skill_id, ""),
             trim(VFX_BASE_SIZE.get(skill_id, 0)), trim(VFX_OFFSET.get(skill_id, 0)),
             trim(VFX_TRAVEL_TIME.get(skill_id, 0)),
+            SFX_PATHS.get(skill_id, ""),
         ])
 
     for skill_id, name, class_id, stats in PASSIVES:
@@ -267,7 +278,7 @@ def build_skill_rows():
             "0", "0", "0", "0",
             "", "0", "0",
             "Instant", "0", "0", "0",
-            "Free", "()", "", "0", "0", "0",
+            "Free", "()", "", "0", "0", "0", "",
         ])
 
     return rows
@@ -344,7 +355,7 @@ def main():
                "ManaCost", "ManaCostPerLevel", "Cooldown", "CooldownPerLevel",
                "ShapeTag", "Range", "Width",
                "CastType", "CastDelay", "ChannelDuration", "ChannelInterval",
-               "CastMovement", "ContextTags", "VFX", "VFXBaseSize", "VFXOffset", "VFXTravelTime"],
+               "CastMovement", "ContextTags", "VFX", "VFXBaseSize", "VFXOffset", "VFXTravelTime", "SFX"],
               build_skill_rows())
 
     write_csv("DT_SkillEffect.csv",

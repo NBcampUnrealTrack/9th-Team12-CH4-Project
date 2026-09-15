@@ -11,8 +11,9 @@ void UTDQuestTrackerWidget::NativeConstruct()
 	Super::NativeConstruct();
 
 	TryBindQuestComponent();
+	RefreshQuestTracker();
 
-	if (BoundQuestComponent == nullptr)
+	if (GetWorld() != nullptr)
 	{
 		GetWorld()->GetTimerManager().SetTimer(
 			BindRetryTimerHandle,
@@ -48,38 +49,23 @@ void UTDQuestTrackerWidget::NativeDestruct()
 
 void UTDQuestTrackerWidget::TryBindQuestComponent()
 {
-	if (BoundQuestComponent != nullptr)
-	{
-		return;
-	}
-
 	const ATDPlayerState* PlayerState =
 		GetOwningPlayerState<ATDPlayerState>();
-
-	if (PlayerState == nullptr)
+	UTDQuestComponent* Current = IsValid(PlayerState) && PlayerState->HasSelectedCharacter()
+		? PlayerState->GetQuestComponent() : nullptr;
+	if (BoundQuestComponent == Current)
 	{
 		return;
 	}
-
-	BoundQuestComponent =
-		PlayerState->GetQuestComponent();
-
-	if (BoundQuestComponent == nullptr)
-	{
-		return;
-	}
-
-	BoundQuestComponent
+	if (IsValid(BoundQuestComponent))
+		BoundQuestComponent->OnQuestListChanged.RemoveDynamic(this, &UTDQuestTrackerWidget::HandleQuestListChanged);
+	BoundQuestComponent = Current;
+	if (IsValid(BoundQuestComponent))
+		BoundQuestComponent
 		->OnQuestListChanged
 		.AddUniqueDynamic(
 			this,
 			&UTDQuestTrackerWidget::HandleQuestListChanged);
-
-	if (GetWorld() != nullptr)
-	{
-		GetWorld()->GetTimerManager().ClearTimer(
-			BindRetryTimerHandle);
-	}
 
 	RefreshQuestTracker();
 }
@@ -91,7 +77,7 @@ void UTDQuestTrackerWidget::HandleQuestListChanged()
 
 void UTDQuestTrackerWidget::RefreshQuestTracker()
 {
-	if (BoundQuestComponent == nullptr)
+	if (!IsValid(BoundQuestComponent))
 	{
 		BP_OnRefreshQuestTracker(
 			TArray<FTDQuestViewData>());

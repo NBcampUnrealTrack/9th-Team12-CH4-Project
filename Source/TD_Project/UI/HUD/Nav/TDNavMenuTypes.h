@@ -11,5 +11,8 @@ enum class ETDNavMenuType : uint8
 	Character,
 	Skill,
 	Party,
-	System
+	System,
+
+	// 뒤에 붙인다. 중간에 넣으면 블루프린트에 저장된 기존 값의 번호가 밀린다.
+	Union
 };

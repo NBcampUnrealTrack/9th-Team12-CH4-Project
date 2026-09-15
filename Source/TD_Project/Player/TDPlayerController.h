@@ -9,6 +9,7 @@
 #include "GameplayTagContainer.h"
 #include "Data/TDDialogueRow.h"
 #include "Data/TDQuestTypes.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDPlayerController.generated.h"
 
 class UTDInteractionFlowComponent;
@@ -133,6 +134,15 @@ public:
 
     /** Shared keyboard route for gameplay input and focused HUD windows. */
     bool HandleNavShortcut(FKey Key);
+
+    /**
+     * 창을 연다(토글). 채팅 중 · 입력칸 포커스 · 창 레이어 미준비면 열지 않고 false.
+     * 단축키(입력 액션)와 포커스된 UI 의 키 입력(HandleNavShortcut)이 둘 다 여기로 온다.
+     */
+    bool TryOpenMenu(ETDNavMenuType MenuType);
+
+    /** 입력 액션 바인딩용. BindAction 은 반환값이 없는 함수만 받는다. */
+    void HandleMenuAction(ETDNavMenuType MenuType) { TryOpenMenu(MenuType); }
     void OpenCharacterMenu();
     void OpenInventoryMenu();
     void OpenSkillMenu();
@@ -518,7 +528,7 @@ public:
     void ServerSelectCharacter(int32 SlotIndex);
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
     void ServerSaveCharacter();
-    /** 서버에서 원하는 저장 시점에만 호출한다. 자동 저장은 없다. */
+    /** 서버의 명시적 저장 요청. 백엔드 모드의 true는 접수이며 완료는 비동기 통지된다. */
     UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="TD|UI|Account")
     bool SaveCharacter();
     UFUNCTION(BlueprintPure, Category="TD|UI|Account")
@@ -545,9 +555,15 @@ protected:
     TSubclassOf<class UTDLoginWidget> DummyLoginWidgetClass;
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void Destroyed() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 private:
     UPROPERTY(Replicated) FGuid DummyAccountId;
+    friend class UTDBackendSaveSubsystem;
+    friend class FTDBackendControllerTest;
+    bool CaptureAccountData(struct FTDPlayerSaveData& Data) const;
+    void ApplyAccountRecord(const struct FTDDummyCharacterRecord& Record,int32 SlotIndex);
+    void FinishBackendLeave(const TArray<struct FTDCharacterSummary>& Characters,bool bLogout);
     FGuid DummyCharacterId;
     FString DummyMessage;
     int32 AccountReplySerial = 0;

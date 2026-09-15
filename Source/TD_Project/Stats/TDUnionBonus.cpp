@@ -5,19 +5,9 @@
 
 namespace TDUnion
 {
-	TArray<FTDStatModifier> BuildModifiers(const UDataTable* BonusTable,
-		TConstArrayView<FTDCharacterSummary> Characters, int32 CurrentSlot, int32 CurrentLevel)
+	TMap<FName, int32> GetBestLevels(TConstArrayView<FTDCharacterSummary> Characters,
+		int32 CurrentSlot, int32 CurrentLevel)
 	{
-		TArray<FTDStatModifier> Modifiers;
-
-		if (BonusTable == nullptr)
-		{
-			return Modifiers;
-		}
-
-		// 직업마다 가장 높은 레벨. 같은 직업을 여럿 키워도 한 번만 센다 —
-		// 그래야 보상의 최대치가 "세 직업 × 만렙" 으로 고정되고, 한 직업만 여러 번 키우는 쪽이
-		// 이득이 되지 않는다.
 		TMap<FName, int32> BestLevelByClass;
 
 		for (int32 Slot = 0; Slot < Characters.Num(); ++Slot)
@@ -34,8 +24,23 @@ namespace TDUnion
 			Best = FMath::Max(Best, Level);
 		}
 
-		BonusTable->ForeachRow<FTDUnionBonusRow>(TEXT("TDUnion::BuildModifiers"),
-			[&Modifiers, &BestLevelByClass](const FName&, const FTDUnionBonusRow& Row)
+		return BestLevelByClass;
+	}
+
+	TArray<FTDUnionEntry> BuildEntries(const UDataTable* BonusTable,
+		TConstArrayView<FTDCharacterSummary> Characters, int32 CurrentSlot, int32 CurrentLevel)
+	{
+		TArray<FTDUnionEntry> Entries;
+
+		if (BonusTable == nullptr)
+		{
+			return Entries;
+		}
+
+		const TMap<FName, int32> BestLevelByClass = GetBestLevels(Characters, CurrentSlot, CurrentLevel);
+
+		BonusTable->ForeachRow<FTDUnionBonusRow>(TEXT("TDUnion::BuildEntries"),
+			[&Entries, &BestLevelByClass](const FName&, const FTDUnionBonusRow& Row)
 			{
 				if (!Row.StatTag.IsValid() || FMath::IsNearlyZero(Row.Value))
 				{
@@ -43,11 +48,31 @@ namespace TDUnion
 				}
 
 				const int32* Best = BestLevelByClass.Find(Row.ClassId);
-				if (Best != nullptr && *Best >= Row.RequiredLevel)
-				{
-					Modifiers.Emplace(Row.StatTag, Row.Op, Row.Value);
-				}
+
+				FTDUnionEntry& Entry = Entries.AddDefaulted_GetRef();
+				Entry.ClassId = Row.ClassId;
+				Entry.RequiredLevel = Row.RequiredLevel;
+				Entry.StatTag = Row.StatTag;
+				Entry.Op = Row.Op;
+				Entry.Value = Row.Value;
+				Entry.bActive = Best != nullptr && *Best >= Row.RequiredLevel;
 			});
+
+		return Entries;
+	}
+
+	TArray<FTDStatModifier> BuildModifiers(const UDataTable* BonusTable,
+		TConstArrayView<FTDCharacterSummary> Characters, int32 CurrentSlot, int32 CurrentLevel)
+	{
+		TArray<FTDStatModifier> Modifiers;
+
+		for (const FTDUnionEntry& Entry : BuildEntries(BonusTable, Characters, CurrentSlot, CurrentLevel))
+		{
+			if (Entry.bActive)
+			{
+				Modifiers.Emplace(Entry.StatTag, Entry.Op, Entry.Value);
+			}
+		}
 
 		return Modifiers;
 	}

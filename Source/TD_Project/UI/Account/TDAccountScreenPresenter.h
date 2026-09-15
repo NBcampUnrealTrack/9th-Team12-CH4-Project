@@ -1,10 +1,13 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "Styling/SlateTypes.h"
 #include "TDAccountScreenPresenter.generated.h"
 
 class UUserWidget;
 class ATDPlayerController;
+class UButton;
+class UTextBlock;
 
 /** Account screen presentation only. Mutations remain in the existing server RPCs. */
 UCLASS()
@@ -31,6 +34,9 @@ private:
     FName SelectedClass = TEXT("Warrior");
     FText Message;
     FString RosterKey;
+    TMap<TWeakObjectPtr<UButton>, FButtonStyle> OriginalButtonStyles;
+    TMap<TWeakObjectPtr<UTextBlock>, FSlateColor> OriginalTextColors;
+    void SetButtonSelected(int32 PageIndex, const FString& Name, bool bSelected);
     void Show(int32 Index);
     void SelectSlot(int32 Index);
     void SelectClass(FName ClassId);

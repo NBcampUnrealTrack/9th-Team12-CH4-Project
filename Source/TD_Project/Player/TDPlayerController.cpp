@@ -31,6 +31,10 @@
 #include "Widgets/SWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "UI/Settings/TDUISettings.h"
 
 ATDPlayerController::ATDPlayerController()
 {
@@ -40,19 +44,41 @@ ATDPlayerController::ATDPlayerController()
 	// 컴포넌트가 스스로 Tick 을 끈다.
 	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
 		TEXT("ZoneEnvironmentComponent"));
+
+	// 스폰·텔레포트 직후 주변 셀이 아직 없으면(스트리밍 Critical 이상) 로딩이 끝날 때까지 기다린다.
+	// 끄면 바닥이 로드되기 전에 캐릭터가 떨어진다 — 로그인 화면이 다른 곳을 보다가 마을에 스폰할 때
+	// 매번 다른 자리에 서던 버그(2026-09-15). 멈칫은 스폰·포탈 이동 순간에만 생긴다.
+	bStreamingSourceShouldBlockOnSlowStreaming = true;
 }
 
 void ATDPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 	InputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &ThisClass::ToggleMouseCursor);
-    InputComponent->BindKey(EKeys::C, IE_Pressed, this, &ThisClass::OpenCharacterMenu);
-    InputComponent->BindKey(EKeys::I, IE_Pressed, this, &ThisClass::OpenInventoryMenu);
-    InputComponent->BindKey(EKeys::K, IE_Pressed, this, &ThisClass::OpenSkillMenu);
-    InputComponent->BindKey(EKeys::O, IE_Pressed, this, &ThisClass::OpenQuestMenu);
-    InputComponent->BindKey(EKeys::P, IE_Pressed, this, &ThisClass::OpenPartyMenu);
+
+    // ESC 는 고정 키다. 설정창에서 바꾸게 두면 잘못 바꿨을 때 설정창을 다시 열 길이 없다.
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::OpenSystemMenu);
 
+    // 나머지 창 단축키는 입력 액션으로 받는다 — 설정창에서 키를 바꿀 수 있게.
+    // 창 종류 ↔ 액션 표는 프로젝트 세팅(TD UI > Shortcuts), 기본 키는 IMC_Player.
+    UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
+    if (EnhancedInput == nullptr)
+    {
+        return;
+    }
+
+    for (const TPair<ETDNavMenuType, TSoftObjectPtr<UInputAction>>& Pair : GetDefault<UTDUISettings>()->MenuInputActions)
+    {
+        if (const UInputAction* Action = Pair.Value.LoadSynchronous())
+        {
+            EnhancedInput->BindAction(Action, ETriggerEvent::Started, this, &ThisClass::HandleMenuAction, Pair.Key);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("창 단축키: '%s' 의 입력 액션이 비어 있거나 불러오지 못했다 — 프로젝트 세팅 TD UI > Shortcuts 확인"),
+                *UEnum::GetValueAsString(Pair.Key));
+        }
+    }
 }
 
 void ATDPlayerController::ToggleMouseCursor()
@@ -1018,6 +1044,27 @@ void ATDPlayerController::ClientMarketSearchResult_Implementation(
 
 bool ATDPlayerController::HandleNavShortcut(FKey Key)
 {
+    if (Key == EKeys::Escape) return TryOpenMenu(ETDNavMenuType::System);
+
+    // UI 에 포커스가 있을 때는 입력 액션이 오지 않아 키로 들어온다. 키를 코드에 적어 두면
+    // 설정창에서 바꾼 키가 여기서만 안 먹으므로, 각 액션에 **지금 지정된 키** 와 비교한다.
+    const UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()
+        ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()) : nullptr;
+    if (!Subsystem) return false;
+
+    for (const TPair<ETDNavMenuType, TSoftObjectPtr<UInputAction>>& Pair : GetDefault<UTDUISettings>()->MenuInputActions)
+    {
+        const UInputAction* Action = Pair.Value.LoadSynchronous();
+        if (Action && Subsystem->QueryKeysMappedToAction(Action).Contains(Key))
+        {
+            return TryOpenMenu(Pair.Key);
+        }
+    }
+    return false;
+}
+
+bool ATDPlayerController::TryOpenMenu(ETDNavMenuType MenuType)
+{
     if (!IsLocalController()) return false;
     ULocalPlayer* Local = GetLocalPlayer();
     UTDUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UTDUIManagerSubsystem>() : nullptr;
@@ -1027,42 +1074,36 @@ bool ATDPlayerController::HandleNavShortcut(FKey Key)
         const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
         if (Focused.IsValid() && Focused->GetTypeAsString().Contains(TEXT("EditableText"))) return false;
     }
-    if (Key == EKeys::C) UI->RequestMenu(ETDNavMenuType::Character);
-    else if (Key == EKeys::I) UI->RequestMenu(ETDNavMenuType::Inventory);
-    else if (Key == EKeys::K) UI->RequestMenu(ETDNavMenuType::Skill);
-    else if (Key == EKeys::O) UI->RequestMenu(ETDNavMenuType::Quest);
-    else if (Key == EKeys::P) UI->RequestMenu(ETDNavMenuType::Party);
-    else if (Key == EKeys::Escape) UI->RequestMenu(ETDNavMenuType::System);
-    else return false;
+    UI->RequestMenu(MenuType);
     return true;
 }
 
 void ATDPlayerController::OpenCharacterMenu()
 {
-    HandleNavShortcut(EKeys::C);
+    TryOpenMenu(ETDNavMenuType::Character);
 }
 
 void ATDPlayerController::OpenInventoryMenu()
 {
-    HandleNavShortcut(EKeys::I);
+    TryOpenMenu(ETDNavMenuType::Inventory);
 }
 
 void ATDPlayerController::OpenSkillMenu()
 {
-    HandleNavShortcut(EKeys::K);
+    TryOpenMenu(ETDNavMenuType::Skill);
 }
 
 void ATDPlayerController::OpenQuestMenu()
 {
-    HandleNavShortcut(EKeys::O);
+    TryOpenMenu(ETDNavMenuType::Quest);
 }
 
 void ATDPlayerController::OpenPartyMenu()
 {
-    HandleNavShortcut(EKeys::P);
+    TryOpenMenu(ETDNavMenuType::Party);
 }
 
 void ATDPlayerController::OpenSystemMenu()
 {
-    HandleNavShortcut(EKeys::Escape);
+    TryOpenMenu(ETDNavMenuType::System);
 }

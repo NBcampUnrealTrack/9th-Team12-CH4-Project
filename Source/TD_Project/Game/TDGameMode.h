@@ -223,6 +223,16 @@ protected:
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 	/**
+	 * 접속 시점에 골라 둔 스폰 지점(Controller->StartSpot)을 재사용하지 않는다.
+	 *
+	 * 엔진은 접속할 때 스폰 지점을 한 번 골라 기억해 두고, RestartPlayer 때 그것이 있으면
+	 * ChoosePlayerStart 를 부르지 않는다. 접속 시점은 캐릭터를 고르기 전이라 선택 공간 기준이고,
+	 * 선택 공간 PlayerStart 가 없으면 맵 전체에서 무작위로 뽑힌다 — 그 자리에 스폰되던 버그(2026-09-15).
+	 * 스폰은 선택 뒤 존 기준으로 다시 골라야 한다.
+	 */
+	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
+
+	/**
 	 * 캐릭터 선택 공간의 PlayerStart 에 붙일 태그.
 	 *
 	 * 좌표를 코드에 박지 않는 이유는 그 자리가 아직 정해지지 않았고,

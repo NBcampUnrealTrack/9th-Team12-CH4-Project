@@ -3,13 +3,15 @@
 
 #include "Blueprint/UserWidget.h"
 #include "UI/TEST/TDLoginWidget.h"
-#include "UI/TEST/TDUI_Login_PlayerController.h"
+#include "Player/TDPlayerController.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/GameInstance.h"
+#include "UI/Loading/TDMapLoadingSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Game/TDGameState.h"
 #include "Character/TDBossCharacter.h"
@@ -238,7 +240,8 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 			Window->SetVisibility(ESlateVisibility::Visible);
 			OpenWindows.Add(MenuType, Window);
 			BringWindowToFront(Window);
-			OnMenuWindowStateChanged.Broadcast(MenuType, true);
+			RefreshNavCursor();
+	OnMenuWindowStateChanged.Broadcast(MenuType, true);
 			return;
 		}
 
@@ -283,6 +286,7 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 			&ThisClass::HandleWindowClosed);
 	OpenWindows.Add(MenuType, NewWindow);
 	BringWindowToFront(NewWindow);
+	RefreshNavCursor();
 	OnMenuWindowStateChanged.Broadcast(MenuType, true);
 }
 
@@ -389,6 +393,7 @@ void UTDUIManagerSubsystem::ClearWindowRegistry()
 
 	RemoveClosedDelegate(OpenWindows);
 	RemoveClosedDelegate(PrecreatedWindows);
+    RefreshNavCursor();
 }
 
 void UTDUIManagerSubsystem::HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow)
@@ -406,6 +411,7 @@ void UTDUIManagerSubsystem::HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow
 		SaveWindowPosition(ClosedMenuType, ClosedWindow);
 		Iterator.RemoveCurrent();
 		PrecreatedWindows.Remove(ClosedMenuType);
+		RefreshNavCursor();
 		OnMenuWindowStateChanged.Broadcast(ClosedMenuType, false);
 		break;
 	}
@@ -441,13 +447,19 @@ void UTDUIManagerSubsystem::RefreshUI()
 void UTDUIManagerSubsystem::RefreshAccountFlow()
 {
 	UTDUIRootWidget* Root = RootWidget.Get();
-	if (!Root || !AccountScreenClass || !Root->GetScreenStack()){
+	if (!Root || !Root->GetScreenStack()){
 		return;
 	}
 	APlayerController* Controller = Root->GetOwningPlayer();
 	if (!Controller || !Controller->IsLocalController()){
 		return;
 	}
+    const auto HideMapLoading = [Controller]()
+    {
+        if (UGameInstance* Instance = Controller->GetGameInstance())
+            if (auto* Loading = Instance->GetSubsystem<UTDMapLoadingSubsystem>())
+                Loading->HideLoadingScreen();
+    };
 	UCommonActivatableWidgetStack* Stack = Root->GetScreenStack();
 	if (Root->IsPlayerHUDReady()){
 		if (AccountScreen){
@@ -459,8 +471,10 @@ void UTDUIManagerSubsystem::RefreshAccountFlow()
 				Root->GetWindowLayer()->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			}
 		}
+		HideMapLoading();
 		return;
 	}
+	if (!AccountScreenClass) return;
 	if (!AccountScreen){
 		// 이전 캐릭터의 창/팝업을 다음 캐릭터에게 남기지 않는다.
 		TArray<TWeakObjectPtr<UTDWindowBaseWidget>> Windows;
@@ -483,6 +497,10 @@ void UTDUIManagerSubsystem::RefreshAccountFlow()
 			Controller->bShowMouseCursor = true;
 		}
 	}
+    if (AccountScreen && AccountScreen->IsActivated() && Stack->GetActiveWidget() == AccountScreen)
+    {
+        HideMapLoading();
+    }
 }
 
 void UTDUIManagerSubsystem::UnbindDeathViewModel()
@@ -568,7 +586,7 @@ void UTDUIManagerSubsystem::CloseDeathUI()
 
 void UTDUIManagerSubsystem::RequestCharacterSelection()
 {
-	if (ATDUI_Login_PlayerController* Controller = Cast<ATDUI_Login_PlayerController>(
+	if (ATDPlayerController* Controller = Cast<ATDPlayerController>(
 			GetLocalPlayer()->GetPlayerController(GetWorld()))){
 		Controller->TDCharacterSelect();
 	}
@@ -576,7 +594,7 @@ void UTDUIManagerSubsystem::RequestCharacterSelection()
 
 void UTDUIManagerSubsystem::RequestLogout()
 {
-	if (ATDUI_Login_PlayerController* Controller = Cast<ATDUI_Login_PlayerController>(
+	if (ATDPlayerController* Controller = Cast<ATDPlayerController>(
 			GetLocalPlayer()->GetPlayerController(GetWorld()))){
 		Controller->TDLogout();
 	}
@@ -812,4 +830,55 @@ bool UTDUIManagerSubsystem::HasVisibleGameWindow() const
 	}
 
 	return false;
+}
+
+void UTDUIManagerSubsystem::RefreshNavCursor()
+{
+    bool bAnyOpen = false;
+    for (const auto& Pair : OpenWindows)
+    {
+        if (IsMenuOpen(Pair.Key)) { bAnyOpen = true; break; }
+    }
+
+    if (bAnyOpen)
+    {
+        ULocalPlayer* Local = GetLocalPlayer();
+        APlayerController* Controller = Local ? Local->GetPlayerController(GetWorld()) : nullptr;
+        if (!Controller || !Controller->IsLocalController()) return;
+        if (NavCursorController.Get() != Controller)
+        {
+            bCursorVisibleBeforeNav = Controller->bShowMouseCursor;
+            NavCursorController = Controller;
+        }
+        // Chat and death screens keep their own focus and restore to the open-window state.
+        if (IsChatInputActive()) { bCursorVisibleBeforeChat = true; return; }
+        if (DeathScreen) { bCursorVisibleBeforeDeath = true; return; }
+        Controller->bShowMouseCursor = true;
+        FInputModeGameAndUI Mode;
+        Mode.SetHideCursorDuringCapture(false);
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        Controller->SetInputMode(Mode);
+        return;
+    }
+
+    APlayerController* Controller = NavCursorController.Get();
+    NavCursorController.Reset();
+    if (!Controller || !Controller->IsLocalController()) return;
+    if (IsChatInputActive()) { bCursorVisibleBeforeChat = bCursorVisibleBeforeNav; }
+    if (DeathScreen) { bCursorVisibleBeforeDeath = bCursorVisibleBeforeNav; }
+    if (IsChatInputActive() || DeathScreen || AccountScreen) return;
+    Controller->bShowMouseCursor = bCursorVisibleBeforeNav;
+    if (bCursorVisibleBeforeNav)
+    {
+        FInputModeGameAndUI Mode;
+        Mode.SetHideCursorDuringCapture(false);
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        Controller->SetInputMode(Mode);
+    }
+    else
+    {
+        FInputModeGameOnly Mode;
+        Mode.SetConsumeCaptureMouseDown(false);
+        Controller->SetInputMode(Mode);
+    }
 }

@@ -4,7 +4,7 @@ using UnrealBuildTool;
 
 public class TD_Project : ModuleRules
 {
-	public TD_Project(ReadOnlyTargetRules Target) : base(Target)	
+	public TD_Project(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -22,6 +22,7 @@ public class TD_Project : ModuleRules
 			"CommonUI",
 			"Slate",
 			"SlateCore",
+			"MoviePlayer",
 			"Paper2D",
 			"PaperZD",
 
@@ -40,7 +41,6 @@ public class TD_Project : ModuleRules
 			// FUniqueNetIdRepl 헤더는 Engine 을 타고 보이지만 ToString 은 이 모듈에서 export 된다.
 			"CoreOnline"
 		});
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 	}
 }

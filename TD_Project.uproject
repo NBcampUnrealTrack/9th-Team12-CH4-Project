@@ -13,6 +13,11 @@
 			]
 		},
 		{
+			"Name": "TD_ProjectPreLoad",
+			"Type": "Runtime",
+			"LoadingPhase": "PostSplashScreen"
+		},
+		{
 			"Name": "TD_ProjectEditor",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit"

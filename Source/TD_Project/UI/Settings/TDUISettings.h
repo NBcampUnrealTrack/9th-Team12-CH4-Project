@@ -9,6 +9,8 @@ class UTDWindowBaseWidget;
 class UTDItemTooltipWidget;
 class UDataTable;
 class UTDRespawnWidget;
+class UTDLoginWidget;
+class UUserWidget;
 
 /** Project Settings > Game > TD UI에 표시되는 프로젝트 공용 UI 설정. */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "TD UI"))
@@ -17,6 +19,17 @@ class TD_PROJECT_API UTDUISettings : public UDeveloperSettings
 	GENERATED_BODY()
 
 public:
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Account")
+    TSoftClassPtr<UTDLoginWidget> LoginWidgetClass;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Account|Pages")
+    TSoftClassPtr<UUserWidget> AccountLoginPage;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Account|Pages")
+    TSoftClassPtr<UUserWidget> AccountRegisterPage;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Account|Pages")
+    TSoftClassPtr<UUserWidget> AccountSelectPage;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Account|Pages")
+    TSoftClassPtr<UUserWidget> AccountCreatePage;
+
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Respawn")
     TSoftClassPtr<UTDRespawnWidget> RespawnWidgetClass;
 

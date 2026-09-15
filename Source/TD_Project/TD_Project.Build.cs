@@ -19,6 +19,7 @@ public class TD_Project : ModuleRules
 		// 헤더에서는 전방 선언만 쓰므로 Private 으로 충분하다.
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{"UMG",
+			"HTTP", "Json",
 			"CommonUI",
 			"Slate",
 			"SlateCore",

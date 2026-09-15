@@ -22,6 +22,12 @@ pub fn create_router(state: AppState) -> Router {
             get(save_controller::load_save).put(save_controller::save_character),
         )
         .route(
+            "/v1/characters/{id}/lease",
+            post(save_controller::claim_lease)
+                .put(save_controller::renew_lease)
+                .delete(save_controller::release_lease),
+        )
+        .route(
             "/v1/characters/{id}",
             delete(character_controller::delete_character),
         )

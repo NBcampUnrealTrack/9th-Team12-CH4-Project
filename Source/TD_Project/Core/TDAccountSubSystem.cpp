@@ -5,6 +5,40 @@
 #include "Settings/TDCharacterClassSettings.h"
 #include "Engine/DataTable.h"
 
+FString UTDAccountSubSystem::NormalizeLoginId(const FString& LoginId)
+{
+    return LoginId.TrimStartAndEnd().ToLower();
+}
+
+bool UTDAccountSubSystem::IsValidLoginId(const FString& LoginId)
+{
+    if (LoginId.Len() < 2 || LoginId.Len() > 32) return false;
+    for (const TCHAR Ch : LoginId)
+        if (!((Ch >= 'a' && Ch <= 'z') || (Ch >= '0' && Ch <= '9') || Ch == '_')) return false;
+    return true;
+}
+
+bool UTDAccountSubSystem::IsValidPassword(const FString& Password, bool bRequireMinimumLength)
+{
+    const int32 MinimumLength = bRequireMinimumLength ? MinPasswordLength : 1;
+    if (Password.Len() < MinimumLength || Password.Len() > MaxPasswordLength) return false;
+    for (const TCHAR Ch : Password)
+        if (Ch < 0x21 || Ch > 0x7E) return false;
+    return true;
+}
+
+FString UTDAccountSubSystem::FilterPasswordInput(const FString& Password)
+{
+    FString Filtered;
+    Filtered.Reserve(FMath::Min(Password.Len(), MaxPasswordLength));
+    for (const TCHAR Ch : Password)
+    {
+        if (Ch >= 0x21 && Ch <= 0x7E) Filtered.AppendChar(Ch);
+        if (Filtered.Len() == MaxPasswordLength) break;
+    }
+    return Filtered;
+}
+
 void UTDAccountSubSystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -20,11 +54,12 @@ bool UTDAccountSubSystem::Login(ATDPlayerState* Player, const FString& LoginId,
 {
 	OutAccountId.Invalidate();
 	OutError = TEXT("아이디 또는 비밀번호가 올바르지 않습니다.");
+	const FString NormalizedLoginId = NormalizeLoginId(LoginId);
 	if (!IsValid(Player) || !Player->HasAuthority() || Player->HasSelectedCharacter()
-		|| LoginId.Len() > 64 || Password.Len() > 128) return false;
+		|| !IsValidLoginId(NormalizedLoginId) || !IsValidPassword(Password, false)) return false;
 	const FTDDummyAccountRecord* Account = Accounts.FindByPredicate([&](const FTDDummyAccountRecord& Entry)
 	{
-		return Entry.LoginId == LoginId && Entry.Password == Password;
+		return Entry.LoginId.Equals(NormalizedLoginId, ESearchCase::IgnoreCase) && Entry.Password == Password;
 	});
 	if (!Account) return false;
 	for (auto It = Sessions.CreateIterator(); It; ++It)
@@ -107,16 +142,16 @@ bool UTDAccountSubSystem::RegisterAccount(ATDPlayerState* Player, const FString&
 {
     if (!IsValid(Player) || !Player->HasAuthority() || FindAccount(Player) || Player->HasSelectedCharacter())
     { OutError = TEXT("로그아웃 상태에서 가입해 주세요."); return false; }
-    if (LoginId.Len() < 2 || LoginId.Len() > 24 || Password.Len() < 4 || Password.Len() > 64)
-    { OutError = TEXT("아이디는 2~24자, 비밀번호는 4~64자로 입력해 주세요."); return false; }
-    for (TCHAR Ch : LoginId)
-        if (!((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') || (Ch >= '0' && Ch <= '9') || Ch == '_'))
-        { OutError = TEXT("아이디는 영문, 숫자, 밑줄만 사용할 수 있습니다."); return false; }
+    const FString NormalizedLoginId = NormalizeLoginId(LoginId);
+    if (!IsValidLoginId(NormalizedLoginId))
+    { OutError = TEXT("아이디는 영문, 숫자, 밑줄을 사용해 2~32자로 입력해 주세요."); return false; }
+    if (!IsValidPassword(Password, true))
+    { OutError = TEXT("비밀번호는 공백 없이 영문, 숫자, 특수문자를 사용해 8~64자로 입력해 주세요."); return false; }
     for (const auto& Account : Accounts)
-        if (Account.LoginId.Equals(LoginId, ESearchCase::IgnoreCase))
+        if (Account.LoginId.Equals(NormalizedLoginId, ESearchCase::IgnoreCase))
         { OutError = TEXT("이미 사용 중인 아이디입니다."); return false; }
     FTDDummyAccountRecord Account;
-    Account.AccountId = FGuid::NewGuid(); Account.LoginId = LoginId; Account.Password = Password;
+    Account.AccountId = FGuid::NewGuid(); Account.LoginId = NormalizedLoginId; Account.Password = Password;
     Accounts.Add(MoveTemp(Account)); OutError.Empty(); return true;
 }
 

@@ -121,9 +121,21 @@ struct FTDBossExtraStrike
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
 	float ShakeScale = 1.f;
 
-	/** 도넛일 때 VFX 를 링 위 몇 지점에 찍나. 0 = 중심에 하나. 8 = 물기둥 8개처럼 둘레에 8개. */
+	/** 이펙트를 몇 개로 나눠 깔지(채우기). 0 = 하나. 박스: 길이 방향 칸 수. 원판·도넛: 가운데 줄 둘레 개수(원판은 중심 +1). 작은 이펙트를 크게 늘리면 흐려지니 여러 개로 채울 때 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0", ClampMax = "32"))
 	int32 VFXPointCount = 0;
+
+	/** 도넛 두께를 몇 겹의 원으로 채우나. 1 = 가운데 한 줄. 4 = 안쪽부터 바깥까지 4줄(바깥 줄일수록 지점이 늘어 밀도 유지). 넓은 비·장판용. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 VFXRingLayers = 1;
+
+	/** 예고·타격 VFX 를 바닥에서 이만큼(cm) 띄워 스폰. 원점이 가운데인 이펙트가 땅에 묻힐 때. 배율과 무관하게 그대로 더한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	float VFXHeightOffset = 0.f;
+
+	/** 세로(Z) 배율만 따로. 물기둥을 더 높게, 파도를 더 두껍게. 판정 크기와는 무관. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
+	float VFXHeightScale = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
 	TSoftObjectPtr<UNiagaraSystem> TelegraphVFX;
@@ -136,6 +148,18 @@ struct FTDBossExtraStrike
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
 	float StrikeVFXScale = 1.f;
+
+	/** 타격 VFX 를 이 시간 뒤에 끈다(초). 0 = 이펙트가 알아서 끝남. 무한 루프 이펙트를 쓸 때 반드시 준다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0"))
+	float StrikeVFXDuration = 0.f;
+
+	/**
+	 * 이펙트를 만들 때 기준으로 삼은 크기(cm). 0 이면 자동 배율 없음.
+	 * 예: 반지름 100 짜리로 만든 원형 이펙트면 100 → 판정 반지름 450 이면 4.5배로 띄운다.
+	 * 원판·도넛은 반지름, 도넛에 둘레 지점(VFXPointCount)을 쓰면 링 두께의 절반, 박스는 X·Y 각각.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0"))
+	float VFXReferenceSize = 0.f;
 };
 
 /**
@@ -277,7 +301,32 @@ struct FTDBossPatternSpec
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
 	float StrikeVFXScale = 1.f;
 
-	/** 도넛일 때 VFX 를 링 둘레 몇 지점에 찍나. 0 = 중심에 하나. 8 = 물기둥 8개. */
+	/** 타격 VFX 를 이 시간 뒤에 끈다(초). 0 = 이펙트가 알아서 끝남. 무한 루프 이펙트를 쓸 때 반드시 준다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0"))
+	float StrikeVFXDuration = 0.f;
+
+	/**
+	 * 이펙트를 만들 때 기준으로 삼은 크기(cm). 0 이면 자동 배율 없음.
+	 * 예: 반지름 100 짜리로 만든 원형 이펙트면 100 → 판정 반지름 450 이면 4.5배로 띄운다.
+	 * 원판·도넛은 반지름, 도넛에 둘레 지점(VFXPointCount)을 쓰면 링 두께의 절반, 박스는 X·Y 각각.
+	 * 배율과 별개로 나이아가라 User 파라미터 Radius/InnerRadius/Length/Width/Duration 도 늘 넣어 준다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0"))
+	float VFXReferenceSize = 0.f;
+
+	/** 이펙트를 몇 개로 나눠 깔지(채우기). 0 = 하나. 박스: 길이 방향 칸 수. 원판·도넛: 가운데 줄 둘레 개수(원판은 중심 +1). 작은 이펙트를 크게 늘리면 흐려지니 여러 개로 채울 때 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0", ClampMax = "32"))
 	int32 VFXPointCount = 0;
+
+	/** 도넛 두께를 몇 겹의 원으로 채우나. 1 = 가운데 한 줄. 4 = 안쪽부터 바깥까지 4줄(바깥 줄일수록 지점이 늘어 밀도 유지). 넓은 비·장판용. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 VFXRingLayers = 1;
+
+	/** 예고·타격 VFX 를 바닥에서 이만큼(cm) 띄워 스폰. 원점이 가운데인 이펙트가 땅에 묻힐 때. 배율과 무관하게 그대로 더한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	float VFXHeightOffset = 0.f;
+
+	/** 세로(Z) 배율만 따로. 물기둥을 더 높게, 파도를 더 두껍게. 판정 크기와는 무관. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX", meta = (ClampMin = "0.01"))
+	float VFXHeightScale = 1.f;
 };

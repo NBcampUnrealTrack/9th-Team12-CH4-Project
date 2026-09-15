@@ -1,8 +1,10 @@
 #include "Skill/TDSkillComponent.h"
 
 #include "Character/TDCharacterBase.h"
+#include "Components/AudioComponent.h"
 #include "Combat/TDCombatComponent.h"
 #include "Combat/TDCombatStatics.h"
+#include "Components/CapsuleComponent.h"
 #include "Core/TDGameplayTags.h"
 #include "Data/TDSkillEffectRow.h"
 #include "Data/TDSkillRow.h"
@@ -10,10 +12,12 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Stats/TDProgressionComponent.h"
+#include "Sound/SoundBase.h"
 #include "Stats/TDStatComponent.h"
 #include "TimerManager.h"
 
@@ -79,6 +83,7 @@ void UTDSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 캐릭터가 사라지는데 장판 이펙트만 남으면 안 된다.
 	StopChannelVFX();
+	StopChannelSFX();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -353,8 +358,9 @@ void UTDSkillComponent::FireOnce()
 			Facing = Owner->GetActorForwardVector().GetSafeNormal2D();
 		}
 
-		MulticastOnSkillFired(CastingSkillId,
-			Owner->GetActorLocation() + Facing * Row->VFXOffset, Facing.Rotation());
+		// 위치는 몸 그대로 보낸다. VFXOffset 은 받는 쪽이 더한다 — 크기·위치 값은 표현이라
+		// 각 화면이 적용해야 TD.SkillVFX 로 바꾼 값이 서버를 거치지 않고 바로 보인다.
+		MulticastOnSkillFired(CastingSkillId, Owner->GetActorLocation(), Facing.Rotation());
 	}
 
 	// 효과마다 대상이 다를 수 있다 — 마법사 장판은 아군을 회복하면서 적을 때린다.
@@ -549,7 +555,10 @@ void UTDSkillComponent::EndCast(bool bFired)
 
 	ClearCastTimers();
 	bCostPaid = false;
-	SetComponentTickEnabled(false);
+
+	// 즉발 스킬은 발동 직후 여기로 온다. 날아가던 이펙트가 있으면 도착할 때까지 틱을 남긴다 —
+	// 끄면 몸 앞에서 멈춘다. 다 도착하면 틱이 스스로 꺼진다.
+	SetComponentTickEnabled(TravelingVFX.Num() > 0);
 
 	MulticastOnCastEnded(SkillId, bFired, Cooldown);
 }
@@ -588,10 +597,18 @@ void UTDSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// 날아가는 이펙트는 모든 머신이 자기 화면에서 옮긴다.
+	TickTravelingVFX();
+
 	// 감시는 서버 몫이다. 클라이언트는 애초에 이동 입력을 막지만, 막힌 것을 뚫고
 	// 움직이는 경우까지 서버가 걸러야 한다.
 	if (GetOwnerRole() != ROLE_Authority || !IsCasting())
 	{
+		// 감시할 시전도 옮길 이펙트도 없으면 틱을 멈춘다.
+		if (TravelingVFX.Num() == 0)
+		{
+			SetComponentTickEnabled(false);
+		}
 		return;
 	}
 
@@ -697,7 +714,15 @@ void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 	const UTDProgressionComponent* Progression = GetProgression();
 	const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
 
-	if (Owner == nullptr || Row == nullptr || Row->VFX.IsNull())
+	if (Owner == nullptr || Row == nullptr)
+	{
+		return;
+	}
+
+	// 효과음은 이펙트와 따로 본다 — 이펙트가 없는 스킬도 소리는 날 수 있다.
+	PlaySkillSFX(*Owner, *Row);
+
+	if (Row->VFX.IsNull())
 	{
 		return;
 	}
@@ -710,26 +735,71 @@ void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 		return;
 	}
 
+	float BaseSize = Row->VFXBaseSize;
+	float Offset = Row->VFXOffset;
+	float TravelTime = Row->VFXTravelTime;
+
+	// TD.SkillVFX 로 맞추는 중이면 테이블 대신 그 값을 쓴다.
+	if (const FDebugVFXTuning* Tuning = GetDebugVFXTuning().Find(SkillId))
+	{
+		BaseSize = Tuning->BaseSize;
+		Offset = Tuning->Offset;
+		TravelTime = Tuning->TravelTime;
+	}
+
 	// 판정 범위와 같은 크기로 키운다. 기준 크기를 모르면(0) 에셋 그대로 둔다.
-	const float Scale = Row->VFXBaseSize > 0.f && Row->Range > 0.f
-		? Row->Range / Row->VFXBaseSize : 1.f;
+	const float Scale = BaseSize > 0.f && Row->Range > 0.f
+		? Row->Range / BaseSize : 1.f;
 
 	UNiagaraComponent* Spawned = nullptr;
 
 	if (Row->ShapeTag == TDTags::Skill_Shape_ForwardBox)
 	{
 		// 앞으로 뻗는 이펙트는 월드에 둔다. 시전자에 붙이면 날아가던 검기가 몸을 따라 휜다.
-		// Location 에는 서버가 이미 VFXOffset 을 더해 보냈다.
+		// Location 은 시전 순간의 몸 위치다. 몸 앞 몇 cm 에서 시작할지는 여기서 더한다.
+		const FVector Direction = Facing.Vector();
+		const FVector Start = Location + Direction * Offset;
+
 		Spawned = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this, System, Location, Facing, FVector(Scale));
+			this, System, Start, Facing, FVector(Scale));
+
+		// 이펙트 자체가 움직여야 꼬리가 그려지는 종류는 사거리 끝까지 옮긴다.
+		const float Travel = Row->Range - Offset;
+		if (Spawned != nullptr && TravelTime > 0.f && Travel > 0.f && GetWorld() != nullptr)
+		{
+			FTravelingVFX& Entry = TravelingVFX.AddDefaulted_GetRef();
+			Entry.Component = Spawned;
+			Entry.Start = Start;
+			Entry.End = Start + Direction * Travel;
+			Entry.StartTime = GetWorld()->GetTimeSeconds();
+			Entry.Duration = TravelTime;
+
+			// 틱은 원래 서버가 시전 중에만 켠다. 클라이언트와 시전이 끝난 뒤에도 옮기려면 켜야 한다.
+			SetComponentTickEnabled(true);
+		}
 	}
 	else
 	{
 		// 자기 주변 이펙트는 시전자에 붙인다. 이동하며 쓰는 정신집중(마력 폭풍)이
 		// 월드에 고정되면 뛰어가는 동안 이펙트만 제자리에 남는다.
+		//
+		// 범위(SelfRadius) 이펙트는 발밑에 붙인다. 루트인 캡슐의 원점은 몸 한가운데라 그대로
+		// 붙이면, 바닥을 원점으로 만든 장판·오라가 허리에서 시작해 머리 위로 솟는다 —
+		// 크기를 키울수록 더 올라간다. 몸에 거는 효과(Self, 방벽)는 몸을 감싸야 하므로 그대로 둔다.
+		FVector AttachOffset = FVector::ZeroVector;
+
+		if (Row->ShapeTag == TDTags::Skill_Shape_SelfRadius)
+		{
+			if (const UCapsuleComponent* Capsule = Owner->GetCapsuleComponent())
+			{
+				// 붙은 뒤의 상대 위치라 부모 스케일이 곱해진다. 그래서 스케일 전 반높이를 쓴다.
+				AttachOffset.Z = -Capsule->GetUnscaledCapsuleHalfHeight();
+			}
+		}
+
 		Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			System, Owner->GetRootComponent(), NAME_None,
-			FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale),
+			AttachOffset, FRotator::ZeroRotator, FVector(Scale),
 			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None);
 	}
 
@@ -771,6 +841,46 @@ void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 	}
 }
 
+void UTDSkillComponent::TickTravelingVFX()
+{
+	if (TravelingVFX.Num() == 0 || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	const float Now = GetWorld()->GetTimeSeconds();
+
+	for (int32 Index = TravelingVFX.Num() - 1; Index >= 0; --Index)
+	{
+		FTravelingVFX& Entry = TravelingVFX[Index];
+
+		// 이펙트가 스스로 먼저 사라졌다. 옮길 것이 없다.
+		if (!Entry.Component.IsValid())
+		{
+			TravelingVFX.RemoveAtSwap(Index);
+			continue;
+		}
+
+		const float Alpha = FMath::Clamp((Now - Entry.StartTime) / Entry.Duration, 0.f, 1.f);
+		Entry.Component->SetWorldLocation(FMath::Lerp(Entry.Start, Entry.End, Alpha));
+
+		if (Alpha >= 1.f)
+		{
+			// 도착했다. 새 입자만 멈추고 남은 꼬리는 스스로 사라지게 둔다.
+			Entry.Component->Deactivate();
+			TravelingVFX.RemoveAtSwap(Index);
+		}
+	}
+}
+
+TMap<FName, UTDSkillComponent::FDebugVFXTuning>& UTDSkillComponent::GetDebugVFXTuning()
+{
+	// PIE 를 다시 켜도 남는다. 여러 번 시전해 보며 맞추는 도구라 그편이 낫다 —
+	// 에디터를 끄거나 TD.SkillVFX clear 로 지운다.
+	static TMap<FName, FDebugVFXTuning> Tuning;
+	return Tuning;
+}
+
 void UTDSkillComponent::StopChannelVFX()
 {
 	if (ActiveChannelVFX.IsValid())
@@ -782,13 +892,53 @@ void UTDSkillComponent::StopChannelVFX()
 	ActiveChannelVFX.Reset();
 }
 
+void UTDSkillComponent::PlaySkillSFX(ATDCharacterBase& Owner, const FTDSkillRow& Row)
+{
+	if (Row.SFX.IsNull())
+	{
+		return;
+	}
+
+	// 이펙트와 같은 이유로 처음 쓸 때 동기로 읽는다. 짧은 효과음 몇 개뿐이다.
+	USoundBase* Sound = Row.SFX.LoadSynchronous();
+	if (Sound == nullptr)
+	{
+		return;
+	}
+
+	// 시전자에 붙인다. 뛰면서 쓰는 정신집중(마력 폭풍)의 소리가 제자리에 남지 않게 —
+	// 캐릭터가 사라지면(접속 종료) 같이 멈춘다. 볼륨 설정은 사운드 에셋의 Submix(SM_SFX)가 받는다.
+	UAudioComponent* Audio = UGameplayStatics::SpawnSoundAttached(
+		Sound, Owner.GetRootComponent(), NAME_None, FVector::ZeroVector,
+		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
+
+	// 정신집중은 끝나는 시점을 모른다. 시전 종료 방송이 이펙트와 함께 끈다.
+	if (Audio != nullptr && Row.CastType == ETDSkillCastType::Channel)
+	{
+		StopChannelSFX();
+		ActiveChannelSFX = Audio;
+	}
+}
+
+void UTDSkillComponent::StopChannelSFX()
+{
+	if (ActiveChannelSFX.IsValid())
+	{
+		// 뚝 끊기지 않게 짧게 줄여서 끈다.
+		ActiveChannelSFX->FadeOut(0.2f, 0.f);
+	}
+
+	ActiveChannelSFX.Reset();
+}
+
 void UTDSkillComponent::MulticastOnCastEnded_Implementation(
 	FName SkillId, bool bFired, float Cooldown)
 {
 	CastingSkillId = NAME_None;
 
-	// 정신집중이 끝나거나 끊겼다. 장판을 걷는다.
+	// 정신집중이 끝나거나 끊겼다. 장판을 걷고 소리를 끈다.
 	StopChannelVFX();
+	StopChannelSFX();
 
 	if (bFired && Cooldown > 0.f)
 	{

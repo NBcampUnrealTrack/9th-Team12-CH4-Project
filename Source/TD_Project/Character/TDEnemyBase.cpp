@@ -4,8 +4,10 @@
 #include "Abilities/TDAttributeSet.h"
 #include "Components/CapsuleComponent.h"                    
 #include "Core/TDGameplayTags.h"
+#include "Data/TDDropTableRow.h"
 #include "Data/TDMonsterRow.h"
 #include "Engine/DataTable.h"
+#include "Items/TDInventoryComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"      
 #include "Stats/TDProgressionComponent.h"                   
 #include "Stats/TDStatComponent.h"
@@ -15,6 +17,7 @@
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Quest/TDQuestComponent.h"
+#include "Settings/TDDropSettings.h"
 
 ATDEnemyBase::ATDEnemyBase()
 {
@@ -146,6 +149,8 @@ void ATDEnemyBase::ApplyDefinition()
 	GoldMinReward = FMath::RoundToInt(Row->GoldMin.GetValueAtLevel(LevelAsFloat));
 	GoldMaxReward = FMath::RoundToInt(Row->GoldMax.GetValueAtLevel(LevelAsFloat));
 
+	DropTableId = Row->DropTableId;
+
 	// 공격자의 보스 추가 피해가 이 대상에게 붙을지 정하는 값이다.
 	bIsBoss = Row->bIsBoss;
 
@@ -178,10 +183,9 @@ void ATDEnemyBase::HandleDeath()
 
 	// 파괴는 서버 권한. 복제로 클라이언트에서도 함께 사라진다.
 	//
-	// 골드는 바닥에 떨구지 않고 GrantRewards 에서 즉시 지급한다. 상점을 검증하려면
-	// 돈을 버는 경로가 먼저 있어야 하는데, 드랍 액터는 습득 판정·복제·파티 분배 규칙이
-	// 따로 필요해 그만큼을 기다릴 수 없었다.
-	// TODO(드랍): DropTableId(아이템 드랍)는 드랍 액터(W3)와 함께 붙인다.
+	// 골드도 아이템도 바닥에 떨구지 않고 GrantRewards 에서 즉시 지급한다.
+	// 드랍 액터는 습득 판정·복제·소유권(파티 우선 시간)·수명이 전부 따로 필요한데,
+	// 보물상자도 인벤토리에 직접 넣는 방식이라 이쪽이 프로젝트 안에서 일관된다.
 	if (HasAuthority())
 	{
 		SetLifeSpan(CorpseLifetime);
@@ -266,6 +270,8 @@ void ATDEnemyBase::GrantRewards(
 		}
 	}
 
+	GrantDrops(KillerPlayerState);
+
 	/**
 	 * 퀘스트는 같은 존의 살아 있는 파티원만 받는다.
 	 * 거리는 검사하지 않으며 실제 공격 참여 여부도 검사하지 않는다.
@@ -311,6 +317,78 @@ void ATDEnemyBase::GrantRewards(
 		{
 			Quest->ReportMonsterKilled(
 				MonsterId);
+		}
+	}
+}
+
+void ATDEnemyBase::GrantDrops(ATDPlayerState* KillerPlayerState)
+{
+	if (DropTableId.IsNone() || KillerPlayerState == nullptr)
+	{
+		return;
+	}
+
+	const UTDDropSettings* Settings = UTDDropSettings::Get();
+	const UDataTable* DropTable = Settings ? Settings->DropTable.LoadSynchronous() : nullptr;
+
+	if (DropTable == nullptr)
+	{
+		// 몬스터는 목록을 가리키는데 테이블이 없다. 설정을 빠뜨린 것이라 한 번은 알린다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("드롭: 프로젝트 세팅 > TD > Drop 의 DropTable 이 비어 있어 '%s' 가 아무것도 떨구지 않았다."),
+			*MonsterId.ToString());
+		return;
+	}
+
+	/**
+	 * 받는 사람은 파티장이다.
+	 *
+	 * 파티장이 다른 존에 있으면 처치자 본인이 받는다 — 골드가 존으로 거르는 것과 같은
+	 * 이유로, 사냥에 참여하지 않은 쪽으로 아이템이 새어나가지 않게 한다.
+	 */
+	ATDPlayerState* Receiver = KillerPlayerState;
+
+	if (const UTDPartyComponent* Party = KillerPlayerState->GetPartyComponent())
+	{
+		ATDPlayerState* Leader = Party->GetPartyLeader();
+
+		if (Leader != nullptr
+			&& Leader->GetCurrentZoneId() == KillerPlayerState->GetCurrentZoneId())
+		{
+			Receiver = Leader;
+		}
+	}
+
+	UTDInventoryComponent* Inventory = Receiver->GetInventoryComponent();
+	if (Inventory == nullptr)
+	{
+		return;
+	}
+
+	TArray<FTDDropTableRow*> Rows;
+	DropTable->GetAllRows<FTDDropTableRow>(TEXT("ATDEnemyBase::GrantDrops"), Rows);
+
+	// 줄마다 따로 굴린다. 아무것도 안 나오는 것이 보통이고, 운이 좋으면 여럿이 함께 나온다.
+	for (const FTDDropTableRow* Row : Rows)
+	{
+		if (Row == nullptr || Row->DropTableId != DropTableId || Row->ItemId.IsNone())
+		{
+			continue;
+		}
+
+		if (FMath::FRand() >= Row->Chance)
+		{
+			continue;
+		}
+
+		const int32 Count = FMath::RandRange(Row->MinCount, FMath::Max(Row->MinCount, Row->MaxCount));
+
+		if (!Inventory->AddItem(Row->ItemId, Count))
+		{
+			// 자리가 없으면 여기서 사라진다. 바닥에 떨구는 액터가 없어 되돌릴 곳이 없다.
+			UE_LOG(LogTemp, Warning,
+				TEXT("드롭: 인벤토리가 가득 차 '%s' %d개를 주지 못했다."),
+				*Row->ItemId.ToString(), Count);
 		}
 	}
 }

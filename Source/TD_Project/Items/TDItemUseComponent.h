@@ -162,6 +162,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
 	int32 GetRerollCost(int32 SlotIndex, bool bEquipped) const;
 
+	/**
+	 * 새로 얻은 장신구에 첫 옵션을 굴려 넣는다. 서버 전용. 골드는 들지 않는다.
+	 *
+	 * UTDInventoryComponent::AddItem 이 부른다. 세이브 로드와 거래소 이동은 AddItem 을
+	 * 거치지 않으므로, 이미 옵션이 붙은 물건이 다시 굴려지는 일은 없다.
+	 *
+	 * 등급 상승 판정은 하지 않는다. 얻는 순간 등급이 오를 수 있으면 첫 굴림이 공짜
+	 * 재굴림이 된다 — 등급은 InitialOptionRarity, 비어 있으면 가장 낮은 등급이다.
+	 *
+	 * 장신구가 아니거나 OptionPoolId 가 비어 있으면 아무것도 하지 않는다.
+	 */
+	void RollInitialOptions(FTDItemInstance& Item) const;
+
 	UPROPERTY(BlueprintAssignable, Category = "TD|Equipment")
 	FTDOnOptionsRerolled OnOptionsRerolled;
 
@@ -180,6 +193,9 @@ public:
 	/** DT_ItemStat. 위와 같은 이유로 열어 둔다 — 툴팁이 강화된 스탯을 보여줄 때 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "TD|Equipment")
 	UDataTable* GetItemStatTable() const { return ItemStatTable; }
+
+	/** 실제 장착 효과 계산과 같은 세트 테이블을 UI에 제공한다. */
+	UDataTable* GetSetBonusTable() const { return SetBonusTable; }
 
 	// ── 세이브 구조체 ─────────────────────────────────────
 

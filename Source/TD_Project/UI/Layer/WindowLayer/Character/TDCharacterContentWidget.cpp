@@ -12,6 +12,7 @@
 #include "Items/TDItemUseComponent.h"
 #include "Items/TDInventoryComponent.h"
 #include "Data/TDItemRow.h"
+#include "Core/TDGameplayTags.h"
 #include "TimerManager.h"
 #include "InputCoreTypes.h"
 #include "UI/Layer/WindowLayer/Inventory/TDInventoryActionPolicy.h"
@@ -215,6 +216,8 @@ void UTDCharacterContentWidget::RefreshEquipment()
 		Data.Icon = Definition->Icon;
 		Data.Rarity = Definition->Rarity;
 		Data.Count = Item->Count;
+		Data.bShowEnhanceLevel = Definition->ItemType == TDTags::Item_Type_Accessory.GetTag();
+		Data.EnhanceLevel = Data.bShowEnhanceLevel ? FMath::Max(0, Item->EnhanceLevel) : 0;
 		// 교체 전 아이템 ID로 툴팁이 잠깐 갱신되지 않도록 소스부터 교체한다.
 		Visual->SetItemTooltipSource(NAME_None, FText::GetEmpty());
 		Visual->SetSlotVisualData(Data);

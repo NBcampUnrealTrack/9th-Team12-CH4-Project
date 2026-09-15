@@ -1,19 +1,19 @@
-﻿Name,ClassId,DisplayName,Description,Icon,SkillType,SlotIndex,MaxLevel,RequiredLevel,ManaCost,ManaCostPerLevel,Cooldown,CooldownPerLevel,ShapeTag,Range,Width,CastType,CastDelay,ChannelDuration,ChannelInterval,CastMovement,ContextTags,VFX,VFXBaseSize,VFXOffset
-Warrior_Blade,Warrior,검기,전방으로 검기를 날려 적을 관통하며 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,18,1.75,5,0,Skill.Shape.ForwardBox,600,140,Instant,0.35,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black1.NS_Skill_Black1,0,0
-Warrior_Guard,Warrior,방벽,{CastTime}초 뒤 방벽을 세워 {Duration}초 동안 피해를 받지 않고 체력을 {Heal} 회복한다.,,Active,2,25,10,30,2.5,16,-0.166667,Skill.Shape.Self,0,0,Cast,0.4,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black2.NS_Skill_Black2,0,0
-Warrior_Cyclone,Warrior,폭풍베기,주위를 휩쓸어 공격력의 {Damage} 피해를 준다.,,Active,3,25,20,60,5,60,0,Skill.Shape.SelfRadius,420,0,Instant,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black3.NS_Skill_Black3,0,0
-Archer_Pierce,Archer,관통사격,적 하나를 꿰뚫어 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,16,1.625,5,0,Skill.Shape.ForwardBox,700,80,Instant,0.3,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink_1_1.NS_Skill_Pink_1_1,0,0
-Archer_Volley,Archer,화살비,넓은 범위에 화살을 퍼부어 공격력의 {Damage} 피해를 준다.,,Active,2,25,10,32,2.625,15,0,Skill.Shape.ForwardBox,700,320,Cast,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink2.NS_Skill_Pink2,0,0
-Archer_Storm,Archer,폭풍의 화살,사방으로 화살을 쏟아 공격력의 {Damage} 피해를 준다.,,Active,3,25,20,65,5.208333,60,0,Skill.Shape.SelfRadius,600,0,Instant,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink3.NS_Skill_Pink3,0,0
-Mage_Field,Mage,치유의 장,주위에 장을 펼쳐 아군의 체력을 {Heal} 회복하고 적에게 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,22,2,5,0,Skill.Shape.SelfRadius,400,0,Instant,0.3,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow1.NS_Skill_Yellow1,0,0
-Mage_Storm,Mage,마력 폭풍,{Duration}초 동안 주위에 폭풍을 일으켜 {Interval}초마다 공격력의 {Damage} 피해를 준다. 모두 {Ticks}번 적중한다.,,Active,2,25,10,35,2.708333,15,0,Skill.Shape.SelfRadius,380,0,Channel,0.4,5,0.5,Free,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow2.NS_Skill_Yellow2,0,0
-Mage_Rally,Mage,전열 강화,{Duration}초 동안 주위 아군의 공격력을 {Physical} 올린다.,,Active,3,25,20,70,5.416667,60,0,Skill.Shape.SelfRadius,500,0,Cast,0.6,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow3.NS_Skill_Yellow3,0,0
-Warrior_Endure,Warrior,인내,초당 체력이 {Regen} 회복되고 받는 피해가 {DamageReduction} 줄어든다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Warrior_Fortress,Warrior,요새,최대 체력이 {Max} 오르고 방어력이 {Armor} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Warrior_Might,Warrior,위력,물리공격력이 {Physical} 오르고 방어력 무시가 {ArmorPenetration} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Archer_Focus,Archer,집중,치명타 확률이 {CritChance} 오르고 물리공격력이 {Physical} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Archer_Hunter,Archer,사냥꾼,보스에게 주는 피해가 {BossDamage} 오르고 치명타 확률이 {CritChance} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Archer_Precision,Archer,정밀,물리공격력이 {Physical} 오르고 치명타 피해가 {CritDamage} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Mage_Flow,Mage,마나 순환,초당 마나가 {Regen} 회복되고 이동속도가 {MoveSpeed} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Mage_Amplify,Mage,증폭,마법공격력이 {Magical} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
-Mage_Insight,Mage,통찰,마법공격력이 {Magical} 오르고 쿨다운 회복률이 {CooldownRecoveryRate} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0
+﻿Name,ClassId,DisplayName,Description,Icon,SkillType,SlotIndex,MaxLevel,RequiredLevel,ManaCost,ManaCostPerLevel,Cooldown,CooldownPerLevel,ShapeTag,Range,Width,CastType,CastDelay,ChannelDuration,ChannelInterval,CastMovement,ContextTags,VFX,VFXBaseSize,VFXOffset,VFXTravelTime,SFX
+Warrior_Blade,Warrior,검기,전방으로 검기를 날려 적을 관통하며 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,18,1.75,5,0,Skill.Shape.ForwardBox,300,250,Instant,0.35,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black1.NS_Skill_Black1,0,0,0,
+Warrior_Guard,Warrior,방벽,방벽을 세워 {Duration}초 동안 피해를 받지 않고 체력을 {Heal} 회복한다.,,Active,2,25,10,30,2.5,16,-0.166667,Skill.Shape.Self,0,0,Instant,0.1,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black2.NS_Skill_Black2,0,0,0,
+Warrior_Cyclone,Warrior,폭풍베기,앞의 공간을 터뜨려 공격력의 {Damage} 피해를 준다.,,Active,3,25,20,60,5,60,0,Skill.Shape.ForwardBox,400,300,Instant,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Black/NS_Skill_Black3.NS_Skill_Black3,0,200,0,
+Archer_Pierce,Archer,스나이핑,적 하나를 꿰뚫어 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,16,1.625,5,0,Skill.Shape.ForwardBox,700,80,Instant,0.3,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink_1_1.NS_Skill_Pink_1_1,0,50,0.25,
+Archer_Volley,Archer,관통사격,앞으로 길게 공격을 뻗어 공격력의 {Damage} 피해를 준다.,,Active,2,25,10,32,2.625,15,0,Skill.Shape.ForwardBox,700,320,Cast,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink2.NS_Skill_Pink2,0,0,0,
+Archer_Storm,Archer,블리자드,자신으로부터 뻗어나가는 얼음을 뽑아 공격력의 {Damage} 피해를 준다.,,Active,3,25,20,65,5.208333,60,0,Skill.Shape.SelfRadius,600,0,Instant,0.5,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Pink/NS_Skill_Pink3.NS_Skill_Pink3,0,0,0,
+Mage_Field,Mage,치유의 늪,주위에 장을 펼쳐 아군의 체력을 {Heal} 회복하고 적에게 공격력의 {Damage} 피해를 준다.,,Active,1,25,1,22,2,5,0,Skill.Shape.SelfRadius,400,0,Instant,0.3,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow1.NS_Skill_Yellow1,0,0,0,
+Mage_Storm,Mage,마력 폭풍,{Duration}초 동안 주위에 폭풍을 일으켜 {Interval}초마다 공격력의 {Damage} 피해를 준다. 모두 {Ticks}번 적중한다.,,Active,2,25,10,35,2.708333,15,0,Skill.Shape.SelfRadius,380,0,Channel,0.4,5,0.5,Free,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow2.NS_Skill_Yellow2,0,0,0,
+Mage_Rally,Mage,전열 강화,{Duration}초 동안 주위 아군의 공격력을 {Physical} 올린다.,,Active,3,25,20,70,5.416667,60,0,Skill.Shape.SelfRadius,500,0,Cast,0.6,0,0,Locked,(),/Game/Art/SFX/NS_SFX_InUseSkill/NS_Skill_Yellow/NS_Skill_Yellow3.NS_Skill_Yellow3,0,0,0,
+Warrior_Endure,Warrior,인내,초당 체력이 {Regen} 회복되고 받는 피해가 {DamageReduction} 줄어든다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Warrior_Fortress,Warrior,요새,최대 체력이 {Max} 오르고 방어력이 {Armor} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Warrior_Might,Warrior,위력,물리공격력이 {Physical} 오르고 방어력 무시가 {ArmorPenetration} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Archer_Focus,Archer,집중,치명타 확률이 {CritChance} 오르고 물리공격력이 {Physical} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Archer_Hunter,Archer,사냥꾼,보스에게 주는 피해가 {BossDamage} 오르고 치명타 확률이 {CritChance} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Archer_Precision,Archer,정밀,물리공격력이 {Physical} 오르고 치명타 피해가 {CritDamage} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Mage_Flow,Mage,마나 순환,초당 마나가 {Regen} 회복되고 이동속도가 {MoveSpeed} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Mage_Amplify,Mage,증폭,마법공격력이 {Magical} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,
+Mage_Insight,Mage,통찰,마법공격력이 {Magical} 오르고 쿨다운 회복률이 {CooldownRecoveryRate} 오른다.,,Passive,0,25,1,0,0,0,0,,0,0,Instant,0,0,0,Free,(),,0,0,0,

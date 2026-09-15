@@ -7,6 +7,7 @@
 class UInputAction;
 class UInputMappingContext;
 class UTDInteractionComponent;
+class UTDSilhouetteComponent;
 class UTDSkillComponent;
 struct FInputActionValue;
 
@@ -198,4 +199,8 @@ private:
 		Category = "TD|Skill",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTDSkillComponent> SkillComponent;
+
+	/** 벽 뒤에 가려진 내 캐릭터의 윤곽. 로컬 플레이어에서만 켜진다. */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
+	TObjectPtr<UTDSilhouetteComponent> SilhouetteComponent;
 };

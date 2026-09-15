@@ -11,5 +11,6 @@ public class TD_ProjectTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
 		ExtraModuleNames.Add("TD_Project");
+		ExtraModuleNames.Add("TD_ProjectPreLoad");
 	}
 }

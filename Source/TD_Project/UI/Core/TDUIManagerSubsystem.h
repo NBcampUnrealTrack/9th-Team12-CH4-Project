@@ -43,6 +43,7 @@ public:
 
 	/** Root의 ScreenStack에서 로그인/선택 화면을 관리한다. */
 	void StartAccountFlow(TSubclassOf<UTDLoginWidget> WidgetClass);
+	bool IsAccountScreenOpen() const { return AccountScreen != nullptr; }
 	UFUNCTION(BlueprintCallable, Category="TD|UI|Account")
 		void RequestCharacterSelection();
 	UFUNCTION(BlueprintCallable, Category="TD|UI|Account")
@@ -137,6 +138,9 @@ private:
 	void SaveWindowPosition(ETDNavMenuType MenuType, UTDWindowBaseWidget* Window);
 	void RestoreWindowPosition(ETDNavMenuType MenuType, UTDWindowBaseWidget* Window) const;
 	void ClearWindowRegistry();
+    void RefreshNavCursor();
+    TWeakObjectPtr<APlayerController> NavCursorController;
+    bool bCursorVisibleBeforeNav = false;
 
 	UFUNCTION()
 		void HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow);

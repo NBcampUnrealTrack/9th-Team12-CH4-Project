@@ -18,7 +18,8 @@ void UTDInventorySlotEntryWidget::RefreshItemTooltip()
 	const bool bHasItem = IsValid(SlotListItem) && SlotListItem->bHasItem;
 	UTDItemTooltipWidget::AttachItem(this,
 		bHasItem ? SlotListItem->ItemInstance.ItemId : NAME_None,
-		bHasItem ? SlotListItem->ItemInstance.Count : 0, FText::GetEmpty(),
+		bHasItem ? SlotListItem->ItemInstance.Count : 0,
+		bHasItem ? SlotListItem->InteractionHint : FText::GetEmpty(),
 		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr,
 		bHasItem ? SlotListItem->ItemInstance.EnhanceLevel : 0);
 }
@@ -107,6 +108,10 @@ void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObj
 			VisualData.Icon = SlotListItem->Icon;
 			VisualData.Count = SlotListItem->bHasItem ? SlotListItem->ItemInstance.Count : 0;
 			VisualData.Rarity = SlotListItem->Rarity;
+			VisualData.bShowEnhanceLevel = SlotListItem->bHasItem
+				&& SlotListItem->ItemType == TDTags::Item_Type_Accessory.GetTag();
+			VisualData.EnhanceLevel = VisualData.bShowEnhanceLevel
+				? FMath::Max(0, SlotListItem->ItemInstance.EnhanceLevel) : 0;
 
 			SlotVisualWidget->SetSlotVisualData(VisualData);
 		}

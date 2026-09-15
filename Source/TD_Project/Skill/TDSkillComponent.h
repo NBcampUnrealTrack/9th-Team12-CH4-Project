@@ -11,6 +11,7 @@ class UTDProgressionComponent;
 struct FTDSkillRow;
 struct FTDSkillEffectRow;
 class UNiagaraComponent;
+class UAudioComponent;
 
 /**
  * 시전이 시작됐을 때. 캐스팅 바·시전 애니메이션·이펙트가 구독한다. 전 머신에서 불린다.
@@ -117,6 +118,22 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Skill")
 	FTDOnSkillCastEnded OnCastEnded;
 
+	/**
+	 * TD.SkillVFX 가 넣는 임시 값. 이펙트 크기·위치를 테이블 재임포트 없이 맞출 때 쓴다.
+	 *
+	 * 스킬 하나의 VFXBaseSize · VFXOffset · VFXTravelTime 을 통째로 대신한다.
+	 * 이 머신의 화면에만 걸린다 — 이펙트는 머신마다 각자 그리므로 서버를 거칠 필요가 없다.
+	 * 캐릭터마다 따로 걸 이유가 없어 static 이다.
+	 */
+	struct FDebugVFXTuning
+	{
+		float BaseSize = 0.f;
+		float Offset = 0.f;
+		float TravelTime = 0.f;
+	};
+
+	static TMap<FName, FDebugVFXTuning>& GetDebugVFXTuning();
+
 protected:
 	/**
 	 * 판정 범위를 그려준다. 스프라이트가 없는 지금은 사거리를 눈으로 맞추는 유일한 방법이다.
@@ -155,7 +172,7 @@ protected:
 	void MulticastOnCastEnded(FName SkillId, bool bFired, float Cooldown);
 
 	/**
-	 * 첫 판정 순간. 이펙트를 띄운다(DT_Skill.VFX).
+	 * 첫 판정 순간. 이펙트를 띄우고 효과음을 낸다(DT_Skill.VFX · SFX).
 	 *
 	 * 위 둘과 달리 Unreliable 이다 — 연출뿐이라 놓쳐도 판정은 서버가 이미 끝냈다.
 	 *
@@ -253,10 +270,37 @@ private:
 	void StopChannelVFX();
 
 	/**
+	 * 앞으로 날아가는 이펙트 하나(VFXTravelTime). 각 머신이 자기 화면에서만 움직인다.
+	 * 표현일 뿐이라 복제하지 않는다 — 판정은 서버가 이미 끝냈다.
+	 */
+	struct FTravelingVFX
+	{
+		TWeakObjectPtr<UNiagaraComponent> Component;
+		FVector Start = FVector::ZeroVector;
+		FVector End = FVector::ZeroVector;
+		float StartTime = 0.f;
+		float Duration = 0.f;
+	};
+
+	TArray<FTravelingVFX> TravelingVFX;
+
+	/** 날아가는 이펙트를 한 프레임만큼 옮긴다. 도착한 것은 새 입자를 멈추고 목록에서 뺀다. */
+	void TickTravelingVFX();
+
+	/**
 	 * 지금 떠 있는 정신집중 이펙트. 각 머신이 자기가 띄운 것을 들고 있다.
 	 *
 	 * 정신집중은 끝나는 시점을 미리 알 수 없어서(끊길 수 있다) 들고 있다가
 	 * 시전 종료 방송에서 끈다. 약한 참조인 이유는 이펙트가 스스로 사라질 수 있어서다.
 	 */
 	TWeakObjectPtr<UNiagaraComponent> ActiveChannelVFX;
+
+	/** 발동 효과음(DT_Skill.SFX)을 시전자에 붙여 낸다. 정신집중이면 끌 수 있게 들고 있는다. */
+	void PlaySkillSFX(ATDCharacterBase& Owner, const FTDSkillRow& Row);
+
+	/** 정신집중 효과음을 줄여 끈다. 정신집중 이펙트와 같은 자리에서 부른다. */
+	void StopChannelSFX();
+
+	/** 지금 나고 있는 정신집중 효과음. ActiveChannelVFX 와 같은 이유로 약한 참조다. */
+	TWeakObjectPtr<UAudioComponent> ActiveChannelSFX;
 };

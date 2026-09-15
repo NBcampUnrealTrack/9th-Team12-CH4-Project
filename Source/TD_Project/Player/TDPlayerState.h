@@ -168,6 +168,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Character")
 	const TArray<FTDCharacterSummary>& GetCharacterSlots() const { return CharacterSlots; }
 
+	/** CharacterSlots 중 지금 플레이 중인 캐릭터의 번호. 고르기 전에는 INDEX_NONE. */
+	int32 GetSelectedSlotIndex() const { return SelectedSlotIndex; }
+
 	UPROPERTY(BlueprintAssignable, Category = "TD|Character")
 	FTDOnCharacterSlotsChanged OnCharacterSlotsChanged;
 
@@ -280,8 +283,25 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_CharacterSelected)
 	bool bCharacterSelected = false;
 
-	/** 고른 슬롯 번호. 세이브를 다시 쓸 때 어느 캐릭터인지 알아야 하므로 서버가 들고 있는다. */
+	/**
+	 * 고른 슬롯 번호. 세이브를 다시 쓸 때 어느 캐릭터인지 알아야 하므로 서버가 들고 있는다.
+	 *
+	 * 본인에게만 복제한다. 유니온 창이 CharacterSlots 중 "지금 캐릭터" 를 찾아 실시간 레벨로
+	 * 바꿔 세야 서버 판정(RefreshUnionBonus)과 화면이 같아진다.
+	 */
+	UPROPERTY(Replicated)
 	int32 SelectedSlotIndex = INDEX_NONE;
+
+	/**
+	 * 유니온 보너스를 다시 계산해 스탯에 등록한다. 서버 전용.
+	 *
+	 * 계정의 캐릭터 목록(CharacterSlots)에서 직업별 최고 레벨을 보고 DT_UnionBonus 를 적용한다.
+	 * 지금 캐릭터는 목록의 저장값 대신 실시간 레벨로 센다. 캐릭터 선택 직후와 레벨업 때 부른다.
+	 */
+	void RefreshUnionBonus();
+
+	/** RefreshUnionBonus 가 등록한 소스. 다음 갱신에 이 핸들로 갈아 끼운다. */
+	FTDStatSourceHandle UnionSourceHandle;
 
 	UFUNCTION()
 	void OnRep_CurrentZoneId();

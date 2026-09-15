@@ -9,7 +9,11 @@
 #include "GameplayTagContainer.h"
 #include "Data/TDDialogueRow.h"
 #include "Data/TDQuestTypes.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDPlayerController.generated.h"
+
+class UTDInteractionFlowComponent;
+class UTDShopServiceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnRespawnRequestResult, bool, bSucceeded);
 
@@ -127,6 +131,25 @@ public:
 
 	/** Alt로 UI 조작용 커서와 게임 입력 모드 전환 */
 	void ToggleMouseCursor();
+
+    /** Shared keyboard route for gameplay input and focused HUD windows. */
+    bool HandleNavShortcut(FKey Key);
+
+    /**
+     * 창을 연다(토글). 채팅 중 · 입력칸 포커스 · 창 레이어 미준비면 열지 않고 false.
+     * 단축키(입력 액션)와 포커스된 UI 의 키 입력(HandleNavShortcut)이 둘 다 여기로 온다.
+     */
+    bool TryOpenMenu(ETDNavMenuType MenuType);
+
+    /** 입력 액션 바인딩용. BindAction 은 반환값이 없는 함수만 받는다. */
+    void HandleMenuAction(ETDNavMenuType MenuType) { TryOpenMenu(MenuType); }
+    void OpenCharacterMenu();
+    void OpenInventoryMenu();
+    void OpenSkillMenu();
+    void OpenQuestMenu();
+    void OpenPartyMenu();
+    void OpenSystemMenu();
+
 
 	/**
 	 * Pawn 을 새로 잡았을 때(접속·부활) 존 환경을 다시 적용한다.
@@ -487,5 +510,77 @@ private:
 	FName ActiveDialogueRow;
 	int32 ActiveDialogueSessionId = 0;
 	int32 DialogueSessionCounter = 0;
+public:
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerLogin(const FString& LoginId, const FString& Password);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerRegisterAccount(const FString& LoginId, const FString& Password);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerCreateCharacter(const FString& Name, FName ClassId);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerDeleteCharacter(const FGuid& CharacterId);
+    UFUNCTION(Client, Reliable)
+    void ClientAccountActionResult(FName Action, bool bSuccess, const FString& Message);
+    int32 GetAccountReplySerial() const { return AccountReplySerial; }
+    FName GetAccountReplyAction() const { return AccountReplyAction; }
+    bool WasAccountActionSuccessful() const { return bAccountActionSuccessful; }
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerSelectCharacter(int32 SlotIndex);
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="TD|UI|Account")
+    void ServerSaveCharacter();
+    /** 서버의 명시적 저장 요청. 백엔드 모드의 true는 접수이며 완료는 비동기 통지된다. */
+    UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="TD|UI|Account")
+    bool SaveCharacter();
+    UFUNCTION(BlueprintPure, Category="TD|UI|Account")
+    bool IsLoggedIn() const { return DummyAccountId.IsValid(); }
+    UFUNCTION(BlueprintPure, Category="TD|UI|Account")
+    FString GetAccountMessage() const { return DummyMessage; }
+    UFUNCTION(Client, Reliable)
+    void ClientAccountMessage(const FString& Message);
+    UFUNCTION(Exec, BlueprintCallable, Category="TD|UI|Account")
+    void TDLoginScreen();
+    UFUNCTION(Exec)
+    void TDSave();
+    UFUNCTION(Exec, BlueprintCallable, Category="TD|UI|Account")
+    void TDCharacterSelect();
+    UFUNCTION(Exec, BlueprintCallable, Category="TD|UI|Account")
+    void TDLogout();
+    UFUNCTION(Server, Reliable)
+    void ServerLeaveCharacter(bool bLogout);
+
+protected:
+    UPROPERTY(EditDefaultsOnly, Category="TD|UI|Account")
+    bool bStartAccountFlowOnBeginPlay = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Account")
+    TSubclassOf<class UTDLoginWidget> DummyLoginWidgetClass;
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void Destroyed() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+private:
+    UPROPERTY(Replicated) FGuid DummyAccountId;
+    friend class UTDBackendSaveSubsystem;
+    friend class FTDBackendControllerTest;
+    bool CaptureAccountData(struct FTDPlayerSaveData& Data) const;
+    void ApplyAccountRecord(const struct FTDDummyCharacterRecord& Record,int32 SlotIndex);
+    void FinishBackendLeave(const TArray<struct FTDCharacterSummary>& Characters,bool bLogout);
+    FGuid DummyCharacterId;
+    FString DummyMessage;
+    int32 AccountReplySerial = 0;
+    FName AccountReplyAction;
+    bool bAccountActionSuccessful = false;
+    double NextAccountMutationTime = 0.0;
+
+
+public:
+    UFUNCTION(BlueprintPure, Category="TD|Interaction")
+    UTDInteractionFlowComponent* GetInteractionFlowComponent() const { return InteractionFlowComponent; }
+    UFUNCTION(BlueprintPure, Category="TD|Shop")
+    UTDShopServiceComponent* GetShopServiceComponent() const { return ShopServiceComponent; }
+private:
+    UPROPERTY(VisibleAnywhere, Category="TD|Interaction")
+    TObjectPtr<UTDInteractionFlowComponent> InteractionFlowComponent;
+    UPROPERTY(VisibleAnywhere, Category="TD|Shop")
+    TObjectPtr<UTDShopServiceComponent> ShopServiceComponent;
 };
 

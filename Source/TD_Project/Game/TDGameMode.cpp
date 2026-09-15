@@ -1,5 +1,6 @@
 #include "Game/TDGameMode.h"
 
+#include "AI/TDSpawnSubsystem.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDCharacterBase.h"
@@ -12,6 +13,7 @@
 #include "Game/TDGameState.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "Party/TDPartyComponent.h"
@@ -234,6 +236,11 @@ AActor* ATDGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	return Super::ChoosePlayerStart_Implementation(Player);
 }
 
+bool ATDGameMode::ShouldSpawnAtStartSpot(AController* Player)
+{
+	return false;
+}
+
 // ══════════════════════════════════════════════════════════════
 //  존 이동
 //  나중에 컴포넌트로 뗄 때 이 블록을 통째로 옮긴다.
@@ -305,6 +312,156 @@ const FTDZoneEnvironmentRow* ATDGameMode::FindZoneRow(FGameplayTag ZoneId) const
 	return Found;
 }
 
+FString ATDGameMode::GetRoomEntrantKey(const APlayerState* PlayerState)
+{
+	if (PlayerState == nullptr)
+	{
+		return FString();
+	}
+
+	const FUniqueNetIdRepl& UniqueId = PlayerState->GetUniqueId();
+
+	return UniqueId.IsValid()
+		? UniqueId.ToString()
+		: FString::Printf(TEXT("PlayerId:%d"), PlayerState->GetPlayerId());
+}
+
+ETDZoneTravelResult ATDGameMode::ResolveRoomGroup(APlayerController* Player, FGameplayTag& InOutZoneId)
+{
+	// 자기 행이 있으면 보통의 존이다.
+	if (FindZoneRow(InOutZoneId) != nullptr)
+	{
+		return ETDZoneTravelResult::Success;
+	}
+
+	const UTDZoneSettings* ZoneSettings = GetDefault<UTDZoneSettings>();
+	const UDataTable* Table = ZoneSettings ? ZoneSettings->ZoneEnvironmentTable.LoadSynchronous() : nullptr;
+	if (Table == nullptr)
+	{
+		// 뒤의 FindZoneRow 가 경고를 남기고 거부한다.
+		return ETDZoneTravelResult::Success;
+	}
+
+	// 하위 방을 모은다. 태그 이름순으로 두어 Room01 부터 채운다.
+	const FGameplayTag Group = InOutZoneId;
+	TArray<FGameplayTag> Rooms;
+
+	Table->ForeachRow<FTDZoneEnvironmentRow>(TEXT("ResolveRoomGroup"),
+		[&Rooms, Group](const FName&, const FTDZoneEnvironmentRow& Row)
+		{
+			if (Row.ZoneId.IsValid() && Row.ZoneId != Group && Row.ZoneId.MatchesTag(Group))
+			{
+				Rooms.AddUnique(Row.ZoneId);
+			}
+		});
+
+	// 하위 행도 없으면 묶음이 아니라 없는 존이다. 뒤의 흐름이 ZoneNotFound 로 거부한다.
+	if (Rooms.Num() == 0)
+	{
+		return ETDZoneTravelResult::Success;
+	}
+
+	Rooms.Sort([](const FGameplayTag& A, const FGameplayTag& B)
+	{
+		return A.ToString() < B.ToString();
+	});
+
+	const ATDPlayerState* Self = Player->GetPlayerState<ATDPlayerState>();
+	const AGameStateBase* CurrentGameState = GetGameState<AGameStateBase>();
+	if (Self == nullptr || CurrentGameState == nullptr)
+	{
+		return ETDZoneTravelResult::InternalError;
+	}
+
+	const UTDPartyComponent* SelfParty = Self->GetPartyComponent();
+	const FGuid SelfPartyId = SelfParty != nullptr ? SelfParty->GetPartyId() : FGuid();
+	const FString SelfKey = GetRoomEntrantKey(Self);
+
+	FGameplayTag FirstEmptyRoom;
+
+	for (const FGameplayTag& Room : Rooms)
+	{
+		bool bOccupied = false;
+		bool bOnlyMyParty = true;
+
+		for (APlayerState* Other : CurrentGameState->PlayerArray)
+		{
+			const ATDPlayerState* TDOther = Cast<ATDPlayerState>(Other);
+			if (TDOther == nullptr || TDOther == Self || TDOther->GetCurrentZoneId() != Room)
+			{
+				continue;
+			}
+
+			bOccupied = true;
+
+			// 파티가 없는 사람끼리는 서로 남이다.
+			const UTDPartyComponent* OtherParty = TDOther->GetPartyComponent();
+			if (!SelfPartyId.IsValid() || OtherParty == nullptr || OtherParty->GetPartyId() != SelfPartyId)
+			{
+				bOnlyMyParty = false;
+				break;
+			}
+		}
+
+		if (!bOccupied)
+		{
+			if (!FirstEmptyRoom.IsValid())
+			{
+				FirstEmptyRoom = Room;
+			}
+			continue;
+		}
+
+		if (!bOnlyMyParty)
+		{
+			continue;
+		}
+
+		// 내 파티원이 싸우고 있는 방이다. 앞에 빈 방이 있었어도 여기가 먼저다 — 파티가 흩어지면 안 된다.
+		const TSet<FString>* Entrants = RoomEntrants.Find(Room);
+		if (Entrants != nullptr && Entrants->Contains(SelfKey))
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("보스방 재입장 거부: %s — 들어갔다 나온 '%s' 에 파티원이 남아 있다."),
+				*Self->GetPlayerName(), *Room.ToString());
+
+			SendSystemMessage(Player, ETDChatChannel::System,
+				TEXT("파티원이 전투 중인 보스방에는 다시 들어갈 수 없습니다."));
+			return ETDZoneTravelResult::ReentryBlocked;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("보스방 합류: %s → '%s'"), *Self->GetPlayerName(), *Room.ToString());
+		InOutZoneId = Room;
+		return ETDZoneTravelResult::Success;
+	}
+
+	if (!FirstEmptyRoom.IsValid())
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("보스방 배정 실패: '%s' 의 방 %d개가 모두 사용중이다."), *Group.ToString(), Rooms.Num());
+
+		SendSystemMessage(Player, ETDChatChannel::System,
+			TEXT("보스방이 모두 사용 중이라 입장할 수 없습니다."));
+		return ETDZoneTravelResult::RoomsFull;
+	}
+
+	// 빈 방이다. 지난 판의 흔적을 치운다 — 입장 기록이 남으면 새 파티가 재입장으로 막히고,
+	// 보스가 죽어 있거나 체력이 깎인 채면 새 파티가 싸울 것이 없다.
+	//
+	// 방이 비는 순간이 아니라 **다음에 들어올 때** 치운다. 비는 경로(나가기·접속 끊김·
+	// 사망 후 부활)를 하나하나 챙기지 않아도 되고, 빈 방의 보스는 아무도 보지 않는다.
+	RoomEntrants.Remove(FirstEmptyRoom);
+
+	if (UTDSpawnSubsystem* Spawns = GetWorld() ? GetWorld()->GetSubsystem<UTDSpawnSubsystem>() : nullptr)
+	{
+		Spawns->ResetZone(FirstEmptyRoom);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("보스방 배정: %s → '%s'"), *Self->GetPlayerName(), *FirstEmptyRoom.ToString());
+	InOutZoneId = FirstEmptyRoom;
+	return ETDZoneTravelResult::Success;
+}
+
 ETDZoneTravelResult ATDGameMode::RequestZoneTravel(APlayerController* Player, FGameplayTag TargetZoneId,
 	FName EntryName, AActor* EntryOverride)
 {
@@ -335,6 +492,23 @@ ETDZoneTravelResult ATDGameMode::RequestZoneTravelInternal(APlayerController* Pl
 			TEXT("존 이동: %s 의 Pawn 이 없다. 캐릭터를 먼저 선택해야 한다."),
 			*PlayerState->GetPlayerName());
 		return ETDZoneTravelResult::InternalError;
+	}
+
+	// 보스방처럼 같은 방이 여러 벌이면 빈 방 하나를 고른다. 묶음이 아니면 태그는 그대로다.
+	const FGameplayTag RequestedZoneId = TargetZoneId;
+	const ETDZoneTravelResult RoomResult = ResolveRoomGroup(Player, TargetZoneId);
+	if (RoomResult != ETDZoneTravelResult::Success)
+	{
+		return RoomResult;
+	}
+
+	const bool bEnteringRoom = TargetZoneId != RequestedZoneId;
+
+	// 방마다 도착 지점이 다르다. 포탈이 드래그로 지정한 액터는 방 하나만 가리키므로 버리고
+	// 방 태그로 찾는다. EntryName 은 "<방 태그>.<이름>" 으로 여전히 쓸 수 있다.
+	if (bEnteringRoom)
+	{
+		EntryOverride = nullptr;
 	}
 
 	// 테이블에 없는 존이면 거부한다. 클라이언트가 보낸 태그를 그대로 믿지 않는다는 뜻이기도 하다.
@@ -403,6 +577,13 @@ ETDZoneTravelResult ATDGameMode::RequestZoneTravelInternal(APlayerController* Pl
 
 	// 위치가 확정된 뒤에 알린다. 먼저 알리면 구독자가 아직 옛 자리에 있는 캐릭터를 본다.
 	PlayerState->SetCurrentZoneId(TargetZoneId);
+
+	// 이 방에 들어온 사람으로 적는다. 나갔다가 파티원이 남아 있는 동안 다시 오면 막힌다.
+	// 이동이 끝난 뒤에 적어야 레벨 부족 등으로 거부된 사람이 기록에 남지 않는다.
+	if (bEnteringRoom)
+	{
+		RoomEntrants.FindOrAdd(TargetZoneId).Add(GetRoomEntrantKey(PlayerState));
+	}
 
 	UE_LOG(LogTemp, Log,
 		TEXT("존 이동: %s → '%s'"), *PlayerState->GetPlayerName(), *TargetZoneId.ToString());

@@ -1,6 +1,10 @@
 #include "World/TDZoneEnvironmentComponent.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
+#include "Engine/LocalPlayer.h"
+#include "Sound/SoundBase.h"
+#include "UI/Core/TDUIManagerSubsystem.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -90,6 +94,12 @@ void UTDZoneEnvironmentComponent::ReapplyCurrentZone()
 
 void UTDZoneEnvironmentComponent::ApplyZone(FGameplayTag ZoneId)
 {
+	const APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	if (!Controller || !Controller->IsLocalController() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
 	const UTDZoneSettings* Settings = GetDefault<UTDZoneSettings>();
 	if (Settings == nullptr)
 	{
@@ -106,6 +116,7 @@ void UTDZoneEnvironmentComponent::ApplyZone(FGameplayTag ZoneId)
 	// 바꿔 놓은 조명이 그대로 남아, 마을로 돌아와도 던전 조명이 유지된다.
 	FTDZoneCameraSettings Camera = CapturedCamera;
 	FTDZoneLightingSettings Lighting = CapturedLighting;
+	TSoftObjectPtr<USoundBase> BGM = Settings->DefaultBGM;
 
 	// 존 정의 → 표현 에셋. 클라이언트도 이 테이블을 갖고 있다.
 	if (UDataTable* Table = Settings->ZoneEnvironmentTable.LoadSynchronous())
@@ -128,6 +139,10 @@ void UTDZoneEnvironmentComponent::ApplyZone(FGameplayTag ZoneId)
 			// 로드가 끝날 때까지 이전 존의 화면이 남아 이동이 반영되지 않은 것처럼 보인다.
 			if (const UTDZoneEnvironmentData* Data = Found->EnvironmentData.LoadSynchronous())
 			{
+				if (Data->bOverride_BGM)
+				{
+					BGM = Data->BGM; // An empty override explicitly selects silence.
+				}
 				if (Data->bOverride_Camera)
 				{
 					Camera = Data->Camera;
@@ -141,6 +156,7 @@ void UTDZoneEnvironmentComponent::ApplyZone(FGameplayTag ZoneId)
 		}
 	}
 
+	ApplyBGM(BGM);
 	TargetCamera = Camera;
 	RemainingBlendTime = FMath::Max(0.f, Camera.BlendTime);
 
@@ -335,6 +351,18 @@ void UTDZoneEnvironmentComponent::TickComponent(float DeltaTime, ELevelTick Tick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// Selection, Pawn and Zone replicate independently. Also wait until account UI closes.
+	const bool bReady = CanPlayBGM();
+	if (!bReady)
+	{
+		StopBGM();
+	}
+	else if (!bBGMReady)
+	{
+		ReapplyCurrentZone();
+	}
+	bBGMReady = bReady;
+
 	// 접속 순서상 컨트롤러가 PlayerState 보다 먼저 준비될 수 있다. 잡을 때까지 다시 시도한다.
     const APlayerController* Controller = Cast<APlayerController>(GetOwner());
     const ATDPlayerState* Current = Controller ? Controller->GetPlayerState<ATDPlayerState>() : nullptr;
@@ -375,4 +403,91 @@ void UTDZoneEnvironmentComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 
 	RemainingBlendTime -= DeltaTime;
+}
+
+bool UTDZoneEnvironmentComponent::CanPlayBGM() const
+{
+	const APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	if (!Controller || !Controller->IsLocalController() || GetNetMode() == NM_DedicatedServer)
+	{
+		return false;
+	}
+	const ATDPlayerState* State = Controller->GetPlayerState<ATDPlayerState>();
+	if (!State || !State->HasSelectedCharacter() || !State->GetCurrentZoneId().IsValid()
+		|| !IsValid(Controller->GetPawn()))
+	{
+		return false;
+	}
+	if (const ULocalPlayer* LocalPlayer = Controller->GetLocalPlayer())
+	{
+		if (const UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+		{
+			return !UI->IsAccountScreenOpen();
+		}
+	}
+	return true;
+}
+
+void UTDZoneEnvironmentComponent::ApplyBGM(const TSoftObjectPtr<USoundBase>& Sound)
+{
+	bBGMReady = CanPlayBGM();
+	if (!bBGMReady)
+	{
+		StopBGM();
+		return;
+	}
+	// Compare asset identity, not ZoneId: shared tracks keep their playback position.
+	if (BGMComponent && BGMComponent->IsPlaying() && !Sound.IsNull()
+		&& BGMComponent->Sound == Sound.Get())
+	{
+		return;
+	}
+	StopBGM(); // No crossfade: stop the previous voice before loading/starting another.
+	if (Sound.IsNull())
+	{
+		return;
+	}
+	USoundBase* LoadedSound = Sound.LoadSynchronous();
+	if (!LoadedSound)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Zone BGM: failed to load %s"), *Sound.ToString());
+		return;
+	}
+	if (!BGMComponent)
+	{
+		BGMComponent = NewObject<UAudioComponent>(GetOwner(), TEXT("ZoneBGM"));
+		BGMComponent->bAutoActivate = false;
+		BGMComponent->bAutoDestroy = false;
+		BGMComponent->bAllowSpatialization = false;
+		BGMComponent->bIsUISound = true;
+		BGMComponent->RegisterComponent();
+	}
+	// The sound's SM_BGM output uses the existing CB_BGM / CB_Master volume settings.
+	BGMComponent->SetSound(LoadedSound);
+	BGMComponent->Play();
+}
+
+void UTDZoneEnvironmentComponent::StopBGM()
+{
+	if (BGMComponent && BGMComponent->Sound)
+	{
+		BGMComponent->Stop();
+		BGMComponent->SetSound(nullptr);
+	}
+}
+
+void UTDZoneEnvironmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ATDPlayerState* State = BoundPlayerState.Get())
+	{
+		State->OnZoneChanged.RemoveDynamic(this, &UTDZoneEnvironmentComponent::HandleZoneChanged);
+	}
+	BoundPlayerState.Reset();
+	StopBGM();
+	if (BGMComponent)
+	{
+		BGMComponent->DestroyComponent();
+		BGMComponent = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
 }

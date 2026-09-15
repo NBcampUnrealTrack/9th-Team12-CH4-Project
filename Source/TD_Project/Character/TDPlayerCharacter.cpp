@@ -12,6 +12,7 @@
 #include "Items/TDQuickSlotComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Interaction/TDInteractionComponent.h"
+#include "Character/TDSilhouetteComponent.h"
 #include "Skill/TDSkillComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
@@ -37,6 +38,8 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 	CreateDefaultSubobject<UTDInteractionComponent>(TEXT("InteractionComponent"));
 
 	SkillComponent = CreateDefaultSubobject<UTDSkillComponent>(TEXT("SkillComponent"));
+
+	SilhouetteComponent = CreateDefaultSubobject<UTDSilhouetteComponent>(TEXT("SilhouetteComponent"));
 
 	// 이동 방향으로 캐릭터가 돌아야 PaperZD 가 4방향 스프라이트 중 맞는 것을 고른다.
 	// 컨트롤러 회전을 따라가면 카메라를 돌릴 때 캐릭터가 같이 돌아 방향이 어긋난다.
@@ -94,6 +97,9 @@ void ATDPlayerCharacter::OnRep_PlayerState()
 void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	// 로컬 컨트롤러가 빙의한 뒤에만 불리는 자리라 "내 캐릭터" 판정을 겸한다.
+	SilhouetteComponent->EnableForLocalPlayer();
 
 	// 이 함수는 컨트롤러가 빙의를 마친 뒤에 불린다. LocalPlayer 가 준비돼 있으므로
 	// 매핑 컨텍스트를 여기서 켜도 안전하다.

@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "Blueprint/UserWidget.h"
 #include "Chat/TDChatFilter.h"
@@ -843,6 +844,115 @@ namespace TDDebugCommands
 
 		UE_LOG(LogTDDebug, Log,
 			TEXT("스킬 '%s' 강화를 요청했다. (결과는 TD.DumpSkill, 스탯 반영은 TD.DumpStats)"), *Args[0]);
+	}
+
+	/**
+	 * 스킬 이펙트의 크기·위치를 테이블 재임포트 없이 맞춘다.
+	 *
+	 *   TD.SkillVFX                                      걸어 둔 임시 값 목록
+	 *   TD.SkillVFX <스킬ID>                             테이블 값과 지금 쓰는 값
+	 *   TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간]    임시 값을 건다. 빠진 인자는 지금 값 유지
+	 *   TD.SkillVFX clear                                전부 지운다
+	 *
+	 * 이 화면에만 걸린다. 맞으면 GenSkillTables.py 의 VFX_BASE_SIZE · VFX_OFFSET ·
+	 * VFX_TRAVEL_TIME 으로 옮겨 재임포트할 것 — 임시 값은 에디터를 끄면 사라진다.
+	 */
+	static void SkillVFX(const TArray<FString>& Args, UWorld* World)
+	{
+		TMap<FName, UTDSkillComponent::FDebugVFXTuning>& Tuning = UTDSkillComponent::GetDebugVFXTuning();
+
+		if (!Args.IsValidIndex(0))
+		{
+			if (Tuning.Num() == 0)
+			{
+				UE_LOG(LogTDDebug, Log,
+					TEXT("걸어 둔 임시 값이 없다. 사용법: TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간]"));
+				return;
+			}
+
+			UE_LOG(LogTDDebug, Log, TEXT("── 이펙트 임시 값 ──   크기 / 오프셋 / 이동시간"));
+			for (const TPair<FName, UTDSkillComponent::FDebugVFXTuning>& Pair : Tuning)
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  %-18s %g / %g / %g"),
+					*Pair.Key.ToString(), Pair.Value.BaseSize, Pair.Value.Offset, Pair.Value.TravelTime);
+			}
+			return;
+		}
+
+		if (Args[0].Equals(TEXT("clear"), ESearchCase::IgnoreCase))
+		{
+			Tuning.Reset();
+			UE_LOG(LogTDDebug, Log, TEXT("이펙트 임시 값을 전부 지웠다. 이제 테이블 값을 쓴다."));
+			return;
+		}
+
+		const FName SkillId(*Args[0]);
+		const UTDProgressionComponent* Progression = GetLocalProgression(World);
+		const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
+
+		if (Row == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.SkillVFX: '%s' 스킬을 찾지 못했다. (목록은 TD.DumpSkill)"), *Args[0]);
+			return;
+		}
+
+		const bool bForwardBox = Row->ShapeTag == TDTags::Skill_Shape_ForwardBox;
+
+		// 처음 거는 스킬이면 테이블 값에서 시작한다. 크기만 바꿀 때 나머지를 다시 적지 않아도 된다.
+		UTDSkillComponent::FDebugVFXTuning Current;
+		if (const UTDSkillComponent::FDebugVFXTuning* Existing = Tuning.Find(SkillId))
+		{
+			Current = *Existing;
+		}
+		else
+		{
+			Current.BaseSize = Row->VFXBaseSize;
+			Current.Offset = Row->VFXOffset;
+			Current.TravelTime = Row->VFXTravelTime;
+		}
+
+		if (Args.Num() == 1)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("'%s'  %s · 사거리 %g"),
+				*SkillId.ToString(), *Row->ShapeTag.ToString(), Row->Range);
+			UE_LOG(LogTDDebug, Log, TEXT("  테이블    크기 %g / 오프셋 %g / 이동시간 %g"),
+				Row->VFXBaseSize, Row->VFXOffset, Row->VFXTravelTime);
+			UE_LOG(LogTDDebug, Log, TEXT("  지금      크기 %g / 오프셋 %g / 이동시간 %g%s"),
+				Current.BaseSize, Current.Offset, Current.TravelTime,
+				Tuning.Contains(SkillId) ? TEXT("  (임시 값)") : TEXT(""));
+
+			if (!bForwardBox)
+			{
+				UE_LOG(LogTDDebug, Log, TEXT("  이 모양은 크기만 쓴다. 오프셋·이동시간은 ForwardBox 전용이다."));
+			}
+			return;
+		}
+
+		Current.BaseSize = FMath::Max(0.f, FCString::Atof(*Args[1]));
+
+		if (Args.IsValidIndex(2))
+		{
+			Current.Offset = FCString::Atof(*Args[2]);
+		}
+
+		if (Args.IsValidIndex(3))
+		{
+			Current.TravelTime = FMath::Max(0.f, FCString::Atof(*Args[3]));
+		}
+
+		Tuning.Add(SkillId, Current);
+
+		const float Scale = Current.BaseSize > 0.f && Row->Range > 0.f ? Row->Range / Current.BaseSize : 1.f;
+
+		UE_LOG(LogTDDebug, Log,
+			TEXT("'%s' 임시 값: 크기 %g (배율 %.2f) · 오프셋 %g · 이동시간 %g — 다음 시전부터 보인다."),
+			*SkillId.ToString(), Current.BaseSize, Scale, Current.Offset, Current.TravelTime);
+
+		if (!bForwardBox && (Current.Offset != 0.f || Current.TravelTime > 0.f))
+		{
+			UE_LOG(LogTDDebug, Warning,
+				TEXT("  '%s' 는 ForwardBox 가 아니라 오프셋·이동시간이 무시된다."), *SkillId.ToString());
+		}
 	}
 
 	/** 로컬 플레이어의 장착·사용 컴포넌트. 재굴림이 여기 있다(장착 아이템도 굴려야 하므로). */
@@ -1734,6 +1844,35 @@ namespace TDDebugCommands
 		UE_LOG(LogTDDebug, Log, TEXT("서버에 부활을 요청했다. (결과는 서버 로그에)"));
 	}
 
+	/** 현재 플레이어의 존 태그와 실제 월드 위치를 함께 확인한다. */
+	static void DumpZone(const TArray<FString>& Args, UWorld* World)
+	{
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		const ATDPlayerState* PlayerState =
+			Controller ? Controller->GetPlayerState<ATDPlayerState>() : nullptr;
+
+		if (PlayerState == nullptr)
+		{
+			UE_LOG(LogTDDebug, Warning, TEXT("TD.DumpZone: PlayerState 를 찾지 못했다."));
+			return;
+		}
+
+		const FString ZoneId = PlayerState->GetCurrentZoneId().IsValid()
+			? PlayerState->GetCurrentZoneId().ToString()
+			: TEXT("None");
+		const APawn* Pawn = Controller->GetPawn();
+
+		if (Pawn == nullptr)
+		{
+			UE_LOG(LogTDDebug, Log, TEXT("현재 존: '%s' / Pawn 없음"), *ZoneId);
+			return;
+		}
+
+		UE_LOG(LogTDDebug, Log, TEXT("현재 존: '%s' / 위치: %s"),
+			*ZoneId,
+			*Pawn->GetActorLocation().ToString());
+	}
+
 	static void TravelToZone(const TArray<FString>& Args, UWorld* World)
 	{
 		if (!Args.IsValidIndex(0))
@@ -2182,6 +2321,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDSkillUp(
 	TEXT("스킬을 한 단계 올린다. 사용법: TD.SkillUp <스킬ID>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillUp));
 
+static FAutoConsoleCommandWithWorldAndArgs GTDSkillVFX(
+	TEXT("TD.SkillVFX"),
+	TEXT("스킬 이펙트 크기·위치를 재임포트 없이 맞춘다. 사용법: TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간] | <스킬ID> | clear"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillVFX));
+
 static FAutoConsoleCommandWithWorldAndArgs GTDReroll(
 	TEXT("TD.Reroll"),
 	TEXT("추가 옵션을 다시 굴린다. 사용법: TD.Reroll <슬롯> [equip]"),
@@ -2356,6 +2500,11 @@ static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
 	TEXT("TD.Respawn"),
 	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
+
+static FAutoConsoleCommandWithWorldAndArgs GTDDumpZone(
+	TEXT("TD.DumpZone"),
+	TEXT("현재 플레이어의 존 태그와 월드 좌표를 출력한다. 사용법: TD.DumpZone"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpZone));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDZone(
 	TEXT("TD.Zone"),

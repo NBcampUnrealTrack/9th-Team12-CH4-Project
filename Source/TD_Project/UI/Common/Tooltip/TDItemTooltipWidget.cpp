@@ -15,6 +15,7 @@
 #include "Data/TDStatRow.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "Items/TDInventoryComponent.h"
 #include "Items/TDItemUseComponent.h"
@@ -101,6 +102,7 @@ void UTDItemTooltipWidget::SetTooltipData(const FTDTooltipData& InData)
 {
 	// 스킬 등 외부에서 완성한 표시 데이터는 아이템 조회로 덮어쓰지 않는다.
 	SourceItemId = NAME_None;
+	BindEquipmentSource(nullptr);
 	SourceDefinitionTable = nullptr;
 	Data = InData;
 	SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -122,6 +124,7 @@ bool UTDItemTooltipWidget::RefreshItem()
 	Data = FTDTooltipData();
 	if (SourceItemId.IsNone())
 	{
+		BindEquipmentSource(nullptr);
 		RefreshContent();
 		return false;
 	}
@@ -139,6 +142,7 @@ bool UTDItemTooltipWidget::RefreshItem()
 		Definition = Table->FindRow<FTDItemRow>(SourceItemId, TEXT("Tooltip"), false);
 	if (!Definition)
 	{
+		BindEquipmentSource(nullptr);
 		RefreshContent();
 		return false;
 	}
@@ -162,7 +166,8 @@ bool UTDItemTooltipWidget::RefreshItem()
 	// 강화 수치는 같은 종류의 다른 아이템이 아니라 해당 슬롯의 개체에서 전달받는다.
 	const bool bAccessory = Definition->ItemType == TDTags::Item_Type_Accessory;
 	const int32 Enhance = bAccessory ? SourceEnhanceLevel : 0;
-	const UTDItemUseComponent* ItemUse = State ? State->GetItemUseComponent() : nullptr;
+	UTDItemUseComponent* ItemUse = State ? State->GetItemUseComponent() : nullptr;
+	BindEquipmentSource(bAccessory && !Definition->SetId.IsNone() ? ItemUse : nullptr);
 	const float Multiplier = bAccessory
 		? TDEnhance::GetStatMultiplier(Enhance, Definition->RequiredLevel) : 1.f;
 	if (bAccessory)
@@ -230,6 +235,14 @@ bool UTDItemTooltipWidget::RefreshItem()
 		Data.Lines.Add(Line);
 	}
 
+	if (bAccessory && !Definition->SetId.IsNone())
+	{
+		Data.Lines.Append(UTDTooltipStatics::MakeItemSetLines(*Definition,
+			Settings->TooltipItemSetTable.LoadSynchronous(),
+			ItemUse ? ItemUse->GetSetBonusTable() : nullptr,
+			ItemUse ? ItemUse->GetSetPieceCount(Definition->SetId) : 0));
+	}
+
 	Data.Footer = Definition->bStackable
 		? FText::Format(LOCTEXT("Count", "보유 {0}개"), FText::AsNumber(SourceCount)) : Type;
 	if (!SourceHint.IsEmpty())
@@ -238,6 +251,35 @@ bool UTDItemTooltipWidget::RefreshItem()
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	RefreshContent();
 	return true;
+}
+
+void UTDItemTooltipWidget::BindEquipmentSource(UTDItemUseComponent* Source)
+{
+	if (Source && EquipmentSource.Get() == Source) return;
+	if (EquipmentSource.IsValid())
+		EquipmentSource->OnEquipmentChanged.RemoveDynamic(this, &ThisClass::HandleEquipmentChanged);
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(EquipmentRefreshTimer);
+	EquipmentSource = Source;
+	if (Source) Source->OnEquipmentChanged.AddUniqueDynamic(this, &ThisClass::HandleEquipmentChanged);
+}
+
+void UTDItemTooltipWidget::HandleEquipmentChanged()
+{
+	// FastArray 삭제 알림은 제거 직전에 오므로 다음 틱에 최종 착용 개수를 읽는다.
+	if (UWorld* World = GetWorld(); World && !World->GetTimerManager().IsTimerActive(EquipmentRefreshTimer))
+		EquipmentRefreshTimer = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::RefreshEquipmentTooltip);
+}
+
+void UTDItemTooltipWidget::RefreshEquipmentTooltip()
+{
+	if (!SourceItemId.IsNone()) RefreshItem();
+}
+
+void UTDItemTooltipWidget::NativeDestruct()
+{
+	BindEquipmentSource(nullptr);
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(EquipmentRefreshTimer);
+	Super::NativeDestruct();
 }
 
 void UTDItemTooltipWidget::NativePreConstruct()
@@ -287,6 +329,17 @@ void UTDItemTooltipWidget::RefreshContent()
 	TooltipLines->SetVisibility(Data.Lines.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	for (const FTDTooltipLine& Line : Data.Lines)
 	{
+		if (Line.bSectionHeader)
+		{
+			UTDTextBlock* Heading = WidgetTree->ConstructWidget<UTDTextBlock>();
+			Heading->SetTextStyleRole(RowTextStyleRole);
+			Heading->SetCustomStyleName(RowCustomStyleName);
+			Heading->SetText(FText::Format(LOCTEXT("SectionHeading", "{0} · {1}"), Line.Label, Line.Value));
+			Heading->SetTypographyColorOverride(Line.ValueColor);
+			Heading->SetAutoWrapText(true);
+			TooltipLines->AddChildToVerticalBox(Heading)->SetPadding(FMargin(0.f, 12.f, 0.f, 4.f));
+			continue;
+		}
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
 		TooltipLines->AddChildToVerticalBox(Row)->SetPadding(FMargin(0.f, 5.f));
 		if (!Line.Icon.IsNull())
@@ -321,7 +374,10 @@ void UTDItemTooltipWidget::ClearItemTooltip(UUserWidget* Host)
 {
 	if (!Host) return;
 	if (UTDItemTooltipWidget* Old = Cast<UTDItemTooltipWidget>(Host->GetToolTip()))
+	{
+		Old->BindEquipmentSource(nullptr);
 		Old->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	Host->SetToolTipText(FText::GetEmpty());
 	Host->SetToolTip(nullptr);
 }

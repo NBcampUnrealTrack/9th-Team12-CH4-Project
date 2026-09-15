@@ -1,6 +1,7 @@
 #include "Combat/TDCombatStatics.h"
 
 #include "AbilitySystemComponent.h"
+#include "Character/Boss2D/TD2DBossCharacter.h"
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDBossCharacter.h"
 #include "Character/TDCharacterBase.h"
@@ -36,6 +37,18 @@ FTDDamageResult UTDCombatStatics::ApplyDamage(AActor* Attacker, AActor* Target,
 	if (AttackerChar == nullptr || TargetChar == nullptr)
 	{
 		return NoDamage;
+	}
+
+	// 2D 보스의 경기장 규칙은 데미지 진입점에서 강제한다.
+	// 판정/AI 쪽에서만 막으면 원거리·환경·클라이언트 요청 등 다른 공격 경로가
+	// 경기장 밖에서 체력을 깎을 수 있다. 보스 자신이 아니라 공격자 위치를 검사해야
+	// "원 밖에서 안쪽 보스를 쏘는" 경우도 차단할 수 있다.
+	if (const ATD2DBossCharacter* ArenaBoss = Cast<ATD2DBossCharacter>(TargetChar))
+	{
+		if (!ArenaBoss->IsLocationInsideArena(AttackerChar->GetActorLocation()))
+		{
+			return NoDamage;
+		}
 	}
 
 	// 데미지는 서버만 계산한다. 클라이언트 호출은 조용히 무시.

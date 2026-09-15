@@ -51,6 +51,13 @@ FReply UTDUIRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, cons
 			return FReply::Handled();
 		}
 	}
+    if (!InKeyEvent.IsRepeat() && !InKeyEvent.IsControlDown() && !InKeyEvent.IsAltDown() && !InKeyEvent.IsShiftDown())
+    {
+        if (ATDPlayerController* Controller = Cast<ATDPlayerController>(GetOwningPlayer()))
+        {
+            if (Controller->HandleNavShortcut(InKeyEvent.GetKey())) return FReply::Handled();
+        }
+    }
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 

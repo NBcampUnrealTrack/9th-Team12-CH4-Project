@@ -1,4 +1,5 @@
 #include "Player/TDPlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
@@ -26,21 +27,58 @@
 #include "World/TDNPCBase.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "UI/Settings/TDUISettings.h"
 
 ATDPlayerController::ATDPlayerController()
 {
+    InteractionFlowComponent = CreateDefaultSubobject<UTDInteractionFlowComponent>(TEXT("InteractionFlowComponent"));
+    ShopServiceComponent = CreateDefaultSubobject<UTDShopServiceComponent>(TEXT("ShopServiceComponent"));
 	// 로컬 컨트롤러에서만 실제로 동작한다. 서버에 있는 남의 컨트롤러에서는
 	// 컴포넌트가 스스로 Tick 을 끈다.
 	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
 		TEXT("ZoneEnvironmentComponent"));
+
+	// 스폰·텔레포트 직후 주변 셀이 아직 없으면(스트리밍 Critical 이상) 로딩이 끝날 때까지 기다린다.
+	// 끄면 바닥이 로드되기 전에 캐릭터가 떨어진다 — 로그인 화면이 다른 곳을 보다가 마을에 스폰할 때
+	// 매번 다른 자리에 서던 버그(2026-09-15). 멈칫은 스폰·포탈 이동 순간에만 생긴다.
+	bStreamingSourceShouldBlockOnSlowStreaming = true;
 }
 
 void ATDPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 	InputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &ThisClass::ToggleMouseCursor);
+
+    // ESC 는 고정 키다. 설정창에서 바꾸게 두면 잘못 바꿨을 때 설정창을 다시 열 길이 없다.
+    InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::OpenSystemMenu);
+
+    // 나머지 창 단축키는 입력 액션으로 받는다 — 설정창에서 키를 바꿀 수 있게.
+    // 창 종류 ↔ 액션 표는 프로젝트 세팅(TD UI > Shortcuts), 기본 키는 IMC_Player.
+    UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
+    if (EnhancedInput == nullptr)
+    {
+        return;
+    }
+
+    for (const TPair<ETDNavMenuType, TSoftObjectPtr<UInputAction>>& Pair : GetDefault<UTDUISettings>()->MenuInputActions)
+    {
+        if (const UInputAction* Action = Pair.Value.LoadSynchronous())
+        {
+            EnhancedInput->BindAction(Action, ETriggerEvent::Started, this, &ThisClass::HandleMenuAction, Pair.Key);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("창 단축키: '%s' 의 입력 액션이 비어 있거나 불러오지 못했다 — 프로젝트 세팅 TD UI > Shortcuts 확인"),
+                *UEnum::GetValueAsString(Pair.Key));
+        }
+    }
 }
 
 void ATDPlayerController::ToggleMouseCursor()
@@ -1002,4 +1040,70 @@ void ATDPlayerController::ClientMarketSearchResult_Implementation(
 	OnMarketSearchResult.Broadcast(Listings);
 
 	UE_LOG(LogTemp, Log, TEXT("거래소 검색 결과 %d건"), Listings.Num());
+}
+
+bool ATDPlayerController::HandleNavShortcut(FKey Key)
+{
+    if (Key == EKeys::Escape) return TryOpenMenu(ETDNavMenuType::System);
+
+    // UI 에 포커스가 있을 때는 입력 액션이 오지 않아 키로 들어온다. 키를 코드에 적어 두면
+    // 설정창에서 바꾼 키가 여기서만 안 먹으므로, 각 액션에 **지금 지정된 키** 와 비교한다.
+    const UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()
+        ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()) : nullptr;
+    if (!Subsystem) return false;
+
+    for (const TPair<ETDNavMenuType, TSoftObjectPtr<UInputAction>>& Pair : GetDefault<UTDUISettings>()->MenuInputActions)
+    {
+        const UInputAction* Action = Pair.Value.LoadSynchronous();
+        if (Action && Subsystem->QueryKeysMappedToAction(Action).Contains(Key))
+        {
+            return TryOpenMenu(Pair.Key);
+        }
+    }
+    return false;
+}
+
+bool ATDPlayerController::TryOpenMenu(ETDNavMenuType MenuType)
+{
+    if (!IsLocalController()) return false;
+    ULocalPlayer* Local = GetLocalPlayer();
+    UTDUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UTDUIManagerSubsystem>() : nullptr;
+    if (!UI || UI->IsChatInputActive() || !UI->IsGameplayWindowLayerReady()) return false;
+    if (FSlateApplication::IsInitialized())
+    {
+        const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
+        if (Focused.IsValid() && Focused->GetTypeAsString().Contains(TEXT("EditableText"))) return false;
+    }
+    UI->RequestMenu(MenuType);
+    return true;
+}
+
+void ATDPlayerController::OpenCharacterMenu()
+{
+    TryOpenMenu(ETDNavMenuType::Character);
+}
+
+void ATDPlayerController::OpenInventoryMenu()
+{
+    TryOpenMenu(ETDNavMenuType::Inventory);
+}
+
+void ATDPlayerController::OpenSkillMenu()
+{
+    TryOpenMenu(ETDNavMenuType::Skill);
+}
+
+void ATDPlayerController::OpenQuestMenu()
+{
+    TryOpenMenu(ETDNavMenuType::Quest);
+}
+
+void ATDPlayerController::OpenPartyMenu()
+{
+    TryOpenMenu(ETDNavMenuType::Party);
+}
+
+void ATDPlayerController::OpenSystemMenu()
+{
+    TryOpenMenu(ETDNavMenuType::System);
 }

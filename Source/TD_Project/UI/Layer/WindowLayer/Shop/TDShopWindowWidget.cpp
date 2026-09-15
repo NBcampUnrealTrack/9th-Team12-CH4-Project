@@ -12,6 +12,8 @@ namespace
 {
 	const FLinearColor ActiveTabColor(0.22f, 0.55f, 0.31f, 1.0f);
 	const FLinearColor InactiveTabColor(0.40f, 0.40f, 0.40f, 1.0f);
+	// 판매 탭의 보유 아이템 목록은 비어 있어도 첫 줄 네 칸을 유지한다.
+	constexpr int32 MinimumSellItemSlotCount = 4;
 }
 
 void UTDShopWindowWidget::NativeConstruct()
@@ -139,8 +141,13 @@ void UTDShopWindowWidget::RefreshWindow()
 
 	TXT_Gold->SetText(
 		FText::Format(
-			FText::FromString(TEXT("현재 골드: {0} G")),
+			FText::FromString(TEXT("현재 골드: {0}")),
 			FText::AsNumber(CurrentView.Gold)));
+	
+	TXT_Gold_1->SetText(
+	FText::Format(
+		FText::FromString(TEXT("현재 골드: {0}")),
+		FText::AsNumber(CurrentView.Gold)));
 
 	WS_ShopPages->SetActiveWidgetIndex(ActivePageIndex);
 	RefreshBuyItems();
@@ -278,6 +285,7 @@ UTDInventorySlotListItem* UTDShopWindowWidget::MakeBuySlot(
 	Item->DisplayName = Source.DisplayName;
 	Item->Icon = Source.Icon;
 	Item->Rarity = Source.Rarity;
+	Item->ItemType = Source.ItemType;
 	Item->InteractionHint = bCartSlot
 		? FText::Format(
 			FText::FromString(
@@ -306,10 +314,12 @@ UTDInventorySlotListItem* UTDShopWindowWidget::MakeSellSlot(
 	Item->bHasItem = true;
 	Item->ItemInstance.SlotIndex = Source.SlotIndex;
 	Item->ItemInstance.ItemId = Source.ItemId;
+	Item->ItemInstance.EnhanceLevel = Source.EnhanceLevel;
 	Item->ItemInstance.Count = FMath::Max(1, Count);
 	Item->DisplayName = Source.DisplayName;
 	Item->Icon = Source.Icon;
 	Item->Rarity = Source.Rarity;
+	Item->ItemType = Source.ItemType;
 	Item->bInteractionEnabled = Source.bCanSell;
 
 	if (!Source.bCanSell)
@@ -437,14 +447,14 @@ void UTDShopWindowWidget::RefreshBuyCart()
 	SetTileItems(TV_BuyCart, BuyCartObjects, Items);
 	TXT_BuyTotal->SetText(
 		FText::Format(
-			FText::FromString(TEXT("필요 골드: {0} G")),
+			FText::FromString(TEXT("필요 골드: {0}")),
 			FText::AsNumber(GetBuyTotal())));
 }
 
 void UTDShopWindowWidget::RefreshSellItems()
 {
 	TArray<UTDInventorySlotListItem*> Items;
-	Items.Reserve(CurrentView.SellItems.Num());
+	Items.Reserve(FMath::Max(CurrentView.SellItems.Num(), MinimumSellItemSlotCount));
 
 	for (const FTDShopSellItemView& Source : CurrentView.SellItems)
 	{
@@ -457,6 +467,13 @@ void UTDShopWindowWidget::RefreshSellItems()
 				RemainingCount,
 				false));
 		}
+	}
+
+	// 실제 아이템을 왼쪽부터 채우고 남은 칸만 빈 슬롯으로 보충한다.
+	// 빈 슬롯은 bHasItem=false이므로 클릭·판매·드래그 대상이 되지 않는다.
+	while (Items.Num() < MinimumSellItemSlotCount)
+	{
+		Items.Add(MakeBlankSlot(INDEX_NONE));
 	}
 
 	SetTileItems(TV_SellItems, SellItemObjects, Items);
@@ -521,7 +538,7 @@ void UTDShopWindowWidget::RefreshSellList()
 	SetTileItems(TV_SellList, SellListObjects, Items);
 	TXT_SellTotal->SetText(
 		FText::Format(
-			FText::FromString(TEXT("획득 골드: {0} G")),
+			FText::FromString(TEXT("획득 골드: {0}")),
 			FText::AsNumber(GetSellTotal())));
 }
 

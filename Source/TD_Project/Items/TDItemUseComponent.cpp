@@ -798,6 +798,61 @@ void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bo
 		bUpgraded ? ETDRerollResult::SuccessUpgraded : ETDRerollResult::Success, Rarity);
 }
 
+void UTDItemUseComponent::RollInitialOptions(FTDItemInstance& Item) const
+{
+	const FTDItemRow* Definition = FindItemRow(Item.ItemId);
+
+	// 추가 옵션은 장신구만 가진다. 포션처럼 풀이 비어 있는 것은 여기서 빠진다.
+	if (Definition == nullptr
+		|| Definition->ItemType != TDTags::Item_Type_Accessory.GetTag()
+		|| Definition->OptionPoolId.IsNone())
+	{
+		return;
+	}
+
+	const UTDItemOptionSettings* Settings = UTDItemOptionSettings::Get();
+	if (Settings == nullptr || OptionDefinitionTable == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("RollInitialOptions: 옵션 테이블이 지정되지 않아 '%s' 가 옵션 없이 들어간다."),
+			*Item.ItemId.ToString());
+		return;
+	}
+
+	const TArray<FTDOptionRarityRow> Sorted =
+		TDItemOption::GetSortedRarities(Settings->OptionRarityTable.LoadSynchronous());
+
+	if (Sorted.Num() == 0)
+	{
+		// 조용히 빠져나가면 "장신구가 옵션 없이 들어온다" 만 보이고 원인이 로그에 안 남는다.
+		// dev 머지로 ini 의 이 섹션이 통째로 사라졌을 때 실제로 그랬다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("RollInitialOptions: 옵션 등급표를 읽지 못해 '%s' 가 옵션 없이 들어간다. ")
+			TEXT("프로젝트 세팅 > TD > Item Option 의 OptionRarityTable 을 확인할 것."),
+			*Item.ItemId.ToString());
+		return;
+	}
+
+	// PrepareReroll · ServerRerollOptions 의 "아직 등급이 없으면" 과 같은 규칙이다.
+	const FGameplayTag Rarity = Definition->InitialOptionRarity.IsValid()
+		? Definition->InitialOptionRarity
+		: Sorted[0].Rarity;
+
+	const int32 LineCount = Settings->OptionLineCount;
+
+	TArray<float> Rolls;
+	Rolls.Reserve(LineCount * 3);
+	for (int32 Index = 0; Index < LineCount * 3; ++Index)
+	{
+		Rolls.Add(FMath::FRand());
+	}
+
+	Item.OptionRarity = Rarity;
+	Item.Options = TDItemOption::RollLines(
+		Settings->OptionPoolTable.LoadSynchronous(), OptionDefinitionTable,
+		Sorted, Definition->OptionPoolId, Rarity, LineCount, Rolls);
+}
+
 void UTDItemUseComponent::ClientOptionsRerolled_Implementation(
 	ETDRerollResult Result, FGameplayTag NewRarity)
 {

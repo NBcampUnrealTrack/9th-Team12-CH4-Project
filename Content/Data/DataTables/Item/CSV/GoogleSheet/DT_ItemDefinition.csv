@@ -1,0 +1,52 @@
+﻿Name,DisplayName,Description,ItemType,Icon,bStackable,MaxStackSize,bCanDiscard,SellPrice,RequiredLevel,Rarity,InitialOptionRarity,OptionPoolId,SetId
+HPotion_Low,하급 체력포션,"체력을 회복시켜주는 포션, 맛은 없다.",Item.Type.Consumable,/Engine/EditorResources/Bad.Bad,True,100,True,50,0,Item.Rarity.Common,,None,None
+HPotion_Mid,중급 체력포션,"체력을 회복시켜주는 고급포션, 여전히 맛은 없다.",Item.Type.Consumable,None,True,100,True,150,15,Item.Rarity.Common,,None,None
+HPotion_High,상급 체력포션,"체력을 회복시켜주는 포션, 맛있다.",Item.Type.Consumable,None,True,100,True,300,25,Item.Rarity.Rare,,None,None
+MPotion_Low,하급 마나포션,별 맛이다.,Item.Type.Consumable,None,True,100,True,55,0,Item.Rarity.Common,,None,None
+MPotion_Mid,중급 마나포션,별 맛이 다난다.,Item.Type.Consumable,None,True,100,True,160,15,Item.Rarity.Common,,None,None
+MPotion_High,고급 마나포션,맛이 별로다.,Item.Type.Consumable,None,True,100,True,320,25,Item.Rarity.Rare,,None,None
+InvExpand,인벤토리 확장권,가방을 넓혀주는 티켓,Item.Type.Consumable,/Engine/EngineResources/AICON-Green.AICON-Green,True,10000,False,200,0,Item.Rarity.Legendary,,None,None
+ExpPotion_Low,하급 경험치포션,경험치를 500만큼 올려주는 포션,Item.Type.Consumable,None,True,100,True,0,0,Item.Rarity.Common,,None,None
+ExpPotion_Mid,중급 경험치포션,경험치를 5000만큼 올려주는 포션,Item.Type.Consumable,None,True,100,True,0,0,Item.Rarity.Epic,,None,None
+LevelTicket_Low,하급 경험치티켓,"레벨업을 시켜주는 티켓, 30레벨 이상일 시 29레벨에서 레벨업하는데 필요한 경험치를 준다.",Item.Type.Consumable,None,True,10,True,0,0,Item.Rarity.Epic,,None,None
+LevelTicket_Mid,중급 경험치티켓,"레벨업을 시켜주는 티켓, 40레벨 이상일 시 39레벨에서 레벨업에 필요한 경험치를 준다.",Item.Type.Consumable,None,True,5,True,0,0,Item.Rarity.Legendary,,None,None
+Quest_KimHeejinRing,희진이반지,우엥 내 반지,Item.Type.Quest,/Game/Art/Sprite/Character/Sprite_Black/Textures/Black_Jump/Black_Jump_North/Balck_Jump_North2.Balck_Jump_North2,False,1,False,0,0,,,None,None
+FireRing_Low,하급 불의반지,힘이 강해지는 빨간 반지,Item.Type.Accessory,/Engine/EngineResources/AICON-Red.AICON-Red,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Fire_Set
+FirePandant_Low,하급 불의팬던트,불의 기운 향 첨가,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Fire_Set
+FireEarring_Low,하급 불의귀걸이,착용해도 따듯하진않다.,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Fire_Set
+FireRing_Mid,중급 불의반지,불의 기운이 들어있어 따듯하다.,Item.Type.Accessory,/Engine/MobileResources/HUD/AnalogHat.AnalogHat,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Fire_Set
+FirePandant_Mid,중급 불의팬던트,불의 기운 다소 첨가,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Fire_Set
+FireEarring_Mid,중급 불의귀걸이,착용하면 따듯하다,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Fire_Set
+FireRing_High,상급 불의반지,불타는 듯한 뜨거움이 느껴진다.,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Fire_Set
+FirePandant_High,상급 불의팬던트,불의 기운 다수 첨가,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Fire_Set
+FireEarring_High,상급 불의귀걸이,강력한 불의 기운이 들어있다,Item.Type.Accessory,/Engine/Tutorial/Mobile/TutorialAssets/android_Icon.android_Icon,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Fire_Set
+WaterRing_Low,하급 물의반지,파랗다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Water_Set
+WaterPandant_Low,하급 물의팬던트,파랗다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Water_Set
+WaterEarring_Low,하급 물의귀걸이,파랗다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Water_Set
+WaterRing_Mid,중급 물의반지,물같은 감촉이다.,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Water_Set
+WaterPandant_Mid,중급 물의팬던트,물같은 감촉이다.,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Water_Set
+WaterEarring_Mid,중급 물의귀걸이,물같은 감촉이다.,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Water_Set
+WaterRing_High,상급 물의반지,급할 때 먹을 수 있을 듯 하다.,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Water_Set
+WaterPandant_High,상급 물의팬던트,급할 때 먹을 수 있을 듯 하다.,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Water_Set
+WaterEarring_High,상급 물의귀걸이,급할 때 먹을 수 있을 듯 하다.,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Water_Set
+EarthRing_Low,하급 대지의반지,땅에 던지면 깨진다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Earth_Set
+EarthPandant_Low,하급 대지의팬던트,땅에 던지면 깨진다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Earth_Set
+EarthEarring_Low,하급 대지의귀걸이,땅에 던지면 깨진다.,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Earth_Set
+EarthRing_Mid,중급 대지의반지,흙냄새가 난다,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Earth_Set
+EarthPandant_Mid,중급 대지의팬던트,흙냄새가 난다,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Earth_Set
+EarthEarring_Mid,중급 대지의귀걸이,흙냄새가 난다,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Earth_Set
+EarthRing_High,상급 대지의반지,매우 단단하다,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Earth_Set
+EarthPandant_High,상급 대지의팬던트,매우 단단하다,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Earth_Set
+EarthEarring_High,상급 대지의귀걸이,매우 단단하다,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Earth_Set
+WindRing_Low,하급 바람의반지,,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Wind_Set
+WindPandant_Low,하급 바람의팬던트,,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Wind_Set
+WindEarring_Low,하급 바람의귀걸이,,Item.Type.Accessory,None,False,1,True,600,2,Item.Rarity.Common,Item.Rarity.Common,Pool_Lv01,Wind_Set
+WindRing_Mid,중급 바람의반지,,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Wind_Set
+WindPandant_Mid,중급 바람의팬던트,,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Wind_Set
+WindEarring_Mid,중급 바람의귀걸이,,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Rare,Item.Rarity.Common,Pool_Lv20,Wind_Set
+WindRing_High,상급 바람의반지,,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Wind_Set
+WindPandant_High,상급 바람의팬던트,,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Wind_Set
+WindEarring_High,상급 바람의귀걸이,,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Epic,Item.Rarity.Common,Pool_Lv40,Wind_Set
+DarkRing,칠흑의 반지,어둠이 뿜어져나온다.,Item.Type.Accessory,None,False,1,True,4500,20,Item.Rarity.Legendary,Item.Rarity.Rare,Pool_Lv20,Boss_Set
+DarkPandant,칠흑의 팬던트,어둠이 뿜어져나온다.,Item.Type.Accessory,None,False,1,True,18000,40,Item.Rarity.Legendary,Item.Rarity.Rare,Pool_Lv40,Boss_Set
+DarkEarring,칠흑의 귀걸이,비린내가 난다.,Item.Type.Accessory,None,False,1,True,60000,50,Item.Rarity.Legendary,Item.Rarity.Rare,Pool_Lv40,Boss_Set

@@ -10,6 +10,7 @@
 
 class APlayerController;
 class UTDProgressionComponent;
+struct FTDItemRow;
 
 /**
  * 테이블의 문구에 실제 수치를 채워 넣는다.
@@ -51,6 +52,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Tooltip")
 	static FText FormatStatValue(FGameplayTag StatTag, ETDModOp Op, float Value, bool bSigned = true);
 
+	/**
+	 * 스탯의 표시 이름(DT_StatDefinition.DisplayName). 없으면 태그 문자열을 그대로 돌려준다.
+	 *
+	 * FormatStatValue 와 짝이다. 문구 틀 없이 "최대 체력 +3%" 처럼 이름과 값을 직접 늘어놓는
+	 * 창(유니온)이 쓴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Tooltip")
+	static FText FormatStatName(FGameplayTag StatTag);
+
 	// ── 아이템 추가 옵션 ──────────────────────────────────
 
 	/**
@@ -91,6 +101,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|Tooltip")
 	static TArray<FTDTooltipLine> MakeItemStatLines(const APlayerController* Owner,
 		FName ItemId, int32 EnhanceLevel);
+
+	/** 장신구 세트의 실제 착용 개수와 단계별 효과를 표시 데이터로만 변환한다. */
+	static TArray<FTDTooltipLine> MakeItemSetLines(const FTDItemRow& Item,
+		const UDataTable* SetTable, const UDataTable* BonusTable, int32 EquippedCount);
 
 	// ── 스킬 ──────────────────────────────────────────────
 

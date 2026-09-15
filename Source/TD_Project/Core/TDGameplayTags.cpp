@@ -132,6 +132,9 @@ namespace TDTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Skill, "Source.Skill",
 		"찍어 둔 패시브 스킬에서 온 모디파이어.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Union, "Source.Union",
+		"계정의 캐릭터 구성(유니온)에서 온 모디파이어. 직업별 최고 레벨로 정해진다.");
 	
 	
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Boss, "Source.Boss",

@@ -2,6 +2,8 @@
 
 #include "Core/TDGameplayTags.h"
 #include "Data/TDItemStatRow.h"
+#include "Data/TDItemRow.h"
+#include "Data/TDItemSetRow.h"
 #include "Data/TDOptionRow.h"
 #include "Data/TDSkillPassiveRow.h"
 #include "Data/TDSkillRow.h"
@@ -131,6 +133,17 @@ FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, floa
 	const FText Sign = bSigned && DisplayValue > 0.f ? FText::FromString(TEXT("+")) : FText::GetEmpty();
 
 	return FText::Format(bPercent ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"), Sign, Amount);
+}
+
+FText UTDTooltipStatics::FormatStatName(FGameplayTag StatTag)
+{
+	// 세트 효과 줄(MakeItemSetLines)과 같은 규칙이다 — 이름이 비어 있으면 태그를 그대로 보여 준다.
+	// 빈 칸으로 두면 "무엇이 오르는지" 가 사라져 데이터 누락을 화면에서 알아챌 수 없다.
+	const FTDStatRow* Meta = FindStatMeta(StatTag);
+
+	return Meta != nullptr && !Meta->DisplayName.IsEmpty()
+		? Meta->DisplayName
+		: FText::FromString(StatTag.ToString());
 }
 
 // ── 아이템 추가 옵션 ──────────────────────────────────────
@@ -406,6 +419,54 @@ FTDTooltipData UTDTooltipStatics::MakeSkillTooltip(const UTDProgressionComponent
 	}
 
 	return Data;
+}
+
+TArray<FTDTooltipLine> UTDTooltipStatics::MakeItemSetLines(const FTDItemRow& Item,
+	const UDataTable* SetTable, const UDataTable* BonusTable, int32 EquippedCount)
+{
+	TArray<FTDTooltipLine> Lines;
+	if (Item.ItemType != TDTags::Item_Type_Accessory || Item.SetId.IsNone()) return Lines;
+
+	const FTDItemSetRow* Set = SetTable && SetTable->GetRowStruct() == FTDItemSetRow::StaticStruct()
+		? SetTable->FindRow<FTDItemSetRow>(Item.SetId, TooltipContext, false) : nullptr;
+	TArray<FTDItemSetBonusRow> Bonuses;
+	if (BonusTable && BonusTable->GetRowStruct() == FTDItemSetBonusRow::StaticStruct())
+	{
+		TArray<FName> Names = BonusTable->GetRowNames();
+		Names.Sort(FNameLexicalLess());
+		for (FName Name : Names)
+		{
+			const FTDItemSetBonusRow* Row = BonusTable->FindRow<FTDItemSetBonusRow>(Name, TooltipContext, false);
+			if (Row && Row->SetId == Item.SetId && Row->RequiredCount > 0
+				&& Row->StatTag.IsValid() && FMath::IsFinite(Row->Value)) Bonuses.Add(*Row);
+		}
+	}
+	if (!Set && Bonuses.IsEmpty()) return Lines;
+	Bonuses.StableSort([](const FTDItemSetBonusRow& A, const FTDItemSetBonusRow& B)
+	{
+		return A.RequiredCount < B.RequiredCount;
+	});
+
+	FTDTooltipLine& Header = Lines.AddDefaulted_GetRef();
+	Header.bSectionHeader = true;
+	Header.Label = FText::Format(LOCTEXT("SetTitle", "세트 효과 · {0}"),
+		Set && !Set->DisplayName.IsEmpty() ? Set->DisplayName : LOCTEXT("UnnamedSet", "세트 장비"));
+	Header.Value = FText::Format(LOCTEXT("SetEquipped", "{0}개 착용"), FText::AsNumber(FMath::Max(0, EquippedCount)));
+	Header.ValueColor = FLinearColor(1.f, 0.78f, 0.38f);
+	for (const FTDItemSetBonusRow& Bonus : Bonuses)
+	{
+		const bool bActive = EquippedCount >= Bonus.RequiredCount;
+		const FTDStatRow* Meta = FindStatMeta(Bonus.StatTag);
+		const FText StatName = Meta && !Meta->DisplayName.IsEmpty()
+			? Meta->DisplayName : FText::FromString(Bonus.StatTag.ToString());
+		FTDTooltipLine& Line = Lines.AddDefaulted_GetRef();
+		Line.Label = FText::Format(LOCTEXT("SetBonusLabel", "{0}개 · {1}"), FText::AsNumber(Bonus.RequiredCount), StatName);
+		Line.Value = FText::Format(LOCTEXT("SetBonusValue", "{0} ({1})"),
+			FormatStatValue(Bonus.StatTag, Bonus.Op, Bonus.Value),
+			bActive ? LOCTEXT("SetActive", "활성") : LOCTEXT("SetInactive", "미적용"));
+		Line.ValueColor = bActive ? FLinearColor(0.45f, 0.95f, 0.50f) : FLinearColor(0.55f, 0.58f, 0.63f);
+	}
+	return Lines;
 }
 
 #undef LOCTEXT_NAMESPACE

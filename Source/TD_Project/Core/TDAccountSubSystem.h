@@ -37,9 +37,20 @@ class TD_PROJECT_API UTDAccountSubSystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 public:
 	static constexpr int32 MaxCharacters = 6;
+	static constexpr int32 MinPasswordLength = 8;
+	static constexpr int32 MaxPasswordLength = 64;
+	/** 백엔드 인증 규격과 동일한 로그인 ID 정규화·검증 규칙. */
+	static FString NormalizeLoginId(const FString& LoginId);
+	static bool IsValidLoginId(const FString& LoginId);
+	/** 공백을 제외한 출력 가능한 ASCII 문자만 허용한다. */
+	static bool IsValidPassword(const FString& Password, bool bRequireMinimumLength);
+	static FString FilterPasswordInput(const FString& Password);
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	bool Login(ATDPlayerState* Player, const FString& LoginId, const FString& Password,
 		FGuid& OutAccountId, FString& OutError);
+	bool RegisterAccount(ATDPlayerState* Player, const FString& LoginId, const FString& Password, FString& OutError);
+    bool CreateCharacter(ATDPlayerState* Player, const FString& Name, FName ClassId, FString& OutError);
+    bool DeleteCharacter(ATDPlayerState* Player, const FGuid& CharacterId, FString& OutError);
 	void Logout(ATDPlayerState* Player);
     /** 서버에서 캐릭터 상태를 새로 만들 때 인증된 세션만 이전한다. */
     bool TransferSession(ATDPlayerState* Previous, ATDPlayerState* Next);

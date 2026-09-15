@@ -84,14 +84,14 @@ private:
 	void SetLocalPresentationHidden(bool bShouldHide);
 	void FinishClaimedPresentation();
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TD|Treasure", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TD|Treasure", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UPaperFlipbookComponent>
 		SpriteComponent;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TD|Treasure", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent>
 		InteractionSphere;
 

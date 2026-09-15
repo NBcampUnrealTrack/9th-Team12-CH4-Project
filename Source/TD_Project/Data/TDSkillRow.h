@@ -7,6 +7,7 @@
 #include "TDSkillRow.generated.h"
 
 class UNiagaraSystem;
+class USoundBase;
 class UTexture2D;
 
 /**
@@ -255,4 +256,16 @@ struct FTDSkillRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast", meta = (ClampMin = "0"))
 	float VFXTravelTime = 0.f;
+
+	/**
+	 * 발동 순간에 재생할 효과음. 이펙트(VFX)와 같은 순간이다 — 캐스팅 스킬은 캐스팅이 끝나 터질 때 난다.
+	 * 비워 두면 소리 없이 발동한다.
+	 *
+	 * 시전자에 붙여 재생하므로 뛰면서 쓰는 정신집중도 소리가 따라온다. 정신집중은 시전이
+	 * 끝나면(끊겨도) 소리를 줄여 끈다.
+	 *
+	 * 설정창의 효과음 볼륨이 먹으려면 **사운드 에셋의 Submix 를 SM_SFX 로** 지정해야 한다(UTDAudioSettings).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
+	TSoftObjectPtr<USoundBase> SFX;
 };

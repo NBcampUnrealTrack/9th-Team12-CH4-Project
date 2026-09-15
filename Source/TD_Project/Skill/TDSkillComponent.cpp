@@ -1,6 +1,7 @@
 #include "Skill/TDSkillComponent.h"
 
 #include "Character/TDCharacterBase.h"
+#include "Components/AudioComponent.h"
 #include "Combat/TDCombatComponent.h"
 #include "Combat/TDCombatStatics.h"
 #include "Components/CapsuleComponent.h"
@@ -11,10 +12,12 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/TDInteractionFlowComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Stats/TDProgressionComponent.h"
+#include "Sound/SoundBase.h"
 #include "Stats/TDStatComponent.h"
 #include "TimerManager.h"
 
@@ -80,6 +83,7 @@ void UTDSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 캐릭터가 사라지는데 장판 이펙트만 남으면 안 된다.
 	StopChannelVFX();
+	StopChannelSFX();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -710,7 +714,15 @@ void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 	const UTDProgressionComponent* Progression = GetProgression();
 	const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
 
-	if (Owner == nullptr || Row == nullptr || Row->VFX.IsNull())
+	if (Owner == nullptr || Row == nullptr)
+	{
+		return;
+	}
+
+	// 효과음은 이펙트와 따로 본다 — 이펙트가 없는 스킬도 소리는 날 수 있다.
+	PlaySkillSFX(*Owner, *Row);
+
+	if (Row->VFX.IsNull())
 	{
 		return;
 	}
@@ -880,13 +892,53 @@ void UTDSkillComponent::StopChannelVFX()
 	ActiveChannelVFX.Reset();
 }
 
+void UTDSkillComponent::PlaySkillSFX(ATDCharacterBase& Owner, const FTDSkillRow& Row)
+{
+	if (Row.SFX.IsNull())
+	{
+		return;
+	}
+
+	// 이펙트와 같은 이유로 처음 쓸 때 동기로 읽는다. 짧은 효과음 몇 개뿐이다.
+	USoundBase* Sound = Row.SFX.LoadSynchronous();
+	if (Sound == nullptr)
+	{
+		return;
+	}
+
+	// 시전자에 붙인다. 뛰면서 쓰는 정신집중(마력 폭풍)의 소리가 제자리에 남지 않게 —
+	// 캐릭터가 사라지면(접속 종료) 같이 멈춘다. 볼륨 설정은 사운드 에셋의 Submix(SM_SFX)가 받는다.
+	UAudioComponent* Audio = UGameplayStatics::SpawnSoundAttached(
+		Sound, Owner.GetRootComponent(), NAME_None, FVector::ZeroVector,
+		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
+
+	// 정신집중은 끝나는 시점을 모른다. 시전 종료 방송이 이펙트와 함께 끈다.
+	if (Audio != nullptr && Row.CastType == ETDSkillCastType::Channel)
+	{
+		StopChannelSFX();
+		ActiveChannelSFX = Audio;
+	}
+}
+
+void UTDSkillComponent::StopChannelSFX()
+{
+	if (ActiveChannelSFX.IsValid())
+	{
+		// 뚝 끊기지 않게 짧게 줄여서 끈다.
+		ActiveChannelSFX->FadeOut(0.2f, 0.f);
+	}
+
+	ActiveChannelSFX.Reset();
+}
+
 void UTDSkillComponent::MulticastOnCastEnded_Implementation(
 	FName SkillId, bool bFired, float Cooldown)
 {
 	CastingSkillId = NAME_None;
 
-	// 정신집중이 끝나거나 끊겼다. 장판을 걷는다.
+	// 정신집중이 끝나거나 끊겼다. 장판을 걷고 소리를 끈다.
 	StopChannelVFX();
+	StopChannelSFX();
 
 	if (bFired && Cooldown > 0.f)
 	{

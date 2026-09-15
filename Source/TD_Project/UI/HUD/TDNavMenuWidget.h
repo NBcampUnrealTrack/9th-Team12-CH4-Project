@@ -46,6 +46,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTDNavMenuButtonWidget> SystemEntry;
+
+	/** 유니온 창 버튼. WBP 에 이 이름으로 배치하지 않으면 버튼 없이 단축키로만 열린다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTDNavMenuButtonWidget> UnionEntry;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Button Style")
 	TObjectPtr<UTDButtonStyleDA> ButtonStyleData;

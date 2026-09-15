@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "UI/HUD/Nav/TDNavMenuTypes.h"
 #include "TDUISettings.generated.h"
 
+class UInputAction;
 class UTDTypographyThemeDA;
 class UTDWindowBaseWidget;
 class UTDItemTooltipWidget;
@@ -84,4 +86,20 @@ public:
 	/** 하단 퀘스트 버튼으로 열 퀘스트 창입니다. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
 	TSoftClassPtr<UTDWindowBaseWidget> QuestWindowClass;
+
+	/** 유니온 창. 부모 클래스가 UTDUnionWindowWidget 인 WBP 를 지정한다. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> UnionWindowClass;
+
+	/**
+	 * 창 단축키. 창 종류 → 입력 액션.
+	 *
+	 * 키를 코드에 적지 않고 입력 액션으로 받아야 설정창에서 바꿀 수 있다. 액션의
+	 * Player Mappable Key Settings(Name · Display Name)가 설정창 목록의 한 줄이 되고,
+	 * 기본 키는 IMC_Player 에서 정한다. 새 창에 단축키를 붙일 때 코드는 고치지 않는다.
+	 *
+	 * System(ESC)은 넣지 않는다 — 고정 키다. 다른 키로 바꿨다가 잊으면 설정창을 다시 열 길이 없다.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Shortcuts")
+	TMap<ETDNavMenuType, TSoftObjectPtr<UInputAction>> MenuInputActions;
 };

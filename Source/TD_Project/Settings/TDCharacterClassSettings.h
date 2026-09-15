@@ -5,6 +5,7 @@
 #include "TDCharacterClassSettings.generated.h"
 
 class UDataTable;
+class UMaterialInterface;
 
 /**
  * DT_CharacterClass 를 지정하는 자리. 프로젝트 세팅 > TD > Character 에 나타난다.
@@ -38,4 +39,12 @@ public:
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Character")
 	TSoftObjectPtr<UDataTable> UnionBonusTable;
+
+	/**
+	 * 벽·건물에 가려진 내 캐릭터에 칠할 후처리 재질(UTDSilhouetteComponent).
+	 *
+	 * Material Domain 이 Post Process 여야 한다. 비워 두면 표시하지 않고 경고만 남긴다.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Presentation")
+	TSoftObjectPtr<UMaterialInterface> SilhouetteMaterial;
 };

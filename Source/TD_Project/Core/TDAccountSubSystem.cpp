@@ -1,6 +1,43 @@
 #include "Core/TDAccountSubSystem.h"
 #include "Player/TDPlayerState.h"
 #include "Save/Dummy/TDAccountDummyData.h"
+#include "Data/TDCharacterClassRow.h"
+#include "Settings/TDCharacterClassSettings.h"
+#include "Engine/DataTable.h"
+
+FString UTDAccountSubSystem::NormalizeLoginId(const FString& LoginId)
+{
+    return LoginId.TrimStartAndEnd().ToLower();
+}
+
+bool UTDAccountSubSystem::IsValidLoginId(const FString& LoginId)
+{
+    if (LoginId.Len() < 2 || LoginId.Len() > 32) return false;
+    for (const TCHAR Ch : LoginId)
+        if (!((Ch >= 'a' && Ch <= 'z') || (Ch >= '0' && Ch <= '9') || Ch == '_')) return false;
+    return true;
+}
+
+bool UTDAccountSubSystem::IsValidPassword(const FString& Password, bool bRequireMinimumLength)
+{
+    const int32 MinimumLength = bRequireMinimumLength ? MinPasswordLength : 1;
+    if (Password.Len() < MinimumLength || Password.Len() > MaxPasswordLength) return false;
+    for (const TCHAR Ch : Password)
+        if (Ch < 0x21 || Ch > 0x7E) return false;
+    return true;
+}
+
+FString UTDAccountSubSystem::FilterPasswordInput(const FString& Password)
+{
+    FString Filtered;
+    Filtered.Reserve(FMath::Min(Password.Len(), MaxPasswordLength));
+    for (const TCHAR Ch : Password)
+    {
+        if (Ch >= 0x21 && Ch <= 0x7E) Filtered.AppendChar(Ch);
+        if (Filtered.Len() == MaxPasswordLength) break;
+    }
+    return Filtered;
+}
 
 void UTDAccountSubSystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -17,11 +54,12 @@ bool UTDAccountSubSystem::Login(ATDPlayerState* Player, const FString& LoginId,
 {
 	OutAccountId.Invalidate();
 	OutError = TEXT("아이디 또는 비밀번호가 올바르지 않습니다.");
+	const FString NormalizedLoginId = NormalizeLoginId(LoginId);
 	if (!IsValid(Player) || !Player->HasAuthority() || Player->HasSelectedCharacter()
-		|| LoginId.Len() > 64 || Password.Len() > 128) return false;
+		|| !IsValidLoginId(NormalizedLoginId) || !IsValidPassword(Password, false)) return false;
 	const FTDDummyAccountRecord* Account = Accounts.FindByPredicate([&](const FTDDummyAccountRecord& Entry)
 	{
-		return Entry.LoginId == LoginId && Entry.Password == Password;
+		return Entry.LoginId.Equals(NormalizedLoginId, ESearchCase::IgnoreCase) && Entry.Password == Password;
 	});
 	if (!Account) return false;
 	for (auto It = Sessions.CreateIterator(); It; ++It)
@@ -60,6 +98,7 @@ TArray<FTDCharacterSummary> UTDAccountSubSystem::ListCharacters(const ATDPlayerS
 		{
 			const FTDDummyCharacterRecord& Character = Account->Characters[Slot];
 			FTDCharacterSummary& Summary = Result.AddDefaulted_GetRef();
+			Summary.CharacterId = Character.CharacterId;
 			Summary.CharacterName = Character.CharacterName;
 			Summary.ClassId = Character.Data.ClassId;
 			Summary.Level = Character.Data.Level;
@@ -97,4 +136,63 @@ bool UTDAccountSubSystem::TransferSession(ATDPlayerState* Previous, ATDPlayerSta
     Sessions.Remove(Previous);
     Sessions.Add(Next, AccountId);
     return true;
+}
+
+bool UTDAccountSubSystem::RegisterAccount(ATDPlayerState* Player, const FString& LoginId, const FString& Password, FString& OutError)
+{
+    if (!IsValid(Player) || !Player->HasAuthority() || FindAccount(Player) || Player->HasSelectedCharacter())
+    { OutError = TEXT("로그아웃 상태에서 가입해 주세요."); return false; }
+    const FString NormalizedLoginId = NormalizeLoginId(LoginId);
+    if (!IsValidLoginId(NormalizedLoginId))
+    { OutError = TEXT("아이디는 영문, 숫자, 밑줄을 사용해 2~32자로 입력해 주세요."); return false; }
+    if (!IsValidPassword(Password, true))
+    { OutError = TEXT("비밀번호는 공백 없이 영문, 숫자, 특수문자를 사용해 8~64자로 입력해 주세요."); return false; }
+    for (const auto& Account : Accounts)
+        if (Account.LoginId.Equals(NormalizedLoginId, ESearchCase::IgnoreCase))
+        { OutError = TEXT("이미 사용 중인 아이디입니다."); return false; }
+    FTDDummyAccountRecord Account;
+    Account.AccountId = FGuid::NewGuid(); Account.LoginId = NormalizedLoginId; Account.Password = Password;
+    Accounts.Add(MoveTemp(Account)); OutError.Empty(); return true;
+}
+
+bool UTDAccountSubSystem::CreateCharacter(ATDPlayerState* Player, const FString& Name, FName ClassId, FString& OutError)
+{
+    const FTDDummyAccountRecord* Account = FindAccount(Player);
+    if (!Account || Player->HasSelectedCharacter())
+    { OutError = TEXT("로그인 후 캐릭터 목록에서 생성해 주세요."); return false; }
+    if (Account->Characters.Num() >= MaxCharacters)
+    { OutError = TEXT("캐릭터는 최대 6개까지 생성할 수 있습니다."); return false; }
+    if (Name.Len() < 2 || Name.Len() > 16)
+    { OutError = TEXT("캐릭터 이름은 2~16자로 입력해 주세요."); return false; }
+    for (TCHAR Ch : Name)
+        if (!(FChar::IsAlnum(Ch) || (Ch >= 0xAC00 && Ch <= 0xD7A3) || Ch == '_'))
+        { OutError = TEXT("이름은 한글, 영문, 숫자, 밑줄만 사용할 수 있습니다."); return false; }
+    UDataTable* Classes = GetDefault<UTDCharacterClassSettings>()->ClassTable.LoadSynchronous();
+    if (!Classes || !Classes->FindRow<FTDCharacterClassRow>(ClassId, TEXT("CreateCharacter")))
+    { OutError = TEXT("사용할 수 없는 직업입니다."); return false; }
+    for (const auto& ExistingAccount : Accounts)
+        for (const auto& Character : ExistingAccount.Characters)
+            if (Character.CharacterName.Equals(Name, ESearchCase::IgnoreCase))
+            { OutError = TEXT("이미 사용 중인 캐릭터 이름입니다."); return false; }
+    FTDDummyCharacterRecord Character;
+    Character.CharacterId = FGuid::NewGuid(); Character.CharacterName = Name;
+    Character.Data.ClassId = ClassId;
+    Character.Data.QuickSlots.SetNum(6);
+    FTDDummyAccountRecord* Mutable = Accounts.FindByPredicate([&](const auto& Entry) { return Entry.AccountId == Account->AccountId; });
+    Mutable->Characters.Add(MoveTemp(Character)); OutError.Empty(); return true;
+}
+
+bool UTDAccountSubSystem::DeleteCharacter(ATDPlayerState* Player, const FGuid& CharacterId, FString& OutError)
+{
+    const FTDDummyAccountRecord* Account = FindAccount(Player);
+    if (!Account || Player->HasSelectedCharacter())
+    { OutError = TEXT("캐릭터 선택 화면에서만 삭제할 수 있습니다."); return false; }
+    if (!CharacterId.IsValid())
+    { OutError = TEXT("삭제할 캐릭터를 다시 선택해 주세요."); return false; }
+    FTDDummyAccountRecord* Mutable = Accounts.FindByPredicate([&](const auto& Entry) { return Entry.AccountId == Account->AccountId; });
+    const int32 Index = Mutable->Characters.IndexOfByPredicate([&](const auto& Character) { return Character.CharacterId == CharacterId; });
+    if (Index == INDEX_NONE)
+    { OutError = TEXT("해당 계정에 캐릭터가 없습니다. 목록을 다시 확인해 주세요."); return false; }
+    Mutable->Characters.RemoveAt(Index);
+    OutError.Empty(); return true;
 }

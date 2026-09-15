@@ -33,7 +33,19 @@ enum class ETDZoneTravelResult : uint8
 	Blocked			UMETA(DisplayName = "도착 지점 막힘"),
 
 	/** Pawn 이 없거나 권한이 없다. 정상 흐름에서는 나오지 않는다. */
-	InternalError	UMETA(DisplayName = "내부 오류")
+	InternalError	UMETA(DisplayName = "내부 오류"),
+
+	// 아래 둘은 방 묶음(Zone.Region1.Boss)으로 갈 때만 나온다. 뒤에 붙인 것은 기존 값의
+	// 번호를 바꾸지 않기 위해서다 — 블루프린트에 저장된 enum 값이 밀리면 안 된다.
+
+	/** 방이 전부 다른 파티로 차 있다. 기다리면 풀린다. */
+	RoomsFull		UMETA(DisplayName = "방 가득 참"),
+
+	/**
+	 * 한 번 들어갔다 나온 방에 파티원이 아직 남아 있다. 방이 완전히 비면 다시 들어갈 수 있다.
+	 * 죽고 마을에서 부활해 곧장 전투에 복귀하는 것을 막는다.
+	 */
+	ReentryBlocked	UMETA(DisplayName = "재입장 불가")
 };
 
 /**
@@ -94,7 +106,8 @@ public:
 	 *
 	 * 포탈은 이 함수만 부르면 된다. 목적지의 좌표도, BGM 도, 라이팅도 몰라야 한다 —
 	 *
-	 * 거부하는 경우: 권한 없음 / 테이블에 없는 존 / 레벨 부족 / PlayerStart 없음.
+	 * 거부하는 경우: 권한 없음 / 테이블에 없는 존 / 레벨 부족 / PlayerStart 없음 /
+	 * 방 묶음(보스방)이 가득 참 / 들어갔다 나온 방에 파티원이 남음(ResolveRoomGroup).
 	 * 전부 로그를 남긴다 — 조용히 실패하면 원인을 찾을 수 없다.
 	 *
 	 * 도착 지점은 셋 중 먼저 찾아지는 것으로 정해진다.
@@ -281,6 +294,43 @@ private:
 	 * 배치하지 않았어도 이동은 성공해야 하기 때문이다. 대신 경고를 남긴다.
 	 */
 	AActor* FindZoneStart(FGameplayTag ZoneId, FName EntryName = NAME_None) const;
+
+	// ── 방 묶음 (보스방) ─────────────────────────────────────
+	//
+	// 같은 보스방이 여러 벌 있고, 파티마다 빈 방 하나를 준다. 포탈은 방이 아니라
+	// 묶음(Zone.Region1.Boss)을 가리키고 어느 방인지는 여기서 정한다 — 포탈이 아는 것은
+	// 목적지 하나뿐이어야 한다(D69).
+	//
+	// **점유 상태를 따로 저장하지 않는다.** 그 방의 태그를 CurrentZoneId 로 가진 사람이
+	// 있으면 사용중이다. 나가기·접속 끊김·사망 후 부활이 전부 CurrentZoneId 로 드러나므로
+	// "비었다고 표시하는 걸 빠뜨리는" 경로가 생기지 않는다.
+
+	/**
+	 * InOutZoneId 가 방 묶음이면 실제로 보낼 방으로 바꾼다. 방 묶음이 아니면 건드리지 않는다.
+	 *
+	 * 방 묶음 = 자기 행은 없고 하위 태그 행만 DT_ZoneEnvironment 에 있는 태그.
+	 *
+	 * Room01 부터 순서대로 보며, 내 파티원이 있는 방이 빈 방보다 우선한다.
+	 *   빈 방                         → 입장. 지난 판의 입장 기록과 보스를 치운다
+	 *   내 파티원만 있고 처음 오는 사람 → 합류
+	 *   내 파티원만 있고 들어왔다 나간 사람 → ReentryBlocked
+	 *   남이 있는 방                    → 다음 방
+	 *   전부 사용중                     → RoomsFull
+	 *
+	 * 거부할 때는 시스템 채팅으로 이유를 알린다.
+	 */
+	ETDZoneTravelResult ResolveRoomGroup(APlayerController* Player, FGameplayTag& InOutZoneId);
+
+	/**
+	 * 방마다 이번 판에 한 번이라도 들어온 계정. 재입장을 막는 근거다.
+	 *
+	 * 방이 빈 채로 다음 파티가 들어올 때 지운다. 계정 ID 로 적는 이유는 재접속하면
+	 * PlayerState 가 새로 만들어져 포인터로는 같은 사람을 알아볼 수 없기 때문이다.
+	 */
+	TMap<FGameplayTag, TSet<FString>> RoomEntrants;
+
+	/** 재입장 기록에 쓰는 계정 키. 온라인 ID 가 없으면(스탠드얼론) PlayerId 로 대신한다. */
+	static FString GetRoomEntrantKey(const APlayerState* PlayerState);
 
 	/**
 	 * 동시 접속 상한. 30명 이하 규모에서는 언리얼 기본 복제로 충분하므로

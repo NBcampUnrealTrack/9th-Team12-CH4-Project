@@ -1,4 +1,5 @@
 #include "Player/TDPlayerController.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
@@ -26,11 +27,15 @@
 #include "World/TDNPCBase.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Core/TDUIManagerSubsystem.h"
 
 ATDPlayerController::ATDPlayerController()
 {
+    InteractionFlowComponent = CreateDefaultSubobject<UTDInteractionFlowComponent>(TEXT("InteractionFlowComponent"));
+    ShopServiceComponent = CreateDefaultSubobject<UTDShopServiceComponent>(TEXT("ShopServiceComponent"));
 	// 로컬 컨트롤러에서만 실제로 동작한다. 서버에 있는 남의 컨트롤러에서는
 	// 컴포넌트가 스스로 Tick 을 끈다.
 	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(
@@ -41,6 +46,13 @@ void ATDPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 	InputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &ThisClass::ToggleMouseCursor);
+    InputComponent->BindKey(EKeys::C, IE_Pressed, this, &ThisClass::OpenCharacterMenu);
+    InputComponent->BindKey(EKeys::I, IE_Pressed, this, &ThisClass::OpenInventoryMenu);
+    InputComponent->BindKey(EKeys::K, IE_Pressed, this, &ThisClass::OpenSkillMenu);
+    InputComponent->BindKey(EKeys::O, IE_Pressed, this, &ThisClass::OpenQuestMenu);
+    InputComponent->BindKey(EKeys::P, IE_Pressed, this, &ThisClass::OpenPartyMenu);
+    InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::OpenSystemMenu);
+
 }
 
 void ATDPlayerController::ToggleMouseCursor()
@@ -1002,4 +1014,55 @@ void ATDPlayerController::ClientMarketSearchResult_Implementation(
 	OnMarketSearchResult.Broadcast(Listings);
 
 	UE_LOG(LogTemp, Log, TEXT("거래소 검색 결과 %d건"), Listings.Num());
+}
+
+bool ATDPlayerController::HandleNavShortcut(FKey Key)
+{
+    if (!IsLocalController()) return false;
+    ULocalPlayer* Local = GetLocalPlayer();
+    UTDUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UTDUIManagerSubsystem>() : nullptr;
+    if (!UI || UI->IsChatInputActive() || !UI->IsGameplayWindowLayerReady()) return false;
+    if (FSlateApplication::IsInitialized())
+    {
+        const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
+        if (Focused.IsValid() && Focused->GetTypeAsString().Contains(TEXT("EditableText"))) return false;
+    }
+    if (Key == EKeys::C) UI->RequestMenu(ETDNavMenuType::Character);
+    else if (Key == EKeys::I) UI->RequestMenu(ETDNavMenuType::Inventory);
+    else if (Key == EKeys::K) UI->RequestMenu(ETDNavMenuType::Skill);
+    else if (Key == EKeys::O) UI->RequestMenu(ETDNavMenuType::Quest);
+    else if (Key == EKeys::P) UI->RequestMenu(ETDNavMenuType::Party);
+    else if (Key == EKeys::Escape) UI->RequestMenu(ETDNavMenuType::System);
+    else return false;
+    return true;
+}
+
+void ATDPlayerController::OpenCharacterMenu()
+{
+    HandleNavShortcut(EKeys::C);
+}
+
+void ATDPlayerController::OpenInventoryMenu()
+{
+    HandleNavShortcut(EKeys::I);
+}
+
+void ATDPlayerController::OpenSkillMenu()
+{
+    HandleNavShortcut(EKeys::K);
+}
+
+void ATDPlayerController::OpenQuestMenu()
+{
+    HandleNavShortcut(EKeys::O);
+}
+
+void ATDPlayerController::OpenPartyMenu()
+{
+    HandleNavShortcut(EKeys::P);
+}
+
+void ATDPlayerController::OpenSystemMenu()
+{
+    HandleNavShortcut(EKeys::Escape);
 }

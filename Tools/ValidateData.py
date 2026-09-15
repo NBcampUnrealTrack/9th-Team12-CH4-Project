@@ -24,11 +24,13 @@ ROOT = "/Game/Data/DataTables"
 TABLES = {
     "CharacterClass": f"{ROOT}/Character/DT_CharacterClass",
     "ClassGrowth":    f"{ROOT}/Character/DT_ClassGrowth",
+    "UnionBonus":     f"{ROOT}/Character/DT_UnionBonus",
     "ItemDefinition": f"{ROOT}/Item/DT_ItemDefinition",
     "ItemStat":       f"{ROOT}/Item/DT_ItemStat",
     "ItemSet":        f"{ROOT}/Item/DT_ItemSet",
     "ItemSetBonus":   f"{ROOT}/Item/DT_ItemSetBonus",
     "ItemUseEffect":  f"{ROOT}/Item/DT_ItemUseEffect",
+    "DropTable":      f"{ROOT}/Item/DT_DropTable",
     "Shop":           f"{ROOT}/Shop/DT_Shop",
     "ShopItem":       f"{ROOT}/Shop/DT_ShopItem",
     "Skill":          f"{ROOT}/Skill/DT_Skill",
@@ -60,9 +62,11 @@ REFERENCES = [
     ("SkillPassive", "SkillId",  "Skill",          False),
 
     ("ClassGrowth",  "ClassId",  "CharacterClass", False),
+    ("UnionBonus",   "ClassId",  "CharacterClass", False),
 
     ("ItemStat",      "ItemId",  "ItemDefinition", False),
     ("ItemUseEffect", "ItemId",  "ItemDefinition", False),
+    ("DropTable",     "ItemId",  "ItemDefinition", False),
     ("ItemSetBonus",  "SetId",   "ItemSet",        False),
 
     ("ItemDefinition", "SetId",  "ItemSet",        True),
@@ -91,6 +95,7 @@ ENUMS = [
     ("SkillPassive", "Op", {"Base", "Added", "Increased", "More"}),
     ("ItemSetBonus", "Op", {"Base", "Added", "Increased", "More"}),
     ("SkillEffect",  "Op", {"Base", "Added", "Increased", "More"}),
+    ("UnionBonus",   "Op", {"Base", "Added", "Increased", "More"}),
 ]
 
 
@@ -819,18 +824,26 @@ def check_option_rules(report):
         return
 
     pool_ids = column(pool, "OptionPool", "PoolId", report)
-    item_pools = column(items, "ItemDefinition", "OptionPoolId", report)
-    if pool_ids is None or item_pools is None:
+    item_rows = read_columns(items, "ItemDefinition", ["OptionPoolId", "ItemType"], report)
+    if pool_ids is None or item_rows is None:
         return
 
     known = {value.strip() for _, value in pool_ids if value.strip()}
 
-    for item_name, value in item_pools:
-        pool_id = value.strip()
+    for row in item_rows:
+        item_name = row["__name__"]
+        pool_id = row["OptionPoolId"].strip()
 
         # 빈 FName 은 에디터가 'None' 이라는 글자로 넘긴다. 포션처럼 옵션이 없는 아이템은
         # 풀을 비워 두는 게 정상이므로 "없는 풀" 로 잡으면 안 된다.
+        #
+        # 다만 장신구는 예외다. 얻는 순간 AddItem 이 첫 옵션을 굴리는데, 풀이 비어 있으면
+        # 오류도 경고도 없이 0줄로 들어오고 재굴림도 막힌다.
         if pool_id in ("", "None"):
+            if as_tag(row["ItemType"]) == "Item.Type.Accessory":
+                report.error("옵션",
+                             f"[{item_name}] 은 장신구인데 OptionPoolId 가 비어 있다. "
+                             f"옵션 없이 들어오고 재굴림도 할 수 없다.")
             continue
 
         if pool_id not in known:
@@ -868,6 +881,41 @@ def check_tooltip_settings(report):
             report.warn("툴팁 설정",
                         f"UTDUISettings 의 {key} 이 비어 있다 ({purpose}). "
                         f"프로젝트 세팅 > Game > TD UI 에서 지정할 것.")
+
+
+# ── 게임 규칙이 읽는 테이블 ──────────────────────────────────
+#
+# 툴팁과 달리 이쪽은 비어 있으면 **기능이 통째로 멈춘다.** 그래서 경고가 아니라 오류다.
+#
+# dev 머지(b2cc8b6, 2026-09-11)에서 TDItemOptionSettings 섹션이 통째로 사라진 적이 있다.
+# 한쪽만 가진 섹션이라 git 은 충돌로 보지 않았고, 사흘 뒤 "장신구에 옵션이 안 붙고
+# 재굴림 비용이 0" 으로 드러났다. 머지할 때마다 같은 일이 생길 수 있어 여기서 잡는다.
+#
+#   (키, 프로젝트 세팅 위치, 비었을 때 일어나는 일)
+GAMEPLAY_TABLE_SETTINGS = [
+    ("OptionRarityTable", "TD > Item Option", "추가 옵션을 굴리지도 재굴림하지도 못한다"),
+    ("OptionPoolTable",   "TD > Item Option", "추가 옵션을 굴리지도 재굴림하지도 못한다"),
+    ("DropTable",         "TD > Drop",        "어느 몬스터도 아이템을 떨구지 않는다"),
+    ("UnionBonusTable",   "TD > Character",   "유니온 보너스가 아무에게도 붙지 않는다"),
+]
+
+
+def check_gameplay_table_settings(report):
+    path = unreal.Paths.combine([unreal.Paths.project_config_dir(), "DefaultGame.ini"])
+
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            config = handle.read()
+    except OSError:
+        report.warn("설정", "DefaultGame.ini 를 읽지 못했다. 이 검사는 건너뛴다.")
+        return
+
+    for key, location, consequence in GAMEPLAY_TABLE_SETTINGS:
+        if re.search(rf"^{key}\s*=\s*\S", config, re.MULTILINE) is None:
+            report.error("설정",
+                         f"{key} 가 DefaultGame.ini 에 없다 — {consequence}. "
+                         f"프로젝트 세팅 > {location} 에서 지정할 것. "
+                         f"dev 머지 뒤라면 섹션이 통째로 사라졌을 수 있다.")
 
 
 # ── 코드에 박힌 만렙 ─────────────────────────────────────────
@@ -1078,6 +1126,81 @@ def check_monster_rules(report):
                         f"코드가 뒤집어 처리하지만 시트가 틀린 것이다.")
 
 
+def check_drop_rules(report):
+    """
+    드롭 목록. 참조가 RowName 이 아니라 열(DropTableId)이라 ① 의 형식으로는 못 잡는다.
+
+    한 목록에 여러 행이 속하므로 DropTableId 는 RowName 이 될 수 없다.
+    그래서 "몬스터가 가리키는 목록이 실제로 있는가" 를 여기서 따로 본다.
+    """
+    drop_table = load_table("DropTable", report)
+    monster_table = load_table("MonsterDefinition", report)
+    item_table = load_table("ItemDefinition", report)
+
+    if drop_table is None or monster_table is None or item_table is None:
+        return
+
+    drops = read_columns(drop_table, "DropTable",
+                         ["DropTableId", "ItemId", "Chance", "MinCount", "MaxCount"], report)
+    monsters = read_columns(monster_table, "MonsterDefinition", ["DropTableId"], report)
+    items = read_columns(item_table, "ItemDefinition", ["bStackable"], report)
+
+    if drops is None or monsters is None or items is None:
+        return
+
+    stackable = {row["__name__"]: as_bool(row["bStackable"]) for row in items}
+
+    known_lists = {row["DropTableId"] for row in drops if row["DropTableId"]}
+    used_lists = set()
+
+    for row in monsters:
+        list_id = row["DropTableId"]
+
+        # 비어 있으면 아이템을 떨구지 않는다. 경험치·골드는 그대로 나가므로 정상이다.
+        if not list_id or list_id == "None":
+            continue
+
+        used_lists.add(list_id)
+
+        if list_id not in known_lists:
+            report.error("드롭",
+                         f"몬스터 [{row['__name__']}] 의 DropTableId='{list_id}' 가 "
+                         f"DT_DropTable 에 없다. 아무것도 떨구지 않는다.")
+
+    for list_id in sorted(known_lists - used_lists):
+        report.warn("드롭",
+                    f"목록 '{list_id}' 를 쓰는 몬스터가 없다. "
+                    f"DT_MonsterDefinition 의 DropTableId 를 채우지 않은 것은 아닌지 확인할 것.")
+
+    for row in drops:
+        name = row["__name__"]
+        item_id = row["ItemId"]
+
+        chance = as_float(row["Chance"])
+        if chance <= 0.0:
+            report.warn("드롭", f"[{name}] 의 Chance 가 {chance} 다. 영영 나오지 않는다.")
+        elif chance > 1.0:
+            report.warn("드롭",
+                        f"[{name}] 의 Chance 가 {chance} 다. 0~1 사이여야 하며 "
+                        f"1 을 넘겨도 확률이 더 오르지 않는다.")
+
+        low = as_int(row["MinCount"], 1)
+        high = as_int(row["MaxCount"], 1)
+
+        if low < 1:
+            report.error("드롭", f"[{name}] 의 MinCount 가 {low} 다. 1 이상이어야 한다.")
+
+        if low > high:
+            report.error("드롭", f"[{name}] 의 MinCount({low}) 가 MaxCount({high}) 보다 크다.")
+
+        # 겹치지 않는 아이템이 한 번에 둘 이상 들어오면 칸을 그만큼 먹는다.
+        # 장신구 두 개가 동시에 들어와 인벤토리가 꽉 차면 뒤엣것이 조용히 사라진다.
+        if item_id in stackable and not stackable[item_id] and high > 1:
+            report.error("드롭",
+                         f"[{name}] 의 '{item_id}' 는 겹치지 않는 아이템인데 MaxCount={high} 다. "
+                         f"1 이어야 한다.")
+
+
 def main():
     unreal.log("")
     unreal.log("데이터 검증을 시작한다...")
@@ -1096,10 +1219,12 @@ def main():
     check_skill_effect_rules(report)
     check_shop_rules(report)
     check_monster_rules(report)
+    check_drop_rules(report)
     check_format_arguments(report)
     check_option_rules(report)
     check_reference_max_level(report)
     check_tooltip_settings(report)
+    check_gameplay_table_settings(report)
 
     if not report.dump():
         # -run=pythonscript 는 예외로 끝나야 종료 코드가 0 이 아니게 된다.

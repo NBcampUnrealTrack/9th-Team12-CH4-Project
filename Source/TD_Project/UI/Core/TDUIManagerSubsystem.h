@@ -137,6 +137,9 @@ private:
 	void SaveWindowPosition(ETDNavMenuType MenuType, UTDWindowBaseWidget* Window);
 	void RestoreWindowPosition(ETDNavMenuType MenuType, UTDWindowBaseWidget* Window) const;
 	void ClearWindowRegistry();
+    void RefreshNavCursor();
+    TWeakObjectPtr<APlayerController> NavCursorController;
+    bool bCursorVisibleBeforeNav = false;
 
 	UFUNCTION()
 		void HandleWindowClosed(UTDWindowBaseWidget* ClosedWindow);

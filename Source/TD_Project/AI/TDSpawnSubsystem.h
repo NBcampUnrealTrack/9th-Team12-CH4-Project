@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "TDSpawnSubsystem.generated.h"
 
@@ -24,6 +25,15 @@ public:
 
 	/** 모든 포인트의 재스폰 예약을 취소한다. 레벨을 떠날 때 부른다. */
 	void ClearAll();
+
+	/**
+	 * 한 존의 포인트를 전부 초기화한다(ATDSpawnPoint::ResetForZone).
+	 *
+	 * 보스방이 비었다가 다음 파티가 들어갈 때 GameMode 가 부른다.
+	 * ZoneId 가 **정확히** 같은 포인트만 고른다 — 방 묶음(Zone.Region1.Boss)으로 부르면
+	 * 남이 싸우고 있는 다른 방의 보스까지 되돌아간다.
+	 */
+	void ResetZone(FGameplayTag ZoneId);
 
 	int32 GetSpawnPointCount() const { return SpawnPoints.Num(); }
 

@@ -14,7 +14,7 @@
  * 지금은 직접 IP 접속만 담당한다. 데이터 테이블을 모아 관리할
  * UTDDataSubsystem 도 나중에 여기 붙는다.
  */
-UCLASS()
+UCLASS(Config=Game, DefaultConfig)
 class TD_PROJECT_API UTDGameInstance : public UGameInstance
 {
 	GENERATED_BODY()
@@ -43,6 +43,17 @@ public:
 	bool ConnectToServer(const FString& Address);
 
 private:
+	/** 패키징된 클라이언트가 시작할 때 기본 서버로 자동 접속할지 여부. */
+	UPROPERTY(Config)
+	bool bAutoConnectOnStartup = false;
+
+	/** 바로가기 실행 인자가 없을 때 접속할 기본 서버 주소. */
+	UPROPERTY(Config)
+	FString DefaultServerAddress;
+
+	/** 맵 이동 후 같은 서버로 반복 접속하는 것을 막는다. */
+	bool bAutoConnectAttempted = false;
+
 	/**
 	 * 맵이 로드될 때마다 저장된 옵션을 실제로 반영한다.
 	 *

@@ -83,9 +83,16 @@ void ATDPlayerController::SetupInputComponent()
 
 void ATDPlayerController::ToggleMouseCursor()
 {
- if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
-  if (UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
-   if (UI->IsChatInputActive()) return;
+    // 커서가 필요한 UI가 떠 있는 동안에는 해당 UI의 입력 모드와 복원 상태를 유지한다.
+    if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+    {
+        if (UTDUIManagerSubsystem* UI = LocalPlayer->GetSubsystem<UTDUIManagerSubsystem>())
+        {
+            if (UI->IsChatInputActive() || UI->IsAccountScreenOpen() || UI->HasVisibleGameWindow()) return;
+        }
+    }
+    if (InteractionFlowComponent && (InteractionFlowComponent->IsDialogueActive()
+        || InteractionFlowComponent->IsChapterPresentationActive())) return;
     const ATDCharacterBase* ControlledCharacter = Cast<ATDCharacterBase>(GetPawn());
     if (ControlledCharacter && ControlledCharacter->IsDead()) return;
 	if (!IsLocalController() || GetPawn() == nullptr)
@@ -1066,9 +1073,19 @@ bool ATDPlayerController::HandleNavShortcut(FKey Key)
 bool ATDPlayerController::TryOpenMenu(ETDNavMenuType MenuType)
 {
     if (!IsLocalController()) return false;
+    // ESC는 기존 InteractionFlow의 대화 취소가 처리한다. 여기서는 메뉴만 막는다.
+    if (MenuType == ETDNavMenuType::System && InteractionFlowComponent
+        && InteractionFlowComponent->IsDialogueActive()) return false;
     ULocalPlayer* Local = GetLocalPlayer();
     UTDUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UTDUIManagerSubsystem>() : nullptr;
     if (!UI || UI->IsChatInputActive() || !UI->IsGameplayWindowLayerReady()) return false;
+    // 설정창 안의 텍스트 입력에 포커스가 있어도 ESC로 닫을 수 있다.
+    // 채팅은 위에서 제외하며, 다른 메뉴의 단축키/텍스트 입력 정책은 유지한다.
+    if (MenuType == ETDNavMenuType::System && UI->IsMenuOpen(MenuType))
+    {
+        UI->RequestMenu(MenuType);
+        return true;
+    }
     if (FSlateApplication::IsInitialized())
     {
         const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();

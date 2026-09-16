@@ -153,7 +153,7 @@ impl SaveData {
                     || !slots.insert(item.slot_index)
                     || item.count < 1
                     || item.enhance_level < 0
-                    || !unique(item.options.iter().map(|v| v.option_id.as_str()))
+                    || item.options.iter().any(|v| !valid_id(&v.option_id))
                     || item.options.iter().any(|v| !v.value.is_finite())
                 {
                     return Err("invalid_item");

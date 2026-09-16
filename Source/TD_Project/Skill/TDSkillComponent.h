@@ -40,6 +40,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTDOnSkillCastEnded, FName, SkillId
  * 끊기면 아무것도 쓰지 않은 것이 되므로 되돌리는 코드가 필요 없다 —
  * 롤백을 만들면 되돌리기를 빠뜨리는 경로가 반드시 하나 생긴다.
  */
+
+/** 스킬이 실제로 발동된 순간의 시각 연출 이벤트. 전 머신에서 불린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnSkillFiredVisual);
+
+
 UCLASS(ClassGroup = (TD), meta = (BlueprintSpawnableComponent))
 class TD_PROJECT_API UTDSkillComponent : public UActorComponent
 {
@@ -118,6 +123,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TD|Skill")
 	FTDOnSkillCastEnded OnCastEnded;
 
+	/** 실제 스킬 발동 순간의 캐릭터 시각 연출. */
+	UPROPERTY(BlueprintAssignable, Category = "TD|Skill")
+	FTDOnSkillFiredVisual OnSkillFiredVisual;
+	
 	/**
 	 * TD.SkillVFX 가 넣는 임시 값. 이펙트 크기·위치를 테이블 재임포트 없이 맞출 때 쓴다.
 	 *

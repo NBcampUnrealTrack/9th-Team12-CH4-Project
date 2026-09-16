@@ -7,6 +7,7 @@
 class ATDPlayerState;
 class UInputAction;
 class UInputMappingContext;
+class USoundBase;
 class UTDInteractionComponent;
 class UTDSilhouetteComponent;
 class UTDSkillComponent;
@@ -87,6 +88,9 @@ public:
 	// Enhanced Input 만 쓴다(D44). BindAxisKey 같은 레거시 경로는 리매핑이 안 된다.
 
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	/** 빙의한 뒤 활성화할 입력 묶음. BP_Player 에서 IMC_* 를 지정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -166,6 +170,14 @@ protected:
 	// ══════════════════════════════════════════════════════════════════════
 
 private:
+	/** 서버가 승인한 기본 공격의 기존 멀티캐스트 이벤트에서만 재생한다. */
+	UFUNCTION()
+	void HandleBasicAttackSoundStarted();
+
+	/** 직업 데이터 적용 때 로드하여 보관한다. 공격마다 에셋을 조회하지 않는다. */
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> CachedBasicAttackSound;
+
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */
 	void InitAbilityActorInfo();
 

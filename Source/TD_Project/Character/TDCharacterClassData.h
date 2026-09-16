@@ -5,6 +5,7 @@
 #include "TDCharacterClassData.generated.h"
 
 class UPaperZDAnimInstance;
+class USoundBase;
 class UTexture2D;
 
 /**
@@ -55,4 +56,8 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
 	TSoftClassPtr<UPaperZDAnimInstance> AnimInstanceClass;
+
+	/** 기본 공격 시작 효과음. 비워두면 무음. 사운드 에셋의 Submix는 SM_SFX로 지정한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> BasicAttackSound;
 };

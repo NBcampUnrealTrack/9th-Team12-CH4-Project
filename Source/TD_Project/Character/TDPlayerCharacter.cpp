@@ -22,6 +22,8 @@
 #include "Skill/TDSkillComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 void ATDPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -59,6 +61,45 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 		// 어느 방향 스프라이트를 쓸지 계속 바뀌며 깜빡인다. 즉시 돌게 한다.
 		Movement->RotationRate = FRotator(0.f, 2000.f, 0.f);
 	}
+}
+
+void ATDPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (UTDCombatComponent* Combat = GetCombatComponent())
+	{
+		Combat->OnAttackStarted.AddUniqueDynamic(this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
+	}
+}
+
+void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UTDCombatComponent* Combat = GetCombatComponent())
+	{
+		Combat->OnAttackStarted.RemoveDynamic(this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
+	}
+	if (ATDPlayerState* State = AppearanceSource.Get())
+	{
+		State->OnCharacterClassChanged.RemoveDynamic(this, &ATDPlayerCharacter::OnAppearanceClassChanged);
+	}
+	AppearanceSource.Reset();
+	CachedBasicAttackSound = nullptr;
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void ATDPlayerCharacter::HandleBasicAttackSoundStarted()
+{
+	if (GetNetMode() == NM_DedicatedServer || CachedBasicAttackSound == nullptr)
+	{
+		return;
+	}
+
+	// 스킬 SFX와 같은 경로. 볼륨은 사운드 에셋의 SM_SFX 라우팅이 처리한다.
+	UGameplayStatics::SpawnSoundAttached(
+		CachedBasicAttackSound.Get(), GetRootComponent(), NAME_None, FVector::ZeroVector,
+		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
 }
 
 UTDStatComponent* ATDPlayerCharacter::GetStatComponent() const
@@ -109,6 +150,7 @@ void ATDPlayerCharacter::BindClassAppearance()
 	ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
 	if (State == nullptr)
 	{
+		CachedBasicAttackSound = nullptr;
 		return;
 	}
 
@@ -134,8 +176,9 @@ void ATDPlayerCharacter::OnAppearanceClassChanged(FName NewClassId)
 
 void ATDPlayerCharacter::ApplyClassAppearance(FName ClassId)
 {
-	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
-	if (ClassId.IsNone() || Animation == nullptr)
+	// 미지정 직업·누락된 에셋으로 바뀌어도 이전 직업의 소리가 남지 않게 한다.
+	CachedBasicAttackSound = nullptr;
+	if (ClassId.IsNone())
 	{
 		return;
 	}
@@ -146,6 +189,17 @@ void ATDPlayerCharacter::ApplyClassAppearance(FName ClassId)
 		? ClassTable->FindRow<FTDCharacterClassRow>(ClassId, TEXT("ATDPlayerCharacter::ApplyClassAppearance"), false)
 		: nullptr;
 	const UTDCharacterClassData* Visuals = Row != nullptr ? Row->VisualData.LoadSynchronous() : nullptr;
+	if (GetNetMode() != NM_DedicatedServer && Visuals != nullptr)
+	{
+		CachedBasicAttackSound = Visuals->BasicAttackSound.LoadSynchronous();
+	}
+
+	// 소리 갱신은 애니메이션 누락·동일 클래스에 따른 조기 반환과 독립적이다.
+	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
+	if (Animation == nullptr)
+	{
+		return;
+	}
 	const TSubclassOf<UPaperZDAnimInstance> AnimClass = Visuals != nullptr ? Visuals->AnimInstanceClass.LoadSynchronous() : nullptr;
 
 	if (AnimClass == nullptr)

@@ -48,9 +48,14 @@ public:
 	 * 아이템 툴팁과 스킬 툴팁의 같은 스탯이 다르게 보이지 않는다.
 	 *
 	 * @param bSigned  양수 앞에 `+` 를 붙일지. 옵션 목록은 붙이고, 문장 안에 들어갈 때는 뗀다.
+	 * @param bWithPercentSign
+	 *                 뒤에 `%` 를 붙일지. **문구 틀이 이미 `%` 를 갖고 있으면 꺼야 한다** —
+	 *                 DT_OptionDefinition 의 "최대 체력 +{0}%" 가 그렇고, 켠 채로 넣으면 `%%` 가 된다.
+	 *                 100 을 곱하는 것은 이 값과 무관하다. 숫자는 언제나 비율로 환산된다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "TD|Tooltip")
-	static FText FormatStatValue(FGameplayTag StatTag, ETDModOp Op, float Value, bool bSigned = true);
+	static FText FormatStatValue(FGameplayTag StatTag, ETDModOp Op, float Value,
+		bool bSigned = true, bool bWithPercentSign = true);
 
 	/**
 	 * 스탯의 표시 이름(DT_StatDefinition.DisplayName). 없으면 태그 문자열을 그대로 돌려준다.

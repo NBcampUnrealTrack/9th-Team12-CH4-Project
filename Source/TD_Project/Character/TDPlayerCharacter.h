@@ -50,8 +50,6 @@ public:
 
 	virtual void OnRep_PlayerState() override;
 
-	virtual void BeginPlay() override;
-
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 	// ── 사망·부활 ─────────────────────────────────────────

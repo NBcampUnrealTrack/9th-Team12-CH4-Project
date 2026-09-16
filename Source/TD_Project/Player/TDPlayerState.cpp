@@ -52,6 +52,12 @@ void ATDPlayerState::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 파티가 없을 때 쓸 자기 몫의 몬스터 그룹 키. 접속당 한 번이면 된다.
+	if (HasAuthority() && !SoloInstanceId.IsValid())
+	{
+		SoloInstanceId = FGuid::NewGuid();
+	}
+
 	// 전투력 계산은 서버 몫이다. 클라이언트는 복제된 값을 받기만 한다.
 	if (HasAuthority() && StatComponent != nullptr)
 	{
@@ -69,6 +75,17 @@ void ATDPlayerState::BeginPlay()
 		// 스탯 자체는 이미 최종값이므로, 놓친 알림 대신 지금 상태를 한 번 옮겨 적는다.
 		HandleStatsChanged();
 	}
+}
+
+FGuid ATDPlayerState::GetInstanceGroupId() const
+{
+	// 파티에 들어가면 파티의 키를 쓴다 — 그 순간부터 파티원과 같은 몬스터를 본다.
+	if (PartyComponent != nullptr && PartyComponent->IsInParty())
+	{
+		return PartyComponent->GetPartyId();
+	}
+
+	return SoloInstanceId;
 }
 
 void ATDPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

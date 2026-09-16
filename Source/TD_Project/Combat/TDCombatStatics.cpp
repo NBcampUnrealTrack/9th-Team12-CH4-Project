@@ -336,6 +336,16 @@ namespace
 				{
 					continue;
 				}
+
+				// 남의 사냥터 몬스터는 때릴 수 없다. 화면에 보이지도 않는 것을
+				// 범위 공격이 긁어 가면, 때린 사람은 아무 반응 없는 허공을 치는 셈이 된다.
+				if (const ATDEnemyBase* Enemy = Cast<ATDEnemyBase>(Candidate))
+				{
+					if (!Enemy->IsVisibleToGroup(Attacker))
+					{
+						continue;
+					}
+				}
 			}
 
 			Seen.Add(Candidate);

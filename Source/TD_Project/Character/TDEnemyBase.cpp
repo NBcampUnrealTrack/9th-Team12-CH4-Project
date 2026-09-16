@@ -8,7 +8,9 @@
 #include "Data/TDMonsterRow.h"
 #include "Engine/DataTable.h"
 #include "Items/TDInventoryComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"      
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Stats/TDProgressionComponent.h"                   
 #include "Stats/TDStatComponent.h"
 #include "Components/WidgetComponent.h"
@@ -66,8 +68,88 @@ void ATDEnemyBase::BeginPlay()
 	// 레벨에 배치된 몬스터는 에디터에서 지정한 MonsterId/Level 로 시작한다.
 	// 스포너가 만드는 몬스터는 InitializeFromDefinition 이 먼저 불려 값이 이미 채워져 있다.
 	ApplyDefinition();
-	
+
 	SetupHealthBar();
+
+	// 피격음. 데디 서버는 소리를 낼 곳이 없어 아예 구독하지 않는다.
+	// 체력바와 달리 위젯 컴포넌트가 없는 몬스터도 소리는 나야 하므로 따로 건다.
+	if (!IsRunningDedicatedServer())
+	{
+		OnDamaged.AddUniqueDynamic(this, &ATDEnemyBase::HandleDamagedForSound);
+	}
+}
+
+// ── 인스턴스(그룹 전용 몬스터) ────────────────────────────
+
+bool ATDEnemyBase::IsVisibleToGroup(const AActor* Other) const
+{
+	// 주인이 없는 몬스터는 공용이다. 보스방과 레벨에 직접 배치한 몬스터가 여기 해당한다.
+	if (!OwnerGroupId.IsValid())
+	{
+		return true;
+	}
+
+	// 상대가 무엇으로 오든(컨트롤러·Pawn·PlayerState) 그 사람의 PlayerState 를 찾는다.
+	const APlayerState* State = nullptr;
+
+	if (const APawn* Pawn = Cast<APawn>(Other))
+	{
+		State = Pawn->GetPlayerState();
+	}
+	else if (const AController* AsController = Cast<AController>(Other))
+	{
+		State = AsController->PlayerState;
+	}
+	else
+	{
+		State = Cast<APlayerState>(Other);
+	}
+
+	const ATDPlayerState* TDState = Cast<ATDPlayerState>(State);
+
+	// 플레이어가 아닌 것(다른 몬스터 등)은 그룹을 따지지 않는다. 몬스터끼리는 서로 적이 아니라
+	// 어차피 팀 판정에서 걸러지고, 여기서 막으면 보스의 소환수가 주인을 못 찾는다.
+	if (TDState == nullptr)
+	{
+		return true;
+	}
+
+	return TDState->GetInstanceGroupId() == OwnerGroupId;
+}
+
+bool ATDEnemyBase::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
+	const FVector& SrcLocation) const
+{
+	// 남의 몬스터는 애초에 보내지 않는다. 거리·가시성 같은 나머지 규칙은 엔진 것을 그대로 쓴다.
+	if (!IsVisibleToGroup(RealViewer))
+	{
+		return false;
+	}
+
+	return Super::IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
+}
+
+void ATDEnemyBase::HandleDamagedForSound(AActor* Attacker, float Damage, bool bCritical)
+{
+	if (MonsterTable == nullptr || MonsterId.IsNone())
+	{
+		return;
+	}
+
+	// 재생할 때 조회한다. MonsterId 는 복제로 오는 값이라 BeginPlay 시점에는 아직 비어 있을 수 있다.
+	const FTDMonsterRow* Row =
+		MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("ATDEnemyBase::HandleDamagedForSound"), false);
+
+	USoundBase* Sound = Row != nullptr ? Row->HitSFX.LoadSynchronous() : nullptr;
+	if (Sound == nullptr)
+	{
+		return;   // 피격음을 지정하지 않은 몬스터 — 오류가 아니다
+	}
+
+	// 몬스터에 붙여서 낸다. 죽어서 시체가 사라지면 소리도 함께 끊긴다(스킬 SFX 와 같은 방식).
+	UGameplayStatics::SpawnSoundAttached(
+		Sound, GetRootComponent(), NAME_None, FVector::ZeroVector,
+		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
 }
 
 void ATDEnemyBase::UpdateVitalAttributes()

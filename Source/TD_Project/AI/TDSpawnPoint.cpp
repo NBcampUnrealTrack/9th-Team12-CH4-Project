@@ -5,6 +5,8 @@
 #include "Character/TDEnemyBase.h"
 #include "Components/BillboardComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
+#include "Player/TDPlayerState.h"
 #include "TimerManager.h"
 
 ATDSpawnPoint::ATDSpawnPoint()
@@ -33,7 +35,11 @@ void ATDSpawnPoint::BeginPlay()
 		Subsystem->RegisterSpawnPoint(this);
 	}
 
-	SpawnMonster();
+	// 첫 검사는 바로 한다. 인스턴싱을 끈 자리는 이 한 번으로 예전처럼 몬스터가 선다.
+	UpdateSlots();
+
+	GetWorldTimerManager().SetTimer(
+		UpdateTimerHandle, this, &ATDSpawnPoint::UpdateSlots, FMath::Max(0.1f, UpdateInterval), true);
 }
 
 void ATDSpawnPoint::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -50,11 +56,21 @@ void ATDSpawnPoint::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ATDSpawnPoint::SpawnMonster()
 {
-	if (!HasAuthority() || CurrentMonster != nullptr)
+	if (!HasAuthority())
 	{
 		return;
 	}
 
+	// 그룹 없는 공용 자리. 인스턴싱을 끈 포인트가 쓰는 길이다.
+	FTDSpawnSlot& Slot = Slots.FindOrAdd(FGuid());
+	if (Slot.Monster == nullptr)
+	{
+		SpawnForGroup(FGuid(), Slot);
+	}
+}
+
+void ATDSpawnPoint::SpawnForGroup(const FGuid& GroupId, FTDSpawnSlot& Slot)
+{
 	if (MonsterClass == nullptr)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: MonsterClass 가 비어 있어 스폰하지 못했다."), *GetName());
@@ -66,42 +82,132 @@ void ATDSpawnPoint::SpawnMonster()
 	Params.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-	CurrentMonster = GetWorld()->SpawnActor<ATDEnemyBase>(
+	ATDEnemyBase* Monster = GetWorld()->SpawnActor<ATDEnemyBase>(
 		MonsterClass, GetActorLocation(), GetActorRotation(), Params);
 
-	if (CurrentMonster == nullptr)
+	if (Monster == nullptr)
 	{
 		return;
 	}
+
+	// **스폰 직후에 넣는다.** 이 값이 비어 있는 동안에는 모두에게 보이는 공용 몬스터라,
+	// 한 프레임이라도 늦으면 남의 화면에 잠깐 나타났다 사라진다.
+	Monster->SetOwnerGroupId(GroupId);
 
 	// 행을 지정한 포인트만 덮어쓴다. BeginPlay 의 기본 초기화 뒤에 한 번 더 도는 셈이지만
 	// ClearSources 가 있어 중복 적용은 없다.
 	if (!MonsterId.IsNone())
 	{
-		CurrentMonster->InitializeFromDefinition(MonsterId, Level);
+		Monster->InitializeFromDefinition(MonsterId, Level);
 	}
 
-	CurrentMonster->OnDeath.AddDynamic(this, &ATDSpawnPoint::HandleMonsterDeath);
+	Slot.Monster = Monster;
 }
 
-void ATDSpawnPoint::HandleMonsterDeath()
+TSet<FGuid> ATDSpawnPoint::GatherActiveGroups() const
 {
-	// 죽은 몬스터와의 연결을 끊는다. 액터 자체는 시체 연출 후 SetLifeSpan 으로 알아서 사라진다.
-	CurrentMonster = nullptr;
+	TSet<FGuid> Groups;
 
-	// 보스방은 스스로 되살아나지 않는다. 존이 빈 뒤 ResetForZone 이 살린다.
-	if (!bAutoRespawn)
+	// 인스턴싱을 끈 자리는 언제나 공용 몬스터 한 마리다(예전 동작).
+	if (!bInstancePerGroup)
+	{
+		Groups.Add(FGuid());
+		return Groups;
+	}
+
+	const AGameStateBase* State = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (State == nullptr)
+	{
+		return Groups;
+	}
+
+	const float RadiusSq = FMath::Square(ActivationRadius);
+
+	for (APlayerState* PlayerState : State->PlayerArray)
+	{
+		const ATDPlayerState* TDState = Cast<ATDPlayerState>(PlayerState);
+		if (TDState == nullptr)
+		{
+			continue;
+		}
+
+		// 캐릭터를 아직 고르지 않았거나 죽어서 Pawn 이 없는 사람은 세지 않는다.
+		const APawn* Pawn = TDState->GetPawn();
+		if (Pawn == nullptr)
+		{
+			continue;
+		}
+
+		if (FVector::DistSquared(Pawn->GetActorLocation(), GetActorLocation()) > RadiusSq)
+		{
+			continue;
+		}
+
+		Groups.Add(TDState->GetInstanceGroupId());
+	}
+
+	return Groups;
+}
+
+void ATDSpawnPoint::UpdateSlots()
+{
+	if (!HasAuthority() || GetWorld() == nullptr)
 	{
 		return;
 	}
 
-	GetWorldTimerManager().SetTimer(
-		RespawnTimerHandle, this, &ATDSpawnPoint::SpawnMonster, RespawnDelay, false);
+	const float Now = GetWorld()->GetTimeSeconds();
+	const TSet<FGuid> ActiveGroups = GatherActiveGroups();
+
+	// 새로 온 그룹의 자리를 만들고, 지금 있는 그룹은 본 시각을 갱신한다.
+	for (const FGuid& GroupId : ActiveGroups)
+	{
+		Slots.FindOrAdd(GroupId).LastSeenTime = Now;
+	}
+
+	for (TMap<FGuid, FTDSpawnSlot>::TIterator It(Slots); It; ++It)
+	{
+		FTDSpawnSlot& Slot = It.Value();
+		const bool bActive = ActiveGroups.Contains(It.Key());
+
+		// 죽은 것을 방금 알았다. 지금부터 재스폰 시간을 센다.
+		if (Slot.Monster != nullptr && Slot.Monster->IsDead())
+		{
+			Slot.Monster = nullptr;
+			Slot.RespawnTime = Now + RespawnDelay;
+		}
+
+		// 아무도 없는 자리는 유예가 지나면 정리한다. 몬스터가 남아 있으면 함께 지운다 —
+		// 그대로 두면 아무도 볼 수 없는 몬스터가 서버에서 계속 생각하게 된다.
+		if (!bActive && Now - Slot.LastSeenTime >= GroupExitGrace)
+		{
+			if (Slot.Monster != nullptr)
+			{
+				Slot.Monster->Destroy();
+			}
+
+			It.RemoveCurrent();
+			continue;
+		}
+
+		if (!bActive || Slot.Monster != nullptr)
+		{
+			continue;
+		}
+
+		// 보스방은 스스로 되살아나지 않는다. 존이 빈 뒤 ResetForZone 이 살린다.
+		if (!bAutoRespawn || Now < Slot.RespawnTime)
+		{
+			continue;
+		}
+
+		SpawnForGroup(It.Key(), Slot);
+	}
 }
 
 void ATDSpawnPoint::CancelRespawn()
 {
-	GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
+	GetWorldTimerManager().ClearTimer(UpdateTimerHandle);
 }
 
 void ATDSpawnPoint::ResetForZone()
@@ -111,19 +217,30 @@ void ATDSpawnPoint::ResetForZone()
 		return;
 	}
 
-	// 재스폰이 예약돼 있었으면 기다리지 않고 지금 한다.
-	CancelRespawn();
-
-	if (CurrentMonster == nullptr)
+	for (TPair<FGuid, FTDSpawnSlot>& Pair : Slots)
 	{
-		SpawnMonster();
-		return;
+		FTDSpawnSlot& Slot = Pair.Value;
+
+		// 기다리던 재스폰이 있었으면 지금 한다.
+		if (Slot.Monster == nullptr || Slot.Monster->IsDead())
+		{
+			Slot.Monster = nullptr;
+			Slot.RespawnTime = 0.f;
+			SpawnForGroup(Pair.Key, Slot);
+			continue;
+		}
+
+		// 살아 있다. 이전 파티가 깎아 둔 체력·페이즈·분노가 남으면 안 된다.
+		// 일반 몬스터는 되돌릴 전투 상태가 없어 그대로 둔다.
+		if (ATDBossCharacter* Boss = Cast<ATDBossCharacter>(Slot.Monster))
+		{
+			Boss->ResetFight();
+		}
 	}
 
-	// 살아 있다. 이전 파티가 깎아 둔 체력·페이즈·분노가 남으면 안 된다.
-	// 일반 몬스터는 되돌릴 전투 상태가 없어 그대로 둔다.
-	if (ATDBossCharacter* Boss = Cast<ATDBossCharacter>(CurrentMonster))
+	// 보스방처럼 인스턴싱을 끈 자리인데 아직 한 번도 안 만들어졌으면 여기서 세운다.
+	if (Slots.IsEmpty())
 	{
-		Boss->ResetFight();
+		SpawnMonster();
 	}
 }

@@ -107,7 +107,8 @@ namespace
 	}
 }
 
-FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, float Value, bool bSigned)
+FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, float Value,
+	bool bSigned, bool bWithPercentSign)
 {
 	if (!FMath::IsFinite(Value))
 	{
@@ -132,7 +133,9 @@ FText UTDTooltipStatics::FormatStatValue(FGameplayTag StatTag, ETDModOp Op, floa
 	const FText Amount = FormatAmount(DisplayValue, Decimals);
 	const FText Sign = bSigned && DisplayValue > 0.f ? FText::FromString(TEXT("+")) : FText::GetEmpty();
 
-	return FText::Format(bPercent ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"), Sign, Amount);
+	return FText::Format(
+		bPercent && bWithPercentSign ? LOCTEXT("Percent", "{0}{1}%") : LOCTEXT("Flat", "{0}{1}"),
+		Sign, Amount);
 }
 
 FText UTDTooltipStatics::FormatStatName(FGameplayTag StatTag)
@@ -163,9 +166,11 @@ FText UTDTooltipStatics::FormatItemOption(const APlayerController* Owner, const 
 		return FText::GetEmpty();
 	}
 
-	// 문구에 이미 부호와 `%` 가 들어 있다("최대 체력 +{0}%"). 값만 넣는다.
+	// 문구에 이미 부호와 `%` 가 들어 있다("최대 체력 +{0}%"). 숫자만 넣는다 —
+	// 값 쪽에도 `%` 를 붙이면 "+12%%" 가 된다(2026-09-16).
 	return FText::Format(Row->DisplayName,
-		FormatStatValue(Row->StatTag, Row->Op, Option.Value, /*bSigned=*/false));
+		FormatStatValue(Row->StatTag, Row->Op, Option.Value,
+			/*bSigned=*/false, /*bWithPercentSign=*/false));
 }
 
 TArray<FTDTooltipLine> UTDTooltipStatics::MakeOptionLines(const APlayerController* Owner,

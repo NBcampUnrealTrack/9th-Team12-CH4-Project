@@ -85,6 +85,8 @@ void ATDPlayerCharacter::BeginPlay()
 	{
 		Combat->OnAttackStarted.AddUniqueDynamic(this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
 	}
+
+	SetupNameplate();
 }
 
 void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -155,13 +157,6 @@ void ATDPlayerCharacter::OnRep_PlayerState()
 	InitAbilityActorInfo();
 	BindToStatComponent();
 	BindClassAppearance();
-}
-
-void ATDPlayerCharacter::BeginPlay()
-{
-	Super::BeginPlay();
-
-	SetupNameplate();
 }
 
 // ── 이름표 ────────────────────────────────────────────────

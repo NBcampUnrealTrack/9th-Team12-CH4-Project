@@ -6,6 +6,8 @@
 #include "ScalableFloat.h"
 #include "TDMonsterRow.generated.h"
 
+class USoundBase;
+
 /**
  * DT_MonsterDefinition 의 행. 몬스터 1종 = 1행이다.
  *
@@ -111,4 +113,16 @@ struct FTDMonsterRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Monster|Presentation")
 	TSoftClassPtr<APawn> EnemyClass;
+
+	/**
+	 * 맞았을 때 나는 소리. 비워 두면 그 몬스터만 조용하고 나머지는 그대로 동작한다.
+	 *
+	 * 몬스터마다 두는 이유는 종족마다 소리가 달라서다 — 슬라임과 골렘이 같은 소리를 내면
+	 * 무엇을 때리고 있는지 소리로 구분할 수 없다.
+	 *
+	 * 소프트 참조인 것은 EnemyClass 와 같은 이유다. 사운드 에셋의 Submix 는 SM_SFX 로
+	 * 지정해야 설정창의 효과음 볼륨이 적용된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Monster|Presentation")
+	TSoftObjectPtr<USoundBase> HitSFX;
 };

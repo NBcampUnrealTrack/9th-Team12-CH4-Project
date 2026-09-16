@@ -214,6 +214,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|World")
 	FGameplayTag GetCurrentZoneId() const { return CurrentZoneId; }
 
+	/**
+	 * 사냥터 몬스터를 나눠 갖는 단위. **파티면 PartyId, 혼자면 이 사람만의 값이다.**
+	 *
+	 * 몬스터는 이 값이 같은 사람에게만 보이고 그 사람만 때릴 수 있다. 파티에 들어가면
+	 * 키가 파티의 것으로 바뀌므로, 따로 옮기는 처리 없이 다음 스폰 검사에서 합류한다.
+	 *
+	 * 서버 전용이다 — 판정(FilterByTeam)·AI·복제 관련성 모두 서버에서만 묻는다.
+	 * 클라이언트는 자기에게 복제된 몬스터만 보므로 이 값을 알 필요가 없다.
+	 */
+	FGuid GetInstanceGroupId() const;
+
 	/** 서버 전용. 텔레포트가 끝난 뒤에 부른다. @return 실제로 바뀌었으면 true. */
 	bool SetCurrentZoneId(FGameplayTag NewZoneId);
 
@@ -314,6 +325,13 @@ private:
 	 */
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentZoneId)
 	FGameplayTag CurrentZoneId;
+
+	/**
+	 * 파티가 없을 때 쓰는 자기 몫의 몬스터 그룹 키. 서버가 접속 때 한 번 만든다.
+	 *
+	 * 복제하지 않는다 — 이 값을 묻는 곳(판정·AI·관련성)이 전부 서버다.
+	 */
+	FGuid SoloInstanceId;
 
 	/** GAS 의 중심. 어빌리티·이펙트·어트리뷰트가 전부 여기를 거친다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Abilities")

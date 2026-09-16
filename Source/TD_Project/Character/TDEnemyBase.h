@@ -70,6 +70,32 @@ public:
 	{
 		return MonsterId;
 	}
+
+	// ── 인스턴스(그룹 전용 몬스터) ─────────────────────────
+	//
+	// 사냥터 몬스터는 "이 몬스터는 누구 것인가" 를 들고 다닌다. 값이 같은 사람에게만
+	// 복제되고(IsNetRelevantFor), 그 사람만 때릴 수 있다(FilterByTeam).
+	// 키가 비어 있으면 **모두의 것**이다 — 보스방·배치형 몬스터가 그렇다.
+	//
+	// 키는 ATDPlayerState::GetInstanceGroupId() 에서 온다(파티면 PartyId, 아니면 개인).
+
+	/** 비어 있으면 누구나 보고 때릴 수 있다. */
+	FGuid GetOwnerGroupId() const { return OwnerGroupId; }
+
+	/** 서버 전용. 스폰 포인트가 몬스터를 만들자마자 넣는다. */
+	void SetOwnerGroupId(const FGuid& InGroupId) { OwnerGroupId = InGroupId; }
+
+	/**
+	 * 이 몬스터를 볼 수 있는 사람인가. 그룹 키가 없으면 누구나 볼 수 있다.
+	 *
+	 * 판정·AI·복제가 같은 답을 써야 "안 보이는데 맞는" 몬스터가 생기지 않으므로
+	 * 세 곳이 모두 이 함수를 거친다.
+	 */
+	bool IsVisibleToGroup(const AActor* Other) const;
+
+	/** 남의 몬스터는 아예 복제하지 않는다 — 그래서 화면에 나타나지 않는다. */
+	virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
+		const FVector& SrcLocation) const override;
 	/** "발견!" 방송. AI 컨트롤러가 부른다. */
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnSense();
@@ -98,12 +124,28 @@ protected:
 	UPROPERTY(EditAnywhere, Replicated, Category = "TD|Monster")
 	FName MonsterId;
 
+	/**
+	 * 이 몬스터의 주인 그룹. 복제하지 않는다 — 묻는 곳이 전부 서버다.
+	 *
+	 * 비어 있으면 공용 몬스터다. 레벨에 직접 배치한 몬스터와 보스가 그렇다.
+	 */
+	FGuid OwnerGroupId;
+
 	/** FScalableFloat 커브를 읽을 레벨. */
 	UPROPERTY(EditAnywhere, Category = "TD|Monster", meta = (ClampMin = "1"))
 	int32 Level = 1;
 	
 	/** 체력바 위젯을 찾아 어트리뷰트 변경 델리게이트에 연결한다. 렌더링하는 머신에서만. */
 	void SetupHealthBar();
+
+	/**
+	 * 피격음. OnDamaged 가 부른다 — 그 방송은 서버가 ReceiveHit 에서 쏘고 전 머신이 받으므로,
+	 * 각자 자기 화면에서 재생하면 된다. 체력 변화를 보고 짐작하지 않는 이유는 회복·도트 때문이다.
+	 *
+	 * 소리는 DT_MonsterDefinition 의 HitSFX 에서 읽는다. 지정하지 않은 몬스터는 조용하다.
+	 */
+	UFUNCTION()
+	void HandleDamagedForSound(AActor* Attacker, float Damage, bool bCritical);
 
 private:
 	/** 스탯 계산 결과를 어트리뷰트에 기록한다. 플레이어의 PlayerState 가 하는 일과 같다. */

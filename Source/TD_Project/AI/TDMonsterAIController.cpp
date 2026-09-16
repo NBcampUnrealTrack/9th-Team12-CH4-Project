@@ -258,6 +258,16 @@ ATDCharacterBase* ATDMonsterAIController::FindNearestEnemy() const
 			continue;
 		}
 
+		// 내 그룹이 아닌 사람은 쫓지 않는다. 남에게는 보이지도 않는 몬스터가
+		// 그 사람을 따라다니면 유령에게 맞는 것처럼 보인다.
+		if (const ATDEnemyBase* SelfEnemy = Cast<ATDEnemyBase>(SelfCharacter))
+		{
+			if (!SelfEnemy->IsVisibleToGroup(Candidate))
+			{
+				continue;
+			}
+		}
+
 		const float DistSq = FVector::DistSquared(
 			Self->GetActorLocation(), Candidate->GetActorLocation());
 

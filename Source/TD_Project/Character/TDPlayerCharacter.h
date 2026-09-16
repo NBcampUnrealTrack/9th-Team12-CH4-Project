@@ -10,6 +10,7 @@ class UInputMappingContext;
 class UTDInteractionComponent;
 class UTDSilhouetteComponent;
 class UTDSkillComponent;
+class UWidgetComponent;
 struct FInputActionValue;
 
 /**
@@ -47,6 +48,8 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 
 	virtual void OnRep_PlayerState() override;
+
+	virtual void BeginPlay() override;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
@@ -187,6 +190,17 @@ private:
 	/** 알림을 연결한 PlayerState. 바뀌면 옛 연결을 끊는다. */
 	TWeakObjectPtr<ATDPlayerState> AppearanceSource;
 
+	// ── 이름표 ────────────────────────────────────────────
+
+	/**
+	 * 머리 위 이름표를 켠다. 위젯 클래스는 프로젝트 설정(TD UI)에서 읽는다 —
+	 * 에셋을 코드에 박지 않고, BP_Player 를 고치지 않으려는 것이다.
+	 *
+	 * 내 캐릭터·남의 캐릭터 모두 켠다. 이름 값은 PlayerState 가 복제해 주므로
+	 * 각 머신이 자기 화면의 모든 캐릭터에 대해 스스로 만든다.
+	 */
+	void SetupNameplate();
+
 	/**
 	 * 죽은 뒤 조작을 막고 이동을 멈춘다. 되살아나면 반대로 되돌린다.
 	 *
@@ -225,4 +239,12 @@ private:
 	/** 벽 뒤에 가려진 내 캐릭터의 윤곽. 로컬 플레이어에서만 켜진다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
 	TObjectPtr<UTDSilhouetteComponent> SilhouetteComponent;
+
+	/** 머리 위 이름표. 데디케이티드 서버에서는 만들지 않는다. */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
+	TObjectPtr<UWidgetComponent> NameplateComponent;
+
+	/** 이름표를 캡슐 꼭대기에서 얼마나 더 올릴지(cm). 데미지 텍스트와 겹치면 이 값을 조정한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")
+	float NameplateHeightOffset = 20.f;
 };

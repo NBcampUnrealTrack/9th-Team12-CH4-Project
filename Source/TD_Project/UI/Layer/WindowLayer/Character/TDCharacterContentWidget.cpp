@@ -221,7 +221,8 @@ void UTDCharacterContentWidget::RefreshEquipment()
 		// 교체 전 아이템 ID로 툴팁이 잠깐 갱신되지 않도록 소스부터 교체한다.
 		Visual->SetItemTooltipSource(NAME_None, FText::GetEmpty());
 		Visual->SetSlotVisualData(Data);
-		Visual->SetItemTooltipSource(Item->ItemId, EquippedActionHint, Item->EnhanceLevel);
+		// 개체를 통째로 넘긴다 — 착용 중인 장신구의 추가 옵션도 툴팁에 나온다.
+		Visual->SetItemTooltipInstance(*Item, EquippedActionHint);
 	}
 }
 

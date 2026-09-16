@@ -154,6 +154,16 @@ public:
 	void ServerRerollOptions(int32 SlotIndex, bool bEquipped);
 
 	/**
+	 * 위와 같은 일을 하되 **결과를 돌려준다.** 추가 옵션 NPC 창(UTDOptionServiceComponent)이 쓴다.
+	 *
+	 * ServerRerollOptions 는 결과를 Client RPC 로만 알려주는데, 서비스 창은 결과 문구를
+	 * 같은 화면 갱신에 실어 한 번에 보내야 한다. 강화의 EnhanceItemForService 와 같은 구조다.
+	 *
+	 * 서버 전용. @return 승급했으면 SuccessUpgraded, @param OutRarity 는 굴린 뒤의 등급.
+	 */
+	ETDRerollResult RerollOptionsForService(int32 SlotIndex, bool bEquipped, FGameplayTag& OutRarity);
+
+	/**
 	 * 재굴림에 드는 골드. 버튼 옆에 값을 띄우는 데 쓴다.
 	 *
 	 * 등급 기본값(DT_OptionRarity.RerollCost)에 아이템의 착용 레벨제한 배율이 붙는다.

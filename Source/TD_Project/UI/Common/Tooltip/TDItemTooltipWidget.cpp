@@ -111,9 +111,22 @@ void UTDItemTooltipWidget::SetTooltipData(const FTDTooltipData& InData)
 
 bool UTDItemTooltipWidget::SetItem(FName ItemId, int32 Count, FText Hint, UDataTable* DefinitionTable, int32 EnhanceLevel)
 {
+	// 개체 정보 없이 들어온 경로다. 앞서 표시하던 아이템의 옵션이 남지 않게 비운다.
+	SourceOptions.Reset();
 	SourceEnhanceLevel = FMath::Max(0, EnhanceLevel);
 	SourceItemId = ItemId;
 	SourceCount = FMath::Max(0, Count);
+	SourceHint = Hint;
+	SourceDefinitionTable = DefinitionTable;
+	return RefreshItem();
+}
+
+bool UTDItemTooltipWidget::SetItemInstance(const FTDItemInstance& Item, FText Hint, UDataTable* DefinitionTable)
+{
+	SourceOptions = Item.Options;
+	SourceEnhanceLevel = FMath::Max(0, Item.EnhanceLevel);
+	SourceItemId = Item.ItemId;
+	SourceCount = FMath::Max(0, Item.Count);
 	SourceHint = Hint;
 	SourceDefinitionTable = DefinitionTable;
 	return RefreshItem();
@@ -233,6 +246,19 @@ bool UTDItemTooltipWidget::RefreshItem()
 		}
 		else Line.Label = FText::FromString(Row->EffectTag.ToString());
 		Data.Lines.Add(Line);
+	}
+
+	// 추가 옵션. 개체마다 다른 값이라 정의 테이블이 아니라 넘겨받은 배열로만 그린다.
+	// 문구는 DT_OptionDefinition 이 갖고 있고, 수치를 끼워 넣는 일은 MakeOptionLines 가 한다.
+	const TArray<FTDTooltipLine> OptionLines = UTDTooltipStatics::MakeOptionLines(Controller, SourceOptions);
+	if (!OptionLines.IsEmpty())
+	{
+		// 줄이 하나도 못 만들어졌으면 머리글도 붙이지 않는다 — "추가 옵션" 만 덩그러니 남는다.
+		FTDTooltipLine Header;
+		Header.Label = LOCTEXT("OptionHeader", "추가 옵션");
+		Header.bSectionHeader = true;
+		Data.Lines.Add(Header);
+		Data.Lines.Append(OptionLines);
 	}
 
 	if (bAccessory && !Definition->SetId.IsNone())
@@ -426,6 +452,24 @@ void UTDItemTooltipWidget::AttachText(UUserWidget* Owner, UWidget* Host,
 void UTDItemTooltipWidget::AttachItem(UUserWidget* Host, FName ItemId, int32 Count,
 	const FText& Hint, UDataTable* DefinitionTable, int32 EnhanceLevel)
 {
+	// 개체를 모르는 호출자용 입구. 추가 옵션은 비어 있다.
+	FTDItemInstance Item;
+	Item.ItemId = ItemId;
+	Item.Count = Count;
+	Item.EnhanceLevel = EnhanceLevel;
+	AttachItemInternal(Host, Item, Hint, DefinitionTable);
+}
+
+void UTDItemTooltipWidget::AttachItemInstance(UUserWidget* Host, const FTDItemInstance& Item,
+	const FText& Hint, UDataTable* DefinitionTable)
+{
+	AttachItemInternal(Host, Item, Hint, DefinitionTable);
+}
+
+void UTDItemTooltipWidget::AttachItemInternal(UUserWidget* Host, const FTDItemInstance& Item,
+	const FText& Hint, UDataTable* DefinitionTable)
+{
+	const FName ItemId = Item.ItemId;
 	if (!Host || Host->IsDesignTime()) return;
 	if (ItemId.IsNone()) { ClearItemTooltip(Host); return; }
 	if (!Host->GetWorld() || Host->GetWorld()->GetNetMode() == NM_DedicatedServer) return;
@@ -442,7 +486,7 @@ void UTDItemTooltipWidget::AttachItem(UUserWidget* Host, FName ItemId, int32 Cou
 		Tooltip = Host->GetOwningPlayer() ? CreateWidget<UTDItemTooltipWidget>(Host->GetOwningPlayer(), Class)
 			: CreateWidget<UTDItemTooltipWidget>(Host->GetWorld(), Class);
 	}
-	if (!Tooltip || !Tooltip->SetItem(ItemId, Count, Hint, DefinitionTable, EnhanceLevel))
+	if (!Tooltip || !Tooltip->SetItemInstance(Item, Hint, DefinitionTable))
 	{
 		ClearItemTooltip(Host);
 		return;

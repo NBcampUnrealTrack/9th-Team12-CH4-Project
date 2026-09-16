@@ -2,6 +2,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "Combat/TDCombatComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/WidgetComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "UserSettings/EnhancedInputUserSettings.h"
@@ -20,6 +22,8 @@
 #include "PaperZDAnimInstance.h"
 #include "Settings/TDCharacterClassSettings.h"
 #include "Skill/TDSkillComponent.h"
+#include "UI/InGame/TDNameplateWidget.h"
+#include "UI/Settings/TDUISettings.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 
@@ -46,6 +50,16 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 	SkillComponent = CreateDefaultSubobject<UTDSkillComponent>(TEXT("SkillComponent"));
 
 	SilhouetteComponent = CreateDefaultSubobject<UTDSilhouetteComponent>(TEXT("SilhouetteComponent"));
+
+	// 이름표. 화면 공간이라 카메라가 어디를 보든 정면으로, 거리와 무관하게 또렷하게 그려진다.
+	// 몬스터 체력바·NPC 퀘스트 마커와 같은 설정이다. 위치와 위젯은 BeginPlay 에서 넣는다.
+	NameplateComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("NameplateComponent"));
+	NameplateComponent->SetupAttachment(GetRootComponent());
+	NameplateComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	NameplateComponent->SetDrawAtDesiredSize(true);
+	NameplateComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	NameplateComponent->SetGenerateOverlapEvents(false);
+	NameplateComponent->SetCanEverAffectNavigation(false);
 
 	// 이동 방향으로 캐릭터가 돌아야 PaperZD 가 4방향 스프라이트 중 맞는 것을 고른다.
 	// 컨트롤러 회전을 따라가면 카메라를 돌릴 때 캐릭터가 같이 돌아 방향이 어긋난다.
@@ -100,6 +114,51 @@ void ATDPlayerCharacter::OnRep_PlayerState()
 	InitAbilityActorInfo();
 	BindToStatComponent();
 	BindClassAppearance();
+}
+
+void ATDPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	SetupNameplate();
+}
+
+// ── 이름표 ────────────────────────────────────────────────
+
+void ATDPlayerCharacter::SetupNameplate()
+{
+	// 데디 서버는 화면이 없다. UI 는 그리는 머신(클라·리슨 서버)에서만 만든다.
+	if (IsRunningDedicatedServer() || NameplateComponent == nullptr)
+	{
+		return;
+	}
+
+	const TSubclassOf<UTDNameplateWidget> WidgetClass =
+		GetDefault<UTDUISettings>()->NameplateWidgetClass.LoadSynchronous();
+	if (WidgetClass == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("이름표: 위젯 클래스가 비어 있어 이름표가 뜨지 않는다 — "
+			     "Project Settings > Game > TD UI > Nameplate Widget Class 를 지정할 것."));
+		return;
+	}
+
+	// 캡슐 꼭대기 위로 올린다. 캡슐 크기는 BP 에서 바뀔 수 있으므로 생성자가 아니라 여기서 읽는다.
+	const float HalfHeight = GetCapsuleComponent() != nullptr
+		? GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+		: 0.f;
+	NameplateComponent->SetRelativeLocation(FVector(0.f, 0.f, HalfHeight + NameplateHeightOffset));
+
+	NameplateComponent->SetWidgetClass(WidgetClass);
+
+	// BeginPlay 시점엔 위젯이 아직 안 만들어졌을 수 있다. 명시적으로 만들게 한다(ATDEnemyBase 와 같다).
+	NameplateComponent->InitWidget();
+
+	if (UTDNameplateWidget* Nameplate = Cast<UTDNameplateWidget>(NameplateComponent->GetUserWidgetObject()))
+	{
+		// 위젯은 자기가 누구 머리 위에 있는지 모른다 — 알려주는 것은 소유자 몫.
+		Nameplate->SetTargetPawn(this);
+	}
 }
 
 // ── 직업 외형 ─────────────────────────────────────────────

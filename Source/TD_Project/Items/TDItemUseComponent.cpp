@@ -692,14 +692,25 @@ int32 UTDItemUseComponent::GetRerollCost(int32 SlotIndex, bool bEquipped) const
 
 void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bool bEquipped)
 {
+	// 치트와 기존 호출부의 입구. 결과는 Client RPC 로만 돌아간다.
+	FGameplayTag Rarity;
+	const ETDRerollResult Result = RerollOptionsForService(SlotIndex, bEquipped, Rarity);
+
+	ClientOptionsRerolled(Result, Rarity);
+}
+
+ETDRerollResult UTDItemUseComponent::RerollOptionsForService(
+	int32 SlotIndex, bool bEquipped, FGameplayTag& OutRarity)
+{
+	OutRarity = FGameplayTag();
+
 	const APlayerState* OwnerState = Cast<APlayerState>(GetOwner());
 	UTDInventoryComponent* Inventory =
 		OwnerState ? OwnerState->FindComponentByClass<UTDInventoryComponent>() : nullptr;
 
 	if (Inventory == nullptr)
 	{
-		ClientOptionsRerolled(ETDRerollResult::InternalError, FGameplayTag());
-		return;
+		return ETDRerollResult::InternalError;
 	}
 
 	const FTDItemInstance* Item = nullptr;
@@ -712,14 +723,13 @@ void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bo
 
 	if (Prepared != ETDRerollResult::Success)
 	{
-		ClientOptionsRerolled(Prepared, FGameplayTag());
-		return;
+		return Prepared;
 	}
 
 	if (!Inventory->SpendGold(Cost))
 	{
-		ClientOptionsRerolled(ETDRerollResult::NotEnoughGold, Item->OptionRarity);
-		return;
+		OutRarity = Item->OptionRarity;
+		return ETDRerollResult::NotEnoughGold;
 	}
 
 	// 아직 등급이 없으면 여기서 정해진다(PrepareReroll 과 같은 규칙).
@@ -770,8 +780,8 @@ void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bo
 
 		if (Mutable == nullptr)
 		{
-			ClientOptionsRerolled(ETDRerollResult::InternalError, Rarity);
-			return;
+			OutRarity = Rarity;
+			return ETDRerollResult::InternalError;
 		}
 
 		Mutable->OptionRarity = Rarity;
@@ -785,8 +795,8 @@ void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bo
 	}
 	else if (!Inventory->SetItemOptions(SlotIndex, Rarity, NewOptions))
 	{
-		ClientOptionsRerolled(ETDRerollResult::InternalError, Rarity);
-		return;
+		OutRarity = Rarity;
+		return ETDRerollResult::InternalError;
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("재굴림: %s 칸 %d '%s' — 등급 %s%s, 옵션 %d줄, 비용 %d"),
@@ -794,8 +804,8 @@ void UTDItemUseComponent::ServerRerollOptions_Implementation(int32 SlotIndex, bo
 		*Rarity.ToString(), bUpgraded ? TEXT(" (상승!)") : TEXT(""),
 		NewOptions.Num(), Cost);
 
-	ClientOptionsRerolled(
-		bUpgraded ? ETDRerollResult::SuccessUpgraded : ETDRerollResult::Success, Rarity);
+	OutRarity = Rarity;
+	return bUpgraded ? ETDRerollResult::SuccessUpgraded : ETDRerollResult::Success;
 }
 
 void UTDItemUseComponent::RollInitialOptions(FTDItemInstance& Item) const

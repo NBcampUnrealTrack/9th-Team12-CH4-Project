@@ -242,6 +242,16 @@ public:
 	 */
 	virtual void ApplyNonResolutionSettings() override;
 
+	/**
+	 * 옵션 창의 "적용" 이 부르는 함수. 부모가 화면·화질·저장을 모두 처리하고,
+	 * 여기서는 그 뒤에 **지금 화면 모드를 확인된 값으로 못박는 일** 만 더한다.
+	 *
+	 * 이것을 하지 않으면 엔진이 되돌릴 때 쓰는 기준(LastConfirmedFullscreenMode)이
+	 * 옛 모드로 남는다. 해상도 변경이 실패하거나 저장된 값이 어긋난 것으로 판정되는
+	 * 순간 창 모드가 이전 값으로 돌아간다.
+	 */
+	virtual void ApplySettings(bool bCheckForCommandLineOverrides) override;
+
 	virtual void SetToDefaults() override;
 
 	/**

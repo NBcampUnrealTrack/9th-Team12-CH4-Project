@@ -13,6 +13,7 @@
 #include "TDPlayerController.generated.h"
 
 class UTDInteractionFlowComponent;
+class UTDOptionServiceComponent;
 class UTDShopServiceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnRespawnRequestResult, bool, bSucceeded);
@@ -545,6 +546,15 @@ public:
     void TDCharacterSelect();
     UFUNCTION(Exec, BlueprintCallable, Category="TD|UI|Account")
     void TDLogout();
+    /**
+     * 게임을 닫는다. 설정 창의 종료 버튼이 이것을 부른다.
+     *
+     * 서버에 최종 저장과 사용권 해제를 먼저 요청한다. 그 요청이 도착하기 전에
+     * 프로세스가 닫혀도, 연결이 끊기면 서버가 Destroyed 경로에서 같은 저장을 하므로
+     * 진행 상황이 사라지지 않는다.
+     */
+    UFUNCTION(Exec, BlueprintCallable, Category="TD|UI|Account")
+    void TDQuitGame();
     UFUNCTION(Server, Reliable)
     void ServerLeaveCharacter(bool bLogout);
 
@@ -582,5 +592,8 @@ private:
     TObjectPtr<UTDInteractionFlowComponent> InteractionFlowComponent;
     UPROPERTY(VisibleAnywhere, Category="TD|Shop")
     TObjectPtr<UTDShopServiceComponent> ShopServiceComponent;
+    /** 추가 옵션 재설정 NPC 서비스. 강화와 달리 BP 가 아니라 여기서 붙인다(상점과 같은 자리). */
+    UPROPERTY(VisibleAnywhere, Category="TD|Option")
+    TObjectPtr<UTDOptionServiceComponent> OptionServiceComponent;
 };
 

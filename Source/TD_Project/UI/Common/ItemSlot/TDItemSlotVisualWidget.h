@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
+#include "Items/TDItemTypes.h"
 #include "TDItemSlotVisualWidget.generated.h"
 
 class UImage;
@@ -55,6 +56,10 @@ public:
 	/** 퀵슬롯의 정의 ID. 인벤토리는 바깥쪽 Entry에 툴팁을 붙인다. */
 	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
 	void SetItemTooltipSource(FName ItemId, FText Hint, int32 EnhanceLevel = 0);
+
+	/** 개체를 아는 칸(장착 칸)용. 강화 단계와 추가 옵션이 함께 들어온다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
+	void SetItemTooltipInstance(const FTDItemInstance& Item, FText Hint);
 
 	UFUNCTION(BlueprintCallable, Category = "TD|Item Slot")
 	void SetSlotVisualData(const FTDItemSlotVisualData& InData);
@@ -123,6 +128,8 @@ protected:
 private:
 	FName TooltipItemId;
 	int32 TooltipEnhanceLevel = 0;
+	/** 개체에 굴려진 추가 옵션. ID 만 아는 칸(퀵슬롯)에서는 비어 있다. */
+	TArray<FTDItemOption> TooltipOptions;
 	FText TooltipHint;
 	void RefreshItemTooltip();
 

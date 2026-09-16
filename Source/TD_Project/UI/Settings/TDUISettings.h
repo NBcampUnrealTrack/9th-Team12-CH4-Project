@@ -6,6 +6,7 @@
 #include "TDUISettings.generated.h"
 
 class UInputAction;
+class UTDNameplateWidget;
 class UTDTypographyThemeDA;
 class UTDWindowBaseWidget;
 class UTDItemTooltipWidget;
@@ -92,6 +93,15 @@ public:
 	TSoftClassPtr<UTDWindowBaseWidget> UnionWindowClass;
 
 	/**
+	 * 추가 옵션(잠재능력) 재설정 창. 부모 클래스가 UTDOptionWindowWidget 인 WBP 를 지정한다.
+	 *
+	 * NPC 와 대화를 마치면 열린다. 다른 창들과 달리 단축키로는 열 수 없다 —
+	 * 강화와 같이 NPC 앞에서만 쓰는 기능이다.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+	TSoftClassPtr<UTDWindowBaseWidget> OptionWindowClass;
+
+	/**
 	 * 창 단축키. 창 종류 → 입력 액션.
 	 *
 	 * 키를 코드에 적지 않고 입력 액션으로 받아야 설정창에서 바꿀 수 있다. 액션의
@@ -102,4 +112,12 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Shortcuts")
 	TMap<ETDNavMenuType, TSoftObjectPtr<UInputAction>> MenuInputActions;
+
+	/**
+	 * 플레이어 머리 위 이름표. 부모 클래스가 UTDNameplateWidget 인 WBP 를 지정한다.
+	 *
+	 * 비워 두면 이름표만 뜨지 않고 나머지는 그대로 동작한다.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Nameplate")
+	TSoftClassPtr<UTDNameplateWidget> NameplateWidgetClass;
 };

@@ -81,6 +81,10 @@ struct TD_PROJECT_API FTDNPCRow
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Enhance")
 	bool bOpenEnhanceAfterDialogue = false;
 
+	/** 정상적인 대화 종료 후 추가 옵션(잠재능력) 재설정 창을 여는 NPC인지 여부입니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Option")
+	bool bOpenOptionAfterDialogue = false;
+
 	/** 정상적인 대화 종료 후 상점창을 여는 NPC인지 여부입니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|NPC|Shop")
 	bool bOpenShopAfterDialogue = false;

@@ -91,6 +91,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PawnClientRestart() override;
 
 	/** 빙의한 뒤 활성화할 입력 묶음. BP_Player 에서 IMC_* 를 지정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input")
@@ -265,6 +266,32 @@ private:
 		Category = "TD|Interaction",
 		meta = (AllowPrivateAccess = "true"))
 		TObjectPtr<UTDInteractionComponent> InteractionComponent;
+
+	/**
+	 * NPC 또는 보물상자가 실제 F키 상호작용 대상으로 선택됐을 때만
+	 * 로컬 플레이어의 화면에 표시되는 안내 이미지.
+	 *
+	 * 위젯 클래스와 표시 상태는 복제하지 않으며, 원격 플레이어 프록시와
+	 * 데디케이티드 서버에서는 위젯을 생성하지 않는다.
+	 */
+	UPROPERTY(VisibleAnywhere, Category = "TD|Interaction")
+		TObjectPtr<UWidgetComponent> InteractionPromptComponent;
+
+	/** 캡슐 꼭대기에서 상호작용 안내 이미지를 추가로 올릴 높이(cm). */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Interaction|Presentation",
+		meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "300.0"))
+		float InteractionPromptHeightOffset = 100.0f;
+
+	/** 로컬 소유권이 확정된 뒤 위젯을 만들고 갱신 타이머를 시작한다. */
+	void InitializeInteractionPrompt();
+
+	/** 현재 실제 F키 대상이 NPC 또는 보물상자인지 로컬에서 확인한다. */
+	void RefreshInteractionPrompt();
+
+	void ShowInteractionPrompt();
+	void HideInteractionPrompt();
+
+	FTimerHandle InteractionPromptTimerHandle;
 
 	/**
 	 * 액티브 스킬. 평타(UTDCombatComponent)와 마찬가지로 Pawn 에 둔다 —

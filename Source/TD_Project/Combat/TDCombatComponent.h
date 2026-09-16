@@ -11,6 +11,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FTDOnHit, AActor*, Target, float, 
 /** 공격 모션 시작. 애니메이션·사운드가 구독한다. 전 머신에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTDOnAttackStarted);
 /**
+ * 플레이어 공격 연출용 방송. 위치와 방향은 서버가 공격 승인 순간 확정한 값을 사용한다.
+ * 각 클라이언트가 자기 이동 상태로 방향을 다시 계산할 때 생기는 데디서버 불일치를 막는다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FTDOnAttackPresentationStarted,
+	int32, AttackIndex,
+	FVector, Origin,
+	FRotator, FacingRotation);
+/**
  * 공격 모션 시작 + 어느 공격인지. 몽타주를 고르는 BP 가 구독한다.
  * 번호는 서버가 골라 방송에 실어 보내므로 전 머신이 같은 모션을 본다.
  * OnAttackStarted 와 같은 순간에 불린다 — 번호가 필요 없는 구독자는 그쪽을 쓰면 된다.
@@ -84,6 +93,9 @@ public:
 	FTDOnAttackStarted OnAttackStarted;
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
+	FTDOnAttackPresentationStarted OnAttackPresentationStarted;
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Combat")
 	FTDOnPatternStarted OnPatternStarted;
 
 	/** 히트박스가 향할 방향(XY 단위벡터). 마지막 이동 방향이며, AI 는 공격 직전 명시한다. */
@@ -121,9 +133,9 @@ protected:
 	UFUNCTION()
 	void HandleMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
 
-	/** 공격 시작 방송. 각 머신에서 OnAttackStarted 와 OnPatternStarted 를 발화시킨다. */
+	/** 공격 시작 방송. 기존 이벤트와 서버 기준 연출 이벤트를 각 머신에서 함께 발화시킨다. */
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastOnAttack(int32 AttackIndex);
+	void MulticastOnAttack(int32 AttackIndex, FVector Origin, FRotator FacingRotation);
 
 	/** 지연이 끝난 뒤 실제 판정. 서버 전용. */
 	void PerformHit();

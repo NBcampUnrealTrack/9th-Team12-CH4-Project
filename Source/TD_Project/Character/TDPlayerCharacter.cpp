@@ -29,6 +29,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "NiagaraFunctionLibrary.h"
+#include "AnimSequences/PaperZDAnimSequence.h"
 
 void ATDPlayerCharacter::GetLifetimeReplicatedProps(
 		TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -93,16 +95,25 @@ void ATDPlayerCharacter::BeginPlay()
 	SetupNameplate();
 	SetupChatBubble();
 	if (UTDCombatComponent* Combat = GetCombatComponent()){
-		Combat->OnAttackStarted.AddUniqueDynamic(
-				this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
+		Combat->OnAttackPresentationStarted.AddUniqueDynamic(
+				this, &ATDPlayerCharacter::HandleBasicAttackPresentationStarted);
+	}
+	if (SkillComponent != nullptr){
+		SkillComponent->OnSkillFiredVisual.AddUniqueDynamic(
+				this, &ATDPlayerCharacter::HandleSkillActionStarted);
 	}
 }
+
 
 void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UTDCombatComponent* Combat = GetCombatComponent()){
-		Combat->OnAttackStarted.RemoveDynamic(
-				this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
+		Combat->OnAttackPresentationStarted.RemoveDynamic(
+				this, &ATDPlayerCharacter::HandleBasicAttackPresentationStarted);
+	}
+	if (SkillComponent != nullptr){
+		SkillComponent->OnSkillFiredVisual.RemoveDynamic(
+				this, &ATDPlayerCharacter::HandleSkillActionStarted);
 	}
 	if (ATDPlayerState* State = AppearanceSource.Get()){
 		State->OnCharacterClassChanged.RemoveDynamic(
@@ -110,21 +121,80 @@ void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	AppearanceSource.Reset();
 	CachedBasicAttackSound = nullptr;
-
+	CachedActionAnimation = nullptr;
+	CachedBasicAttackVFX = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
-void ATDPlayerCharacter::HandleBasicAttackSoundStarted()
+void ATDPlayerCharacter::PlayClassActionAnimation()
 {
-	if (GetNetMode() == NM_DedicatedServer || CachedBasicAttackSound == nullptr){
+	if (GetNetMode() == NM_DedicatedServer || CachedActionAnimation == nullptr)
+	{
 		return;
 	}
-
-	// 스킬 SFX와 같은 경로. 볼륨은 사운드 에셋의 SM_SFX 라우팅이 처리한다.
-	UGameplayStatics::SpawnSoundAttached(
-			CachedBasicAttackSound.Get(), GetRootComponent(), NAME_None, FVector::ZeroVector,
-			EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
+	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
+	if (Animation == nullptr)
+	{
+		return;
+	}
+	UPaperZDAnimInstance* AnimInstance = Animation->GetAnimInstance();
+	if (AnimInstance == nullptr)
+	{
+		return;
+	}
+	AnimInstance->PlayAnimationOverride(CachedActionAnimation.Get(), FName("DefaultSlot"));
 }
+void ATDPlayerCharacter::HandleBasicAttackPresentationStarted(
+	int32 AttackIndex, FVector Origin, FRotator FacingRotation)
+{
+	(void)AttackIndex;
+	PlayClassActionAnimation();
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	if (CachedBasicAttackSound != nullptr)
+	{
+		UGameplayStatics::SpawnSoundAttached(
+			CachedBasicAttackSound.Get(),
+			GetRootComponent(),
+			NAME_None,
+			FVector::ZeroVector,
+			EAttachLocation::SnapToTarget,
+			/*bStopWhenAttachedToDestroyed=*/true);
+	}
+	PlayBasicAttackVFX(Origin, FacingRotation);
+}
+void ATDPlayerCharacter::PlayBasicAttackVFX(
+	const FVector& Origin, const FRotator& FacingRotation) const
+{
+	if (GetNetMode() == NM_DedicatedServer || CachedBasicAttackVFX == nullptr)
+	{
+		return;
+	}
+	FVector Direction = FacingRotation.Vector().GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = GetActorForwardVector().GetSafeNormal2D();
+	}
+	const FVector SpawnLocation = Origin
+		+ Direction * CachedBasicAttackVFXForwardOffset
+		+ FVector::UpVector * CachedBasicAttackVFXHeightOffset;
+	const FRotator SpawnRotation =
+		(FacingRotation.Quaternion()
+			* CachedBasicAttackVFXRotationOffset.Quaternion()).Rotator();
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		this,
+		CachedBasicAttackVFX.Get(),
+		SpawnLocation,
+		SpawnRotation,
+		FVector(CachedBasicAttackVFXScale));
+}
+void ATDPlayerCharacter::HandleSkillActionStarted()
+{
+	PlayClassActionAnimation();
+}
+
 
 UTDStatComponent* ATDPlayerCharacter::GetStatComponent() const
 {
@@ -226,6 +296,12 @@ void ATDPlayerCharacter::BindClassAppearance()
 	ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
 	if (State == nullptr){
 		CachedBasicAttackSound = nullptr;
+		CachedActionAnimation = nullptr;
+		CachedBasicAttackVFX = nullptr;
+		CachedBasicAttackVFXForwardOffset = 0.f;
+		CachedBasicAttackVFXHeightOffset = 0.f;
+		CachedBasicAttackVFXRotationOffset = FRotator::ZeroRotator;
+		CachedBasicAttackVFXScale = 1.f;
 		return;
 	}
 
@@ -251,55 +327,90 @@ void ATDPlayerCharacter::OnAppearanceClassChanged(FName NewClassId)
 
 void ATDPlayerCharacter::ApplyClassAppearance(FName ClassId)
 {
-	// 미지정 직업·누락된 에셋으로 바뀌어도 이전 직업의 소리가 남지 않게 한다.
 	CachedBasicAttackSound = nullptr;
-	if (ClassId.IsNone()){
+	CachedActionAnimation = nullptr;
+	CachedBasicAttackVFX = nullptr;
+	CachedBasicAttackVFXForwardOffset = 0.f;
+	CachedBasicAttackVFXHeightOffset = 0.f;
+	CachedBasicAttackVFXRotationOffset = FRotator::ZeroRotator;
+	CachedBasicAttackVFXScale = 1.f;
+	if (ClassId.IsNone() || GetNetMode() == NM_DedicatedServer)
+	{
 		return;
 	}
-
-	// 파티창·HUD 초상화와 같은 경로로 읽는다(UTDPlayerStatsViewModel). 직업 → 그림의 짝이 한 곳에 모인다.
-	const UDataTable* ClassTable = UTDCharacterClassSettings::Get()->ClassTable.LoadSynchronous();
-	const FTDCharacterClassRow* Row = ClassTable != nullptr
-		                                  ? ClassTable->FindRow<FTDCharacterClassRow>(
-				                                  ClassId, TEXT(
-						                                  "ATDPlayerCharacter::ApplyClassAppearance"),
-				                                  false)
-		                                  : nullptr;
-	const UTDCharacterClassData* Visuals = Row != nullptr
-		                                       ? Row->VisualData.LoadSynchronous()
-		                                       : nullptr;
-	if (GetNetMode() != NM_DedicatedServer && Visuals != nullptr){
-		CachedBasicAttackSound = Visuals->BasicAttackSound.LoadSynchronous();
-	}
-
-	// 소리 갱신은 애니메이션 누락·동일 클래스에 따른 조기 반환과 독립적이다.
-	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
-	if (Animation == nullptr){
-		return;
-	}
-	const TSubclassOf<UPaperZDAnimInstance> AnimClass = Visuals != nullptr
-		                                                    ? Visuals->AnimInstanceClass.
-		                                                    LoadSynchronous()
-		                                                    : nullptr;
-
-	if (AnimClass == nullptr){
+	const UDataTable* ClassTable =
+		UTDCharacterClassSettings::Get()->ClassTable.LoadSynchronous();
+	if (ClassTable == nullptr)
+	{
 		UE_LOG(LogTemp, Warning,
-		       TEXT("외형: '%s' 의 애니메이션을 찾지 못해 기본 외형으로 남는다 — "
-			       "DT_CharacterClass 행 · VisualData · 그 에셋의 AnimInstanceClass 를 확인할 것."),
-		       *ClassId.ToString());
+			TEXT("직업 외형: ClassTable을 불러오지 못했다."));
 		return;
 	}
-
-	// 다시 넣으면 애니메이션 인스턴스가 새로 만들어져 재생 중이던 동작이 끊긴다.
-	if (Animation->GetAnimInstanceClass() == AnimClass){
+	const FTDCharacterClassRow* Row =
+		ClassTable->FindRow<FTDCharacterClassRow>(
+			ClassId,
+			TEXT("ATDPlayerCharacter::ApplyClassAppearance"),
+			false);
+	if (Row == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("직업 외형: DT_CharacterClass에 '%s' 행이 없다."),
+			*ClassId.ToString());
 		return;
 	}
-
-	Animation->SetAnimInstanceClass(AnimClass);
-
-	UE_LOG(LogTemp, Log, TEXT("외형 적용(%s): %s — %s → %s"),
-	       GetNetMode() == NM_Client ? TEXT("클라") : TEXT("서버"),
-	       *GetName(), *ClassId.ToString(), *AnimClass->GetName());
+	const UTDCharacterClassData* Visuals =
+		Row->VisualData.LoadSynchronous();
+	if (Visuals == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("직업 외형: '%s'의 VisualData가 비어 있다."),
+			*ClassId.ToString());
+		return;
+	}
+	CachedBasicAttackSound =
+		Visuals->BasicAttackSound.LoadSynchronous();
+	CachedActionAnimation =
+		Visuals->ActionAnimation.LoadSynchronous();
+	CachedBasicAttackVFX =
+		Visuals->BasicAttackVFX.LoadSynchronous();
+	CachedBasicAttackVFXForwardOffset =
+		Visuals->BasicAttackVFXForwardOffset;
+	CachedBasicAttackVFXHeightOffset =
+		Visuals->BasicAttackVFXHeightOffset;
+	CachedBasicAttackVFXRotationOffset =
+		Visuals->BasicAttackVFXRotationOffset;
+	CachedBasicAttackVFXScale =
+		Visuals->BasicAttackVFXScale;
+	if (CachedActionAnimation == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("직업 외형: '%s'의 ActionAnimation이 비어 있다."),
+			*ClassId.ToString());
+	}
+	UPaperZDAnimationComponent* Animation = GetAnimationComponent();
+	if (Animation == nullptr)
+	{
+		return;
+	}
+	const TSubclassOf<UPaperZDAnimInstance> AnimClass =
+		Visuals->AnimInstanceClass.LoadSynchronous();
+	if (AnimClass == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("직업 외형: '%s'의 AnimInstanceClass가 비어 있다."),
+			*ClassId.ToString());
+		return;
+	}
+	if (Animation->GetAnimInstanceClass() != AnimClass)
+	{
+		Animation->SetAnimInstanceClass(AnimClass);
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("직업 외형 적용: %s → Class=%s, AnimBP=%s, Action=%s"),
+		*GetName(),
+		*ClassId.ToString(),
+		*AnimClass->GetName(),
+		*GetNameSafe(CachedActionAnimation.Get()));
 }
 
 void ATDPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

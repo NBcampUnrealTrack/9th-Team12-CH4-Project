@@ -59,6 +59,7 @@ void UTDNavMenuWidget::InitializeNavEntries()
 	AddEntry(PartyEntry, ETDNavMenuType::Party);
 	AddEntry(SystemEntry, ETDNavMenuType::System);
 	AddEntry(UnionEntry, ETDNavMenuType::Union);
+	AddEntry(MarketEntry, ETDNavMenuType::Market);
 }
 
 void UTDNavMenuWidget::SelectEntry(UTDNavMenuButtonWidget* NewSelectedEntry)
@@ -98,6 +99,9 @@ void UTDNavMenuWidget::SetMenuSelected(
 		break;
 	case ETDNavMenuType::Union:
 		TargetEntry = UnionEntry;
+		break;
+	case ETDNavMenuType::Market:
+		TargetEntry = MarketEntry;
 		break;
 	default:
 		break;

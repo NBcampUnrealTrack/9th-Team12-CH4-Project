@@ -13,6 +13,7 @@
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "UI/HUD/TDPlayerStatusWidget.h"
+#include "UI/HUD/TDLowHealthStyleDA.h"
 #include "UI/ViewModel/TDPlayerStatsSubsystem.h"
 #include "UI/ViewModel/TDPlayerStatsViewModel.h"
 #include "Components/CanvasPanel.h"

@@ -18,6 +18,7 @@ void UTDChatSubsystem::Deinitialize()
  UnbindSource();
  Messages.Reset();
  OnHistoryChanged.Clear();
+ OnMessageReceived.Clear();
  Super::Deinitialize();
 }
 
@@ -84,7 +85,8 @@ void UTDChatSubsystem::HandleReceived(ETDChatChannel Channel, FString SenderName
  Entry.Channel = Channel;
  Entry.SenderName = SenderName;
  Entry.Message = Message;
- Append(MoveTemp(Entry));
+ Append(Entry);
+ OnMessageReceived.Broadcast(Entry);
 }
 
 void UTDChatSubsystem::HandleSendFailed(ETDChatSendResult Reason)

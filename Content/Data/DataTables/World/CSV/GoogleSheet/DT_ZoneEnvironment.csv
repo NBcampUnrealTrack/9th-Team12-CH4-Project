@@ -4,14 +4,14 @@ R1_Field01,Zone.Region1.Field01,마을 입구,0,False,Zone.Region1.Town,None,"((
 R1_Field02,Zone.Region1.Field02,숲의 경계,5,False,Zone.Region1.Town,None,"((TagName=""Zone.Region1.Town""),(TagName=""Zone.Region2.Town""))",8,None
 R1_Field03,Zone.Region1.Field03,잊혀진 숲,12,False,Zone.Region1.Town,None,"((TagName=""Zone.Region1.Town""),(TagName=""Zone.Region2.Town""))",15,None
 R1_Field04,Zone.Region1.Field04,듀라한 성 복도,15,False,Zone.Region1.Town,None,,18,None
-R1_Boss01,Zone.Region1.Boss.Room01,듀라한의 방,10,False,Zone.Region1.Boss.Room01,1-5_BossPS,,12,None
-R1_Boss02,Zone.Region1.Boss.Room02,듀라한의 방,10,False,Zone.Region1.Boss.Room02,1-5_BossPS,,18,None
-R1_Boss03,Zone.Region1.Boss.Room03,듀라한의 방,10,False,Zone.Region1.Boss.Room03,1-5_BossPS,,22,None
-R1_Boss04,Zone.Region1.Boss.Room04,듀라한의 방,10,False,Zone.Region1.Boss.Room04,1-5_BossPS,,25,None
-R2_Town,Zone.Region2.Town,사막 마을,25,True,Zone.Region2.Town,2-0_1_PS,,25,None
+R1_Boss01,Zone.Region1.Boss.Room01,듀라한의 방,10,False,Zone.Region1.Boss.Room01,1-5_BossPS1,,12,None
+R1_Boss02,Zone.Region1.Boss.Room02,듀라한의 방,10,False,Zone.Region1.Boss.Room02,1-5_BossPS2,,18,None
+R1_Boss03,Zone.Region1.Boss.Room03,듀라한의 방,10,False,Zone.Region1.Boss.Room03,1-5_BossPS3,,22,None
+R1_Boss04,Zone.Region1.Boss.Room04,듀라한의 방,10,False,Zone.Region1.Boss.Room04,1-5_BossPS4,,25,None
+R2_Town,Zone.Region2.Town,사막 마을,25,True,Zone.Region2.Town,Zone.Region2.Town,,25,None
 R2_Field01,Zone.Region2.Field01,사막 입구,25,False,Zone.Region2.Town,None,"((TagName=""Zone.Region1.Town""),(TagName=""Zone.Region2.Town""))",28,None
 R2_Field02,Zone.Region2.Field02,깊은 사막,32,False,Zone.Region2.Town,None,"((TagName=""Zone.Region1.Town""),(TagName=""Zone.Region2.Town""))",35,None
-R2_Boss01,Zone.Region2.Boss.Room01,죠스의 방,30,False,Zone.Region2.Boss.Room01,2-3_BossPS,,32,None
-R2_Boss02,Zone.Region2.Boss.Room02,죠스의 방,30,False,Zone.Region2.Boss.Room02,2-3_BossPS,,38,None
-R2_Boss03,Zone.Region2.Boss.Room03,죠스의 방,30,False,Zone.Region2.Boss.Room03,2-3_BossPS,,44,None
-R2_Boss04,Zone.Region2.Boss.Room04,죠스의 방,30,False,Zone.Region2.Boss.Room04,2-3_BossPS,,48,None
+R2_Boss01,Zone.Region2.Boss.Room01,죠스의 방,30,False,Zone.Region2.Boss.Room01,2-3_BossPS1,,32,None
+R2_Boss02,Zone.Region2.Boss.Room02,죠스의 방,30,False,Zone.Region2.Boss.Room02,2-3_BossPS2,,38,None
+R2_Boss03,Zone.Region2.Boss.Room03,죠스의 방,30,False,Zone.Region2.Boss.Room03,2-3_BossPS3,,44,None
+R2_Boss04,Zone.Region2.Boss.Room04,죠스의 방,30,False,Zone.Region2.Boss.Room04,2-3_BossPS4,,48,None

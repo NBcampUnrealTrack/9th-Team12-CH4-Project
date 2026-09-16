@@ -532,6 +532,13 @@ ETDZoneTravelResult ATDGameMode::RequestZoneTravelInternal(APlayerController* Pl
 			UE_LOG(LogTemp, Log,
 				TEXT("존 이동 거부: '%s' 는 %d 레벨부터 입장할 수 있다. (현재 %d)"),
 				*TargetZoneId.ToString(), ZoneRow->RequiredLevel, Level);
+
+			// 포탈은 탄 사람에게 아무 반응도 주지 않으면 고장난 것처럼 보인다.
+			// 보스방 거부(위)와 같은 자리에서 같은 방식으로 알린다.
+			SendSystemMessage(Player, ETDChatChannel::System,
+				FString::Printf(TEXT("%d 레벨부터 입장할 수 있습니다. (현재 %d 레벨)"),
+					ZoneRow->RequiredLevel, Level));
+
 			return ETDZoneTravelResult::LevelTooLow;
 		}
 	}

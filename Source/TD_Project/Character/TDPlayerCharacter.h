@@ -12,6 +12,8 @@ class UTDInteractionComponent;
 class UTDSilhouetteComponent;
 class UTDSkillComponent;
 class UWidgetComponent;
+class UPaperZDAnimSequence; 
+class UNiagaraSystem;       
 struct FInputActionValue;
 
 /**
@@ -170,13 +172,39 @@ protected:
 	// ══════════════════════════════════════════════════════════════════════
 
 private:
-	/** 서버가 승인한 기본 공격의 기존 멀티캐스트 이벤트에서만 재생한다. */
+	/** 서버가 승인한 위치·방향으로 평타 애니메이션, 사운드, VFX를 함께 재생한다. */
 	UFUNCTION()
-		void HandleBasicAttackSoundStarted();
+	void HandleBasicAttackPresentationStarted(
+		int32 AttackIndex, FVector Origin, FRotator FacingRotation);
 
-	/** 직업 데이터 적용 때 로드하여 보관한다. 공격마다 에셋을 조회하지 않는다. */
+	/** 서버가 승인하고 실제 발동한 스킬의 모든 화면에서 호출된다. */
+	UFUNCTION()
+	void HandleSkillActionStarted();
+	
+	/** 현재 직업의 공통 공격/스킬 모션을 DefaultSlot으로 재생한다. */
+	void PlayClassActionAnimation();
+	
+	/** 현재 직업의 평타 VFX를 서버가 확정한 위치와 방향으로 생성한다. */
+	
+	void PlayBasicAttackVFX(const FVector& Origin, const FRotator& FacingRotation) const;
+	
+	/** 직업 적용 시 한 번 로드한다. 공격할 때마다 에셋을 조회하지 않는다. */
 	UPROPERTY(Transient)
-		TObjectPtr<USoundBase> CachedBasicAttackSound;
+	TObjectPtr<UPaperZDAnimSequence> CachedActionAnimation;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> CachedBasicAttackSound;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> CachedBasicAttackVFX;
+	
+	float CachedBasicAttackVFXForwardOffset = 0.f;
+	
+	float CachedBasicAttackVFXHeightOffset = 0.f;
+	
+	FRotator CachedBasicAttackVFXRotationOffset = FRotator::ZeroRotator;
+	
+	float CachedBasicAttackVFXScale = 1.f;
 
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */
 	void InitAbilityActorInfo();
@@ -212,6 +240,7 @@ private:
 	 * 각 머신이 자기 화면의 모든 캐릭터에 대해 스스로 만든다.
 	 */
 	void SetupNameplate();
+	void SetupChatBubble();
 
 	/**
 	 * 죽은 뒤 조작을 막고 이동을 멈춘다. 되살아나면 반대로 되돌린다.
@@ -255,6 +284,12 @@ private:
 	/** 머리 위 이름표. 데디케이티드 서버에서는 만들지 않는다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
 		TObjectPtr<UWidgetComponent> NameplateComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
+		TObjectPtr<UWidgetComponent> ChatBubbleComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")
+		float ChatBubbleHeightOffset = 60.f;
 
 	/** 이름표를 캡슐 꼭대기에서 얼마나 더 올릴지(cm). 데미지 텍스트와 겹치면 이 값을 조정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")

@@ -7,6 +7,8 @@
 class UPaperZDAnimInstance;
 class USoundBase;
 class UTexture2D;
+class UPaperZDAnimSequence;
+class UNiagaraSystem;
 
 /**
  * 직업 하나의 **그림**을 모아둔 에셋. DT_CharacterClass 의 행이 이것을 가리킨다.
@@ -60,4 +62,28 @@ public:
 	/** 기본 공격 시작 효과음. 비워두면 무음. 사운드 에셋의 Submix는 SM_SFX로 지정한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
 	TSoftObjectPtr<USoundBase> BasicAttackSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UPaperZDAnimSequence> ActionAnimation;
+
+	/** 기본 공격 시작 이펙트. 비워두면 공격 판정에는 영향 없이 이펙트만 생략한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Basic Attack")
+	TSoftObjectPtr<UNiagaraSystem> BasicAttackVFX;
+
+	/** 서버가 확정한 공격 위치에서 공격 방향으로 이동시킬 거리. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Basic Attack")
+	float BasicAttackVFXForwardOffset = 0.f;
+
+	/** 기본 공격 이펙트의 월드 Z축 높이 보정. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Basic Attack")
+	float BasicAttackVFXHeightOffset = 0.f;
+
+	/** 공격 방향 회전에 추가로 적용할 회전. 기존 BP 공격 이펙트의 기본값은 Yaw 90도다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Basic Attack")
+	FRotator BasicAttackVFXRotationOffset = FRotator(0.f, 90.f, 0.f);
+
+	/** 기본 공격 이펙트의 균일 스케일. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Basic Attack",
+		meta = (ClampMin = "0.0"))
+	float BasicAttackVFXScale = 1.f;
 };

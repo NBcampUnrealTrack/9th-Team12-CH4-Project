@@ -109,8 +109,16 @@ void UTDCombatComponent::RequestAttack(int32 AttackIndex)
 	LastAttackIndex = AttackIndex;
 	PendingAttackIndex = AttackIndex;
 
+	// 연출도 서버가 승인한 순간의 위치와 방향을 쓴다. 클라이언트가 각자 방향을
+	// 다시 계산하면 정지 직후 공격에서 서로 다른 방향으로 보일 수 있다.
+	FVector AttackDirection = FacingDirection.GetSafeNormal2D();
+	if (AttackDirection.IsNearlyZero())
+	{
+		AttackDirection = Owner->GetActorForwardVector().GetSafeNormal2D();
+	}
+
 	// 모션은 즉시 시작하고(번호 동봉), 판정은 휘두르는 순간까지 미룬다.
-	MulticastOnAttack(AttackIndex);
+	MulticastOnAttack(AttackIndex, Owner->GetActorLocation(), AttackDirection.Rotation());
 
 	if (Spec.HitDelay <= 0.f)
 	{
@@ -219,10 +227,13 @@ TArray<AActor*> UTDCombatComponent::GatherTargets(const FTDAttackSpec& Spec) con
 
 // ── 방송 ─────────────────────────────────────────────────
 
-void UTDCombatComponent::MulticastOnAttack_Implementation(int32 AttackIndex)
+void UTDCombatComponent::MulticastOnAttack_Implementation(
+	int32 AttackIndex, FVector Origin, FRotator FacingRotation)
 {
+	// 기존 BP와 몬스터 패턴의 접점은 그대로 유지한다.
 	OnAttackStarted.Broadcast();
 	OnPatternStarted.Broadcast(AttackIndex);
+	OnAttackPresentationStarted.Broadcast(AttackIndex, Origin, FacingRotation);
 }
 
 void UTDCombatComponent::MulticastOnHit_Implementation(AActor* Target, float Damage, bool bCritical, FVector HitLocation)

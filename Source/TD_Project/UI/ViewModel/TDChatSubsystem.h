@@ -19,6 +19,7 @@ struct FTDChatMessage
 };
 
 DECLARE_MULTICAST_DELEGATE(FTDOnChatHistoryChanged);
+DECLARE_MULTICAST_DELEGATE_OneParam(FTDOnChatMessageReceived, const FTDChatMessage&);
 
 /** 로컬 플레이어의 채팅 수신/오류 구독과 제한된 세션 이력. 화면 스타일은 소유하지 않는다. */
 UCLASS()
@@ -31,6 +32,8 @@ public:
  virtual void PlayerControllerChanged(APlayerController* NewPlayerController) override;
  const TArray<FTDChatMessage>& GetMessages() const { return Messages; }
  FTDOnChatHistoryChanged OnHistoryChanged;
+ /** 서버에서 수신한 새 메시지만 전달한다. 이력 갱신/전송 오류는 포함하지 않는다. */
+ FTDOnChatMessageReceived OnMessageReceived;
 
  /** 서버로 요청을 보냈는지 반환한다. 최종 성공/실패는 서버 응답으로 반영한다. */
  bool Send(ETDChatChannel Channel, const FString& Message, const FString& TargetName);

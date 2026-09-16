@@ -212,6 +212,7 @@ private:
 	 * 각 머신이 자기 화면의 모든 캐릭터에 대해 스스로 만든다.
 	 */
 	void SetupNameplate();
+	void SetupChatBubble();
 
 	/**
 	 * 죽은 뒤 조작을 막고 이동을 멈춘다. 되살아나면 반대로 되돌린다.
@@ -255,6 +256,12 @@ private:
 	/** 머리 위 이름표. 데디케이티드 서버에서는 만들지 않는다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
 		TObjectPtr<UWidgetComponent> NameplateComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
+		TObjectPtr<UWidgetComponent> ChatBubbleComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")
+		float ChatBubbleHeightOffset = 60.f;
 
 	/** 이름표를 캡슐 꼭대기에서 얼마나 더 올릴지(cm). 데미지 텍스트와 겹치면 이 값을 조정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")

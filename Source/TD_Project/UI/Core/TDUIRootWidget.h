@@ -13,6 +13,7 @@ class UVerticalBox;
 class UCommonActivatableWidgetStack;
 class UTDWindowBaseWidget;
 class UTDBossHPWidget;
+class UTDLowHealthStyleDA;
 
 /**
  * 
@@ -70,6 +71,10 @@ public:
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
     bool bWaitForCharacterLoad = true;
+
+    /** Settings read by the WBP_Root UpdateLowHealthEffect graph. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Low Health")
+    TObjectPtr<UTDLowHealthStyleDA> LowHealthStyle;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="TD|UI|Player HUD")
     ESlateVisibility LoadedHUDVisibility = ESlateVisibility::SelfHitTestInvisible;

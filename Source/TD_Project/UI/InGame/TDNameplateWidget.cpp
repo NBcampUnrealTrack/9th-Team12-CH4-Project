@@ -2,6 +2,7 @@
 
 #include "Camera/PlayerCameraManager.h"
 #include "Components/TextBlock.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"

@@ -23,6 +23,7 @@
 #include "Settings/TDCharacterClassSettings.h"
 #include "Skill/TDSkillComponent.h"
 #include "UI/InGame/TDNameplateWidget.h"
+#include "UI/InGame/TDChatBubbleWidget.h"
 #include "UI/Settings/TDUISettings.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
@@ -65,6 +66,14 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 	NameplateComponent->SetGenerateOverlapEvents(false);
 	NameplateComponent->SetCanEverAffectNavigation(false);
 
+	ChatBubbleComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("ChatBubbleComponent"));
+	ChatBubbleComponent->SetupAttachment(GetRootComponent());
+	ChatBubbleComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	ChatBubbleComponent->SetDrawAtDesiredSize(true);
+	ChatBubbleComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ChatBubbleComponent->SetGenerateOverlapEvents(false);
+	ChatBubbleComponent->SetCanEverAffectNavigation(false);
+
 	// 이동 방향으로 캐릭터가 돌아야 PaperZD 가 4방향 스프라이트 중 맞는 것을 고른다.
 	// 컨트롤러 회전을 따라가면 카메라를 돌릴 때 캐릭터가 같이 돌아 방향이 어긋난다.
 	bUseControllerRotationYaw = false;
@@ -82,6 +91,7 @@ void ATDPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	SetupNameplate();
+	SetupChatBubble();
 	if (UTDCombatComponent* Combat = GetCombatComponent()){
 		Combat->OnAttackStarted.AddUniqueDynamic(
 				this, &ATDPlayerCharacter::HandleBasicAttackSoundStarted);
@@ -159,6 +169,21 @@ void ATDPlayerCharacter::OnRep_PlayerState()
 
 
 // ── 이름표 ────────────────────────────────────────────────
+
+void ATDPlayerCharacter::SetupChatBubble()
+{
+	if (GetNetMode() == NM_DedicatedServer || !ChatBubbleComponent) return;
+	TSubclassOf<UTDChatBubbleWidget> WidgetClass = GetDefault<UTDUISettings>()->ChatBubbleWidgetClass.LoadSynchronous();
+	if (!WidgetClass) WidgetClass = UTDChatBubbleWidget::StaticClass();
+	const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f;
+	ChatBubbleComponent->SetRelativeLocation(FVector(0.f, 0.f, HalfHeight + ChatBubbleHeightOffset));
+	ChatBubbleComponent->SetWidgetClass(WidgetClass);
+	ChatBubbleComponent->InitWidget();
+	if (UTDChatBubbleWidget* Bubble = Cast<UTDChatBubbleWidget>(ChatBubbleComponent->GetUserWidgetObject()))
+	{
+		Bubble->SetTargetPawn(this);
+	}
+}
 
 void ATDPlayerCharacter::SetupNameplate()
 {

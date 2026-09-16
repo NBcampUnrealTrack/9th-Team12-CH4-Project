@@ -36,7 +36,7 @@ public:
 
 	/** 액티브 스킬의 시전을 담당한다. 이동 제약을 Move 가 여기에 물어본다. */
 	UFUNCTION(BlueprintPure, Category = "TD|Skill")
-	UTDSkillComponent* GetSkillComponent() const { return SkillComponent; }
+		UTDSkillComponent* GetSkillComponent() const { return SkillComponent; }
 
 	// ── GAS 초기화 ────────────────────────────────────────
 	// ASC 는 자기가 누구에게 붙었는지(Owner)와 어떤 액터를 대신하는지(Avatar)를 알아야 한다.
@@ -68,11 +68,12 @@ public:
 	/** 조작을 되돌린다. 체력 회복과 위치 이동은 GameMode 가 맡는다. */
 	virtual void HandleRespawn() override;
 
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void
+	GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    /** Display only; -1 means no automatic respawn is scheduled. */
-    UFUNCTION(BlueprintPure, Category="TD|Respawn")
-    float GetAutoRespawnRemainingSeconds() const;
+	/** Display only; -1 means no automatic respawn is scheduled. */
+	UFUNCTION(BlueprintPure, Category="TD|Respawn")
+		float GetAutoRespawnRemainingSeconds() const;
 
 	// ══ 조작 ═══════════════════════════════════════════════════════════════
 	//
@@ -88,28 +89,27 @@ public:
 	// Enhanced Input 만 쓴다(D44). BindAxisKey 같은 레거시 경로는 리매핑이 안 된다.
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** 빙의한 뒤 활성화할 입력 묶음. BP_Player 에서 IMC_* 를 지정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input")
-	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+		TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
 	// ── 액션 목록 ─────────────────────────────────────────
 
 	/** 이동. **Axis2D** 여야 한다 — X 가 좌우, Y 가 앞뒤다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
-	TObjectPtr<UInputAction> MoveAction;
+		TObjectPtr<UInputAction> MoveAction;
 
 	/** 점프. Digital(bool). 누르는 동안 유지되면 높이 뛴다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
-	TObjectPtr<UInputAction> JumpAction;
+		TObjectPtr<UInputAction> JumpAction;
 
 	/** 평타. Digital(bool). 실제 판정과 쿨타임은 UTDCombatComponent 가 서버에서 처리한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
-	TObjectPtr<UInputAction> AttackAction;
+		TObjectPtr<UInputAction> AttackAction;
 
-	
+
 	/**
 	 * 퀵슬롯 1~6. 배열 인덱스가 곧 슬롯 번호다.
 	 *
@@ -119,7 +119,7 @@ protected:
 	 * 비어 있는 칸은 그 슬롯만 조용히 빠지고 나머지는 동작한다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
-	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
+		TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 
 	/**
 	 * 스킬 1~3(Q·W·E). 퀵슬롯과 나눠 둔 이유는 성격이 달라서다 —
@@ -128,12 +128,12 @@ protected:
 	 * 배열 인덱스 0·1·2 가 DT_Skill 의 SlotIndex 1·2·3 에 대응한다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Input|Actions")
-	TArray<TObjectPtr<UInputAction>> SkillActions;
+		TArray<TObjectPtr<UInputAction>> SkillActions;
 
 	//상호작용 F
 	UPROPERTY(EditDefaultsOnly, Category="TD|Input|Actions")
-	TObjectPtr<UInputAction> InteractAction;
-	
+		TObjectPtr<UInputAction> InteractAction;
+
 	// ── 핸들러 ────────────────────────────────────────────
 
 	/**
@@ -172,11 +172,11 @@ protected:
 private:
 	/** 서버가 승인한 기본 공격의 기존 멀티캐스트 이벤트에서만 재생한다. */
 	UFUNCTION()
-	void HandleBasicAttackSoundStarted();
+		void HandleBasicAttackSoundStarted();
 
 	/** 직업 데이터 적용 때 로드하여 보관한다. 공격마다 에셋을 조회하지 않는다. */
 	UPROPERTY(Transient)
-	TObjectPtr<USoundBase> CachedBasicAttackSound;
+		TObjectPtr<USoundBase> CachedBasicAttackSound;
 
 	/** 서버·클라 양쪽에서 불린다. 여러 번 호출돼도 안전하다. */
 	void InitAbilityActorInfo();
@@ -194,7 +194,7 @@ private:
 	 * 겹쳐 BP 컴파일이 깨진다(2026-09-16) — UFUNCTION 은 자식 BP 의 이벤트·함수 이름과 겹치면 안 된다.
 	 */
 	UFUNCTION()
-	void OnAppearanceClassChanged(FName NewClassId);
+		void OnAppearanceClassChanged(FName NewClassId);
 
 	/** 직업이 아직 없으면(None) 건너뛴다 — 도착하면 알림으로 다시 온다. 같은 애니메이션이면 다시 넣지 않는다. */
 	void ApplyClassAppearance(FName ClassId);
@@ -223,10 +223,10 @@ private:
 	/** 자동 부활 타이머. 서버에서만 돈다. */
 	FTimerHandle AutoRespawnTimerHandle;
 
-    UPROPERTY(Replicated)
-    double AutoRespawnEndServerTime = 0.0;
-	
-	
+	UPROPERTY(Replicated)
+		double AutoRespawnEndServerTime = 0.0;
+
+
 	/**  상호작용
 	 * NPC, 상자, 아이템 등 F키 상호작용을 처리한다.
 	 *
@@ -236,7 +236,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
 		Category = "TD|Interaction",
 		meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UTDInteractionComponent> InteractionComponent;
+		TObjectPtr<UTDInteractionComponent> InteractionComponent;
 
 	/**
 	 * 액티브 스킬. 평타(UTDCombatComponent)와 마찬가지로 Pawn 에 둔다 —
@@ -246,17 +246,17 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
 		Category = "TD|Skill",
 		meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UTDSkillComponent> SkillComponent;
+		TObjectPtr<UTDSkillComponent> SkillComponent;
 
 	/** 벽 뒤에 가려진 내 캐릭터의 윤곽. 로컬 플레이어에서만 켜진다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
-	TObjectPtr<UTDSilhouetteComponent> SilhouetteComponent;
+		TObjectPtr<UTDSilhouetteComponent> SilhouetteComponent;
 
 	/** 머리 위 이름표. 데디케이티드 서버에서는 만들지 않는다. */
 	UPROPERTY(VisibleAnywhere, Category = "TD|Presentation")
-	TObjectPtr<UWidgetComponent> NameplateComponent;
+		TObjectPtr<UWidgetComponent> NameplateComponent;
 
 	/** 이름표를 캡슐 꼭대기에서 얼마나 더 올릴지(cm). 데미지 텍스트와 겹치면 이 값을 조정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "TD|Presentation")
-	float NameplateHeightOffset = 20.f;
+		float NameplateHeightOffset = 20.f;
 };

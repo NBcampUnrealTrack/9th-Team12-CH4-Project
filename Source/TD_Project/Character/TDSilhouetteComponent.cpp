@@ -30,6 +30,11 @@ void UTDSilhouetteComponent::EnableForLocalPlayer()
 	}
 
 	Sprite->SetRenderCustomDepth(true);
+
+	// 완전히 가려지면 오클루전 컬링이 스프라이트를 렌더링에서 빼 버리고, 커스텀 뎁스도
+	// 함께 빠져 실루엣이 끊긴다. 판정에 쓰는 바운딩 박스를 부풀려 살아남게 한다.
+	Sprite->SetBoundsScale(OccludedBoundsScale);
+
 	Camera->PostProcessSettings.AddBlendable(Material, 1.f);
 
 	AppliedMaterial = Material;

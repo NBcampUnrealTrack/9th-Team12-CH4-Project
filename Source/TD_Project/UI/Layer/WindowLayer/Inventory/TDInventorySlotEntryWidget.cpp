@@ -43,8 +43,10 @@ UTDInventoryComponent* UTDInventorySlotEntryWidget::GetDraggableInventory() cons
 	UTDInventoryComponent* Inventory = State ? State->FindComponentByClass<UTDInventoryComponent>() : nullptr;
 	const FTDItemInstance* Item = Inventory ? Inventory->FindBySlot(SlotListItem->SlotIndex) : nullptr;
 	if (!Item || !Item->IsValid() || Item->ItemId != SlotListItem->ItemInstance.ItemId) return nullptr;
+	// 소비 아이템만 끌 수 있던 제한을 풀었다(2026-09-17) — 칸끼리 옮기려면 장비도 집어야 한다.
+	// 퀵슬롯 등록은 그쪽(RequestRegisterItem)이 타입을 따로 검사하므로 그대로 거부된다.
 	const FTDItemRow* Definition = Inventory->FindItemDefinition(Item->ItemId);
-	return Definition && Definition->ItemType == TDTags::Item_Type_Consumable.GetTag() ? Inventory : nullptr;
+	return Definition != nullptr ? Inventory : nullptr;
 }
 
 FReply UTDInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -87,9 +89,14 @@ void UTDInventorySlotEntryWidget::NativeOnDragDetected(const FGeometry& Geometry
 	UTDItemTooltipWidget::ClearItemTooltip(this);
 	Drag->SourceInventory = Inventory;
 	Drag->ItemId = SlotListItem->ItemInstance.ItemId;
+	Drag->SourceSlotIndex = SlotListItem->SlotIndex;
 	Drag->SetDragIcon(SlotListItem->Icon.LoadSynchronous());
 	Operation = Drag;
 }
+
+// 드롭은 이 엔트리가 아니라 목록을 들고 있는 UTDInventoryContentWidget 이 받는다.
+// TileView 의 엔트리는 STableRow 안에 들어가 드롭 이벤트가 오지 않는다 —
+// 퀵슬롯도 같은 이유로 부모가 받아 마우스 위치로 칸을 찾는다(2026-09-17).
 
 void UTDInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {

@@ -111,6 +111,19 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
+	/**
+	 * 칸끼리 옮기는 드롭을 받는다.
+	 *
+	 * **엔트리가 아니라 여기서 받는다.** TileView 의 엔트리는 STableRow 안에 들어가
+	 * 드롭 이벤트가 오지 않는다 — 퀵슬롯(UTDQuickSlotWidget)도 같은 이유로 부모가 받는다.
+	 * 놓인 자리는 마우스 위치로 찾는다.
+	 */
+	virtual bool NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event,
+		UDragDropOperation* Operation) override;
+
+	/** 화면 좌표 아래에 있는 칸. 없으면 INDEX_NONE. */
+	int32 FindSlotIndexAt(const FVector2D& ScreenPosition) const;
+
 	/** WBP 안의 Tile View 이름을 InventoryTileView로 맞춘다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTileView> InventoryTileView;

@@ -1,6 +1,7 @@
 #include "Combat/TDBossProjectile.h"
 
 #include "Character/TDCharacterBase.h"
+#include "Character/TDEnemyBase.h"
 #include "Combat/TDCombatComponent.h"
 #include "Combat/TDCombatStatics.h"
 #include "Components/SphereComponent.h"
@@ -81,6 +82,17 @@ void ATDBossProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	if (Target->GetGenericTeamId() == Shooter->GetGenericTeamId())
 	{
 		return;   // 쫄은 안 맞는다
+	}
+
+	// 남의 그룹은 보이지도 않는 보스에게 맞지 않는다.
+	// 투사체는 FilterByTeam 을 거치지 않으므로 여기서 따로 본다 — 몬스터 인스턴싱의
+	// 세 관문(복제·판정·AI) 밖에 있는 유일한 피해 경로다.
+	if (const ATDEnemyBase* ShooterEnemy = Cast<ATDEnemyBase>(Shooter.Get()))
+	{
+		if (!ShooterEnemy->IsVisibleToGroup(Target))
+		{
+			return;
+		}
 	}
 
 	HitActors.Add(Target);

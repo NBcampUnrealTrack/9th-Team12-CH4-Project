@@ -161,6 +161,14 @@ private:
 	/** 한 그룹의 몬스터를 만든다. */
 	void SpawnForGroup(const FGuid& GroupId, FTDSpawnSlot& Slot);
 
+	/**
+	 * 이 몬스터가 누구를 통과할지 맞춘다. 같은 그룹은 그대로 막고, 남은 서로 통과한다.
+	 *
+	 * 주기 검사에서 부르므로 파티 가입·탈퇴나 새로 온 사람도 다음 검사에서 반영된다.
+	 * 이미 PlayerArray 를 훑는 자리라 추가 비용이 거의 없다.
+	 */
+	void RefreshMoveIgnores(ATDEnemyBase* Monster, const FGuid& GroupId);
+
 	/** 그룹별 자리. 인스턴싱을 끄면 빈 키 하나만 쓴다. */
 	UPROPERTY()
 	TMap<FGuid, FTDSpawnSlot> Slots;

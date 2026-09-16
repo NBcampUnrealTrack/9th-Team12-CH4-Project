@@ -149,6 +149,40 @@ TSet<FGuid> ATDSpawnPoint::GatherActiveGroups() const
 	return Groups;
 }
 
+void ATDSpawnPoint::RefreshMoveIgnores(ATDEnemyBase* Monster, const FGuid& GroupId)
+{
+	// 공용 몬스터(보스·배치형)는 모두의 것이라 통과시킬 이유가 없다.
+	if (Monster == nullptr || !GroupId.IsValid())
+	{
+		return;
+	}
+
+	const AGameStateBase* State = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (State == nullptr)
+	{
+		return;
+	}
+
+	for (APlayerState* PlayerState : State->PlayerArray)
+	{
+		const ATDPlayerState* TDState = Cast<ATDPlayerState>(PlayerState);
+		if (TDState == nullptr)
+		{
+			continue;
+		}
+
+		APawn* Pawn = TDState->GetPawn();
+		if (Pawn == nullptr)
+		{
+			continue;
+		}
+
+		// 내 그룹이면 그대로 막고(보스도 여기 해당한다), 남이면 서로 통과시킨다.
+		const bool bSameGroup = TDState->GetInstanceGroupId() == GroupId;
+		Monster->SetMoveIgnoredByPawn(Pawn, !bSameGroup);
+	}
+}
+
 void ATDSpawnPoint::UpdateSlots()
 {
 	if (!HasAuthority() || GetWorld() == nullptr)
@@ -175,6 +209,13 @@ void ATDSpawnPoint::UpdateSlots()
 		{
 			Slot.Monster = nullptr;
 			Slot.RespawnTime = Now + RespawnDelay;
+		}
+
+		// 남의 몬스터가 길을 막지 않게 통과 쌍을 맞춘다. 파티 가입·탈퇴로 그룹이 바뀌어도
+		// 여기서 다시 계산하므로 따로 처리할 곳이 없다.
+		if (Slot.Monster != nullptr)
+		{
+			RefreshMoveIgnores(Slot.Monster, It.Key());
 		}
 
 		// 아무도 없는 자리는 유예가 지나면 정리한다. 몬스터가 남아 있으면 함께 지운다 —

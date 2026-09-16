@@ -117,6 +117,26 @@ bool ATDEnemyBase::IsVisibleToGroup(const AActor* Other) const
 	return TDState->GetInstanceGroupId() == OwnerGroupId;
 }
 
+void ATDEnemyBase::SetMoveIgnoredByPawn(APawn* Pawn, bool bIgnore)
+{
+	if (!HasAuthority() || Pawn == nullptr)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* MyCapsule = GetCapsuleComponent();
+	UPrimitiveComponent* PawnRoot = Cast<UPrimitiveComponent>(Pawn->GetRootComponent());
+
+	if (MyCapsule == nullptr || PawnRoot == nullptr)
+	{
+		return;
+	}
+
+	// 이동하는 쪽이 자기 목록을 본다. 한쪽만 걸면 반대 방향에서 여전히 막힌다.
+	MyCapsule->IgnoreActorWhenMoving(Pawn, bIgnore);
+	PawnRoot->IgnoreActorWhenMoving(this, bIgnore);
+}
+
 bool ATDEnemyBase::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
 	const FVector& SrcLocation) const
 {

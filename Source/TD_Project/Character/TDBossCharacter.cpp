@@ -1517,6 +1517,11 @@ void ATDBossCharacter::SummonMinions()
 		{
 			Minion->InitializeFromDefinition(MinionId, GetLevel());
 		}
+
+		// 소환수도 보스와 같은 그룹이다. 물려주지 않으면 그룹 키가 비어 공용이 되어
+		// 남의 화면에 보이고 남을 때리게 된다.
+		Minion->SetOwnerGroupId(GetOwnerGroupId());
+
 		Minions.Add(Minion);
 		++Spawned;
 	}

@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Items/TDInventoryComponent.h"
+#include "UI/Common/ItemSlot/TDItemDragDropOperation.h"
 #include "UObject/ConstructorHelpers.h"
 
 bool UTDInventoryContentWidget::RequestItemAction(UTDInventorySlotListItem* Item)
@@ -148,6 +149,67 @@ void UTDInventoryContentWidget::NativeConstruct()
 	{
 		World->GetTimerManager().SetTimer(SourceCheckTimer, this, &ThisClass::CheckInventorySource, 0.25f, true);
 	}
+}
+
+int32 UTDInventoryContentWidget::FindSlotIndexAt(const FVector2D& ScreenPosition) const
+{
+	if (!IsValid(InventoryTileView))
+	{
+		return INDEX_NONE;
+	}
+
+	// 화면에 보이는 칸만 위젯을 갖는다. 스크롤로 벗어난 칸은 nullptr 이라 자연스럽게 걸러진다.
+	for (const UTDInventorySlotListItem* Item : SlotListItems)
+	{
+		if (!IsValid(Item))
+		{
+			continue;
+		}
+
+		const UUserWidget* Entry = InventoryTileView->GetEntryWidgetFromItem(Item);
+		if (!IsValid(Entry))
+		{
+			continue;
+		}
+
+		if (Entry->GetCachedGeometry().IsUnderLocation(ScreenPosition))
+		{
+			return Item->SlotIndex;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+bool UTDInventoryContentWidget::NativeOnDrop(const FGeometry& Geometry,
+	const FDragDropEvent& Event, UDragDropOperation* Operation)
+{
+	const UTDItemDragDropOperation* ItemDrag = Cast<UTDItemDragDropOperation>(Operation);
+	if (ItemDrag == nullptr)
+	{
+		return Super::NativeOnDrop(Geometry, Event, Operation);
+	}
+
+	// 같은 위젯을 상점의 미리보기 목록도 쓴다. 거기서는 칸을 옮기지 않는다.
+	if (!IsValid(InventoryComponent) || ItemDrag->SourceInventory.Get() != InventoryComponent)
+	{
+		return false;
+	}
+
+	const int32 TargetSlot = FindSlotIndexAt(Event.GetScreenSpacePosition());
+
+	// 빈 칸에도 놓을 수 있어야 하므로 아이템 유무는 보지 않는다. 비었는지 차 있는지는
+	// 서버의 MoveItem 이 판단한다 — 비었으면 이동, 겹치면 합치기, 아니면 교환이다.
+	if (TargetSlot == INDEX_NONE
+		|| ItemDrag->SourceSlotIndex == INDEX_NONE
+		|| ItemDrag->SourceSlotIndex == TargetSlot)
+	{
+		return false;
+	}
+
+	// 칸 번호만 넘긴다. 검증은 전부 서버 몫이다.
+	InventoryComponent->ServerMoveItem(ItemDrag->SourceSlotIndex, TargetSlot);
+	return true;
 }
 
 void UTDInventoryContentWidget::NativeDestruct()

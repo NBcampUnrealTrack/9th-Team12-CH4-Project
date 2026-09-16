@@ -337,11 +337,23 @@ namespace
 					continue;
 				}
 
-				// 남의 사냥터 몬스터는 때릴 수 없다. 화면에 보이지도 않는 것을
-				// 범위 공격이 긁어 가면, 때린 사람은 아무 반응 없는 허공을 치는 셈이 된다.
-				if (const ATDEnemyBase* Enemy = Cast<ATDEnemyBase>(Candidate))
+				// 사냥터 몬스터는 자기 그룹하고만 주고받는다. **양쪽 방향을 모두 본다.**
+				//
+				//   때리는 쪽  남의 몬스터를 때릴 수 없다. 보이지도 않는 것을 범위 공격이
+				//             긁어 가면 때린 사람은 허공을 치는 셈이 된다.
+				//   맞는 쪽    남의 몬스터에게 맞지 않는다. 한쪽만 막았더니 A 의 몬스터가
+				//             A 를 때릴 때 히트박스 안에 있던 B 까지 맞았다(2026-09-17).
+				if (const ATDEnemyBase* TargetEnemy = Cast<ATDEnemyBase>(Candidate))
 				{
-					if (!Enemy->IsVisibleToGroup(Attacker))
+					if (!TargetEnemy->IsVisibleToGroup(Attacker))
+					{
+						continue;
+					}
+				}
+
+				if (const ATDEnemyBase* AttackerEnemy = Cast<ATDEnemyBase>(Attacker))
+				{
+					if (!AttackerEnemy->IsVisibleToGroup(Candidate))
 					{
 						continue;
 					}

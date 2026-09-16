@@ -96,6 +96,17 @@ public:
 	/** 남의 몬스터는 아예 복제하지 않는다 — 그래서 화면에 나타나지 않는다. */
 	virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
 		const FVector& SrcLocation) const override;
+
+	/**
+	 * 이 플레이어와 서로 통과할지 정한다. **서버 전용.**
+	 *
+	 * 콜리전 설정을 끄는 것이 아니라 "이 둘은 이동할 때 서로 무시" 쌍을 지정한다.
+	 * 그래서 내 몬스터와 보스는 그대로 막고, 보이지도 않는 남의 몬스터만 통과한다.
+	 *
+	 * 이동하는 쪽이 자기 무시 목록을 보므로 **양쪽에 모두 걸어야** 한다 —
+	 * 한쪽만 걸면 그쪽만 통과하고 반대 방향에서는 여전히 막힌다.
+	 */
+	void SetMoveIgnoredByPawn(APawn* Pawn, bool bIgnore);
 	/** "발견!" 방송. AI 컨트롤러가 부른다. */
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastOnSense();

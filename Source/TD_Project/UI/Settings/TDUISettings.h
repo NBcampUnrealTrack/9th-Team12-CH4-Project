@@ -124,4 +124,11 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Chat")
 		TSoftClassPtr<UTDChatBubbleWidget> ChatBubbleWidgetClass;
+
+	/**
+	 * 로컬 플레이어가 NPC 또는 보물상자 근처에 있을 때
+	 * 자기 캐릭터 위에 표시할 상호작용 안내 이미지 위젯.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Interaction")
+		TSoftClassPtr<UUserWidget> InteractionPromptWidgetClass;
 };

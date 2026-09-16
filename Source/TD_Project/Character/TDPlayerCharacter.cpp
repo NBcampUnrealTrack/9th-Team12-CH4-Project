@@ -1,6 +1,7 @@
 #include "Character/TDPlayerCharacter.h"
 
 #include "AbilitySystemComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "Combat/TDCombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
@@ -9,11 +10,13 @@
 #include "UserSettings/EnhancedInputUserSettings.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 #include "InputActionValue.h"
 #include "Items/TDQuickSlotComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Interaction/TDInteractionComponent.h"
+#include "Interaction/TDInteractionFlowComponent.h"
 #include "Character/TDSilhouetteComponent.h"
 #include "Character/TDCharacterClassData.h"
 #include "Data/TDCharacterClassRow.h"
@@ -31,6 +34,8 @@
 #include "Sound/SoundBase.h"
 #include "NiagaraFunctionLibrary.h"
 #include "AnimSequences/PaperZDAnimSequence.h"
+#include "World/TDNPCBase.h"
+#include "World/TDTreasureChest.h"
 
 void ATDPlayerCharacter::GetLifetimeReplicatedProps(
 		TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -52,6 +57,18 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 	//상호작용
 	InteractionComponent =
 			CreateDefaultSubobject<UTDInteractionComponent>(TEXT("InteractionComponent"));
+
+	InteractionPromptComponent =
+			CreateDefaultSubobject<UWidgetComponent>(TEXT("InteractionPromptComponent"));
+	InteractionPromptComponent->SetupAttachment(GetRootComponent());
+	InteractionPromptComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	InteractionPromptComponent->SetDrawAtDesiredSize(true);
+	InteractionPromptComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InteractionPromptComponent->SetGenerateOverlapEvents(false);
+	InteractionPromptComponent->SetCanEverAffectNavigation(false);
+	InteractionPromptComponent->SetOnlyOwnerSee(true);
+	InteractionPromptComponent->SetVisibility(false);
+	InteractionPromptComponent->SetHiddenInGame(true);
 
 	SkillComponent = CreateDefaultSubobject<UTDSkillComponent>(TEXT("SkillComponent"));
 
@@ -92,6 +109,10 @@ ATDPlayerCharacter::ATDPlayerCharacter()
 void ATDPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	HideInteractionPrompt();
+	if (IsLocallyControlled()){
+		InitializeInteractionPrompt();
+	}
 	SetupNameplate();
 	SetupChatBubble();
 	if (UTDCombatComponent* Combat = GetCombatComponent()){
@@ -107,6 +128,9 @@ void ATDPlayerCharacter::BeginPlay()
 
 void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(InteractionPromptTimerHandle);
+	HideInteractionPrompt();
+
 	if (UTDCombatComponent* Combat = GetCombatComponent()){
 		Combat->OnAttackPresentationStarted.RemoveDynamic(
 				this, &ATDPlayerCharacter::HandleBasicAttackPresentationStarted);
@@ -124,6 +148,143 @@ void ATDPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	CachedActionAnimation = nullptr;
 	CachedBasicAttackVFX = nullptr;
 	Super::EndPlay(EndPlayReason);
+}
+
+void ATDPlayerCharacter::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	InitializeInteractionPrompt();
+}
+
+void ATDPlayerCharacter::InitializeInteractionPrompt()
+{
+	GetWorldTimerManager().ClearTimer(InteractionPromptTimerHandle);
+	HideInteractionPrompt();
+
+	// 서버와 원격 플레이어 프록시는 위젯 클래스를 설정하지 않는다.
+	// 따라서 다른 플레이어의 화면에는 UUserWidget 자체가 만들어지지 않는다.
+	if (GetNetMode() == NM_DedicatedServer
+		|| !IsLocallyControlled()
+		|| InteractionPromptComponent == nullptr)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController =
+		Cast<APlayerController>(GetController());
+
+	if (PlayerController == nullptr
+		|| !PlayerController->IsLocalController()
+		|| PlayerController->GetLocalPlayer() == nullptr)
+	{
+		return;
+	}
+
+	const TSubclassOf<UUserWidget> WidgetClass =
+		GetDefault<UTDUISettings>()
+			->InteractionPromptWidgetClass
+			.LoadSynchronous();
+
+	if (WidgetClass == nullptr)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("상호작용 안내: 위젯 클래스가 비어 있다. "
+				"Project Settings > Game > TD UI > Interaction Prompt Widget Class를 지정할 것."));
+		return;
+	}
+
+	const float HalfHeight =
+		GetCapsuleComponent() != nullptr
+			? GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+			: 0.0f;
+
+	InteractionPromptComponent->SetRelativeLocation(
+		FVector(0.0f, 0.0f, HalfHeight + InteractionPromptHeightOffset));
+	InteractionPromptComponent->SetOwnerPlayer(PlayerController->GetLocalPlayer());
+	InteractionPromptComponent->SetWidgetClass(WidgetClass);
+	InteractionPromptComponent->InitWidget();
+
+	GetWorldTimerManager().SetTimer(
+		InteractionPromptTimerHandle,
+		this,
+		&ATDPlayerCharacter::RefreshInteractionPrompt,
+		0.1f,
+		true,
+		0.0f);
+}
+
+void ATDPlayerCharacter::RefreshInteractionPrompt()
+{
+	if (GetNetMode() == NM_DedicatedServer
+		|| !IsLocallyControlled()
+		|| IsDead()
+		|| InteractionComponent == nullptr)
+	{
+		// 소유권이 바뀐 프록시에서는 불필요한 로컬 갱신도 중단한다.
+		if (!IsLocallyControlled())
+		{
+			GetWorldTimerManager().ClearTimer(InteractionPromptTimerHandle);
+		}
+
+		HideInteractionPrompt();
+		return;
+	}
+
+	const APlayerController* PlayerController =
+		Cast<APlayerController>(GetController());
+
+	const UTDInteractionFlowComponent* Flow =
+		PlayerController != nullptr
+			? PlayerController->FindComponentByClass<UTDInteractionFlowComponent>()
+			: nullptr;
+
+	if (Flow != nullptr
+		&& (Flow->IsDialogueActive()
+			|| Flow->IsChapterPresentationActive()))
+	{
+		HideInteractionPrompt();
+		return;
+	}
+
+	AActor* Target = InteractionComponent->FindBestInteractable();
+
+	const bool bIsSupportedTarget =
+		IsValid(Target)
+		&& (Target->IsA<ATDNPCBase>()
+			|| Target->IsA<ATDTreasureChest>());
+
+	if (!bIsSupportedTarget)
+	{
+		HideInteractionPrompt();
+		return;
+	}
+
+	ShowInteractionPrompt();
+}
+
+void ATDPlayerCharacter::ShowInteractionPrompt()
+{
+	if (InteractionPromptComponent == nullptr
+		|| !IsLocallyControlled())
+	{
+		return;
+	}
+
+	InteractionPromptComponent->SetHiddenInGame(false);
+	InteractionPromptComponent->SetVisibility(true);
+}
+
+void ATDPlayerCharacter::HideInteractionPrompt()
+{
+	if (InteractionPromptComponent == nullptr)
+	{
+		return;
+	}
+
+	InteractionPromptComponent->SetVisibility(false);
+	InteractionPromptComponent->SetHiddenInGame(true);
 }
 
 void ATDPlayerCharacter::PlayClassActionAnimation()

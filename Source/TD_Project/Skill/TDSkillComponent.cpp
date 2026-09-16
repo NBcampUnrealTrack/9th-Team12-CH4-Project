@@ -704,7 +704,7 @@ void UTDSkillComponent::MulticastOnCastStarted_Implementation(
 void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 	FName SkillId, FVector Location, FRotator Facing)
 {
-	// 전용 서버는 화면이 없다. 이펙트를 만들어 봐야 아무도 보지 않는다.
+	// 전용 서버에는 화면이 없으므로 시각·청각 연출을 실행하지 않는다.
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -712,12 +712,17 @@ void UTDSkillComponent::MulticastOnSkillFired_Implementation(
 
 	ATDCharacterBase* Owner = GetOwnerCharacter();
 	const UTDProgressionComponent* Progression = GetProgression();
-	const FTDSkillRow* Row = Progression ? Progression->FindSkillRow(SkillId) : nullptr;
+	const FTDSkillRow* Row =
+		Progression ? Progression->FindSkillRow(SkillId) : nullptr;
 
 	if (Owner == nullptr || Row == nullptr)
 	{
 		return;
 	}
+
+	// 서버에서 승인되고 실제 첫 판정이 발생한 스킬이다.
+	// BP_Player가 이 이벤트를 받아 기존 PlayAttackVisual을 실행한다.
+	OnSkillFiredVisual.Broadcast();
 
 	// 효과음은 이펙트와 따로 본다 — 이펙트가 없는 스킬도 소리는 날 수 있다.
 	PlaySkillSFX(*Owner, *Row);

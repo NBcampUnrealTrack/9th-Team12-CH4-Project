@@ -59,6 +59,17 @@ void UBTService_BossSense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 		Target = Boss->FindEnemy(false, SearchRadius);
 	}
 
+	// 2-1. 어그로 교체: 전투 중 RetargetInterval(기본 20초)마다 무작위 적으로 갈아탄다.
+	//      패턴 진행 중(IsBusy)에는 묻지 않는다 — 돌진 도중 대상이 바뀌면 방향이 튄다.
+	//      한 명만 남았으면 FindRandomEnemy 가 그 사람을 그대로 돌려준다.
+	if (bTargetValid && Boss->IsFightActive() && !Boss->IsBusy() && Boss->ShouldRetargetNow())
+	{
+		if (ATDCharacterBase* Random = Boss->FindRandomEnemy(SearchRadius, Target))
+		{
+			Target = Random;
+		}
+	}
+
 	// 3. 전투 시작·종료
 	if (Target != nullptr && !Boss->IsFightActive())
 	{

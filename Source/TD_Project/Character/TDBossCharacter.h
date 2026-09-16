@@ -56,6 +56,13 @@ public:
 	int32 ChoosePattern(float DistanceToTarget) const;
 	void SetPatternTarget(ATDCharacterBase* Target);
 	ATDCharacterBase* FindEnemy(bool bFarthest, float MaxRange) const;
+	/** 범위 안의 살아 있는 적 중 무작위 하나. Exclude 는 다른 후보가 있을 때만 제외한다(혼자면 그대로). */
+	ATDCharacterBase* FindRandomEnemy(float MaxRange, const ATDCharacterBase* Exclude = nullptr) const;
+	/**
+	 * 어그로 교체 시점인가. RetargetInterval 마다 한 번 true 를 돌려주고 다음 시점을 예약한다.
+	 * 부르는 쪽(BossSense)이 "패턴 중이 아닐 때"만 물어보므로, 교체는 패턴 사이에서만 일어난다.
+	 */
+	bool ShouldRetargetNow();
 	void EnterPhase2();
 	void TriggerEnrage();
 	void SummonMinions();
@@ -188,6 +195,8 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float LeashRadius = 2500.f;
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float ReturnArriveDistance = 150.f;
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "1")) float ReturnTimeout = 12.f;
+	/** 어그로 무작위 교체 주기(초). 0 이면 교체하지 않고 처음 잡은 대상을 끝까지 문다. 잠수는 이와 별개로 항상 가장 먼 적. */
+	UPROPERTY(EditAnywhere, Category = "TD|Boss|Fight", meta = (ClampMin = "0")) float RetargetInterval = 20.f;
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon") TSubclassOf<ATDEnemyBase> MinionClass;
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon") FName MinionId;
 	UPROPERTY(EditAnywhere, Category = "TD|Boss|Summon", meta = (ClampMin = "0")) int32 MinionCount = 2;
@@ -321,6 +330,7 @@ private:
 	FVector HomeLocation = FVector::ZeroVector;
 	FRotator HomeRotation = FRotator::ZeroRotator;   // 도착 시 이 방향으로 선다
 	float FightStartTime = 0.f;
+	float NextRetargetTime = 0.f;   // 다음 어그로 교체 시각(월드 시간)
 
 	TArray<TWeakObjectPtr<ATDEnemyBase>> Minions;
 	FTDStatSourceHandle BossBuffHandle;

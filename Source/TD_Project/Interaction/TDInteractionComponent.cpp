@@ -20,30 +20,20 @@ UTDInteractionComponent::UTDInteractionComponent()
 
 void UTDInteractionComponent::RequestInteract()
 {
-	ATDPlayerCharacter* Player =
-		Cast<ATDPlayerCharacter>(GetOwner());
-
-	if (Player == nullptr || Player->IsDead())
+	ATDPlayerCharacter* Player = Cast<ATDPlayerCharacter>(GetOwner());
+	if (Player == nullptr || Player->IsDead()) return;
+	APlayerController* OwningController = Cast<APlayerController>(Player->GetController());
+	UTDInteractionFlowComponent* Flow = OwningController ? OwningController->FindComponentByClass<UTDInteractionFlowComponent>() : nullptr;
+	// 1) 챕터 연출 중이면 F키 상호작용 무시
+	if (Flow != nullptr && Flow->IsChapterPresentationActive())
 	{
 		return;
 	}
-
-	APlayerController* OwningController =
-		Cast<APlayerController>(Player->GetController());
-
-	UTDInteractionFlowComponent* Flow =
-		OwningController
-			? OwningController->FindComponentByClass<
-				UTDInteractionFlowComponent>()
-			: nullptr;
-
-	// 대화 중이면 이번 입력을 다음/수락으로 사용한다.
+	// 2) 대화 중이면 대화 넘기기/수락 처리
 	if (Flow != nullptr && Flow->TryHandleDialogueInteractInput())
 	{
 		return;
 	}
-
-	// 대화에서 사용하지 않은 입력만 기존 일반 상호작용으로 전달한다.
 	ServerRequestInteract();
 }
 

@@ -1124,5 +1124,22 @@ void ATDPlayerController::OpenPartyMenu()
 
 void ATDPlayerController::OpenSystemMenu()
 {
+    // ESC 는 두 가지 일을 한다 — 열린 창이 있으면 가장 앞의 것을 닫고,
+    // 전부 닫혀 있을 때만 설정창을 연다. 창을 여러 개 띄워 놓고 하나씩 치울 수 있다.
+    //
+    // 아래 검사는 TryOpenMenu 의 앞부분과 같다. 창을 닫는 판단이 그보다 먼저 와야 해서
+    // 여기서 한 번 더 본다 — 대화·채팅 중에는 ESC 가 그쪽 것이다.
+    if (!IsLocalController()) return;
+
+    if (InteractionFlowComponent && InteractionFlowComponent->IsDialogueActive()) return;
+
+    ULocalPlayer* Local = GetLocalPlayer();
+    UTDUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UTDUIManagerSubsystem>() : nullptr;
+    if (!UI || UI->IsChatInputActive() || !UI->IsGameplayWindowLayerReady()) return;
+
+    // 텍스트 입력에 포커스가 있어도 창은 닫힌다. 거래소 검색칸에 커서를 둔 채로도
+    // ESC 로 빠져나올 수 있어야 한다(설정창에 대해 원래 있던 규칙과 같은 이유).
+    if (UI->CloseTopmostWindow()) return;
+
     TryOpenMenu(ETDNavMenuType::System);
 }

@@ -809,6 +809,56 @@ bool UTDUIManagerSubsystem::ShowServiceWindow(
 	return true;
 }
 
+bool UTDUIManagerSubsystem::CloseTopmostWindow()
+{
+	const UTDUIRootWidget* Root = RootWidget.Get();
+	UCanvasPanel* Layer = Root ? Root->GetWindowLayer() : nullptr;
+
+	if (Layer == nullptr)
+	{
+		return false;
+	}
+
+	UTDWindowBaseWidget* Topmost = nullptr;
+	int32 TopZOrder = MIN_int32;
+
+	for (int32 Index = 0; Index < Layer->GetChildrenCount(); ++Index)
+	{
+		UTDWindowBaseWidget* Window = Cast<UTDWindowBaseWidget>(Layer->GetChildAt(Index));
+
+		if (Window == nullptr)
+		{
+			continue;
+		}
+
+		const ESlateVisibility Visibility = Window->GetVisibility();
+
+		if (Visibility == ESlateVisibility::Collapsed || Visibility == ESlateVisibility::Hidden)
+		{
+			continue;
+		}
+
+		const UCanvasPanelSlot* WindowSlot = Cast<UCanvasPanelSlot>(Window->Slot);
+		const int32 ZOrder = WindowSlot != nullptr ? WindowSlot->GetZOrder() : 0;
+
+		// 같은 ZOrder 가 여럿이면 나중 자식이 위에 그려진다. >= 로 뒤쪽을 고른다.
+		if (Topmost == nullptr || ZOrder >= TopZOrder)
+		{
+			TopZOrder = ZOrder;
+			Topmost = Window;
+		}
+	}
+
+	if (Topmost == nullptr)
+	{
+		return false;
+	}
+
+	// 목록에서 빼는 일과 입력 모드 복구는 창이 닫히면서 OnWindowClosed 로 이어진다.
+	Topmost->CloseWindow();
+	return true;
+}
+
 bool UTDUIManagerSubsystem::HasVisibleGameWindow() const
 {
 	const UTDUIRootWidget* Root = RootWidget.Get();

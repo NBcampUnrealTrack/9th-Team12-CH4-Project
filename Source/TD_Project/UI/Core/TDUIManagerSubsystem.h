@@ -80,6 +80,20 @@ public:
 	/** 현재 WindowLayer에 표시 중인 창이 있는지 확인합니다. */
 	bool HasVisibleGameWindow() const;
 
+	/**
+	 * 가장 앞에 있는 창 하나를 닫는다. **ESC 가 쓴다.**
+	 *
+	 * 창을 열거나 클릭하면 BringWindowToFront 가 그 창의 ZOrder 를 맨 위로 올리므로,
+	 * 가장 앞의 창이 곧 "마지막으로 다룬 창" 이다. 여러 창이 열려 있으면 ESC 를 누를 때마다
+	 * 하나씩 닫힌다.
+	 *
+	 * 하단 메뉴 창과 NPC 서비스 창(강화·상점 등)을 가리지 않는다 — 둘 다 같은
+	 * WindowLayer 에 있고, 쓰는 사람에게는 똑같이 "열려 있는 창" 이다.
+	 *
+	 * @return 닫을 창이 있었으면 true. false 면 열린 창이 없다는 뜻이다.
+	 */
+	bool CloseTopmostWindow();
+
 private:
  TWeakObjectPtr<UTDChatWidget> ActiveChatWidget;
  TWeakObjectPtr<APlayerController> ChatInputController;

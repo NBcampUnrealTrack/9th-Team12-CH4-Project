@@ -50,6 +50,18 @@ void UTDGameInstance::HandlePostLoadMap(UWorld* LoadedWorld)
 			TEXT("옵션: UTDGameUserSettings 를 가져오지 못했다. "
 			     "DefaultEngine.ini 의 GameUserSettingsClassName 을 확인할 것."));
 	}
+
+	// PIE 는 기존 테스트 흐름을 유지한다. 패키징된 클라이언트와 독립형 실행에서만
+	// 첫 로컬 월드가 준비된 뒤 기본 서버로 한 번 접속한다. ClientTravel 이후에는
+	// NetMode 가 NM_Client 가 되므로 맵 로드 델리게이트가 다시 불려도 재접속하지 않는다.
+	if (bAutoConnectOnStartup &&
+		!bAutoConnectAttempted &&
+		LoadedWorld != nullptr &&
+		LoadedWorld->WorldType == EWorldType::Game &&
+		LoadedWorld->GetNetMode() == NM_Standalone)
+	{
+		bAutoConnectAttempted = ConnectToServer(DefaultServerAddress);
+	}
 }
 
 bool UTDGameInstance::ConnectToServer(const FString& Address)

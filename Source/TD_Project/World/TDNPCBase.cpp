@@ -1000,6 +1000,14 @@ bool ATDNPCBase::IsEnhanceNPC() const
 		&& Definition->bOpenEnhanceAfterDialogue;
 }
 
+bool ATDNPCBase::IsOptionNPC() const
+{
+	const FTDNPCRow* Definition = GetDefinitionRow();
+
+	return Definition != nullptr
+		&& Definition->bOpenOptionAfterDialogue;
+}
+
 bool ATDNPCBase::IsShopNPC() const
 {
 	const FTDNPCRow* Definition = GetDefinitionRow();

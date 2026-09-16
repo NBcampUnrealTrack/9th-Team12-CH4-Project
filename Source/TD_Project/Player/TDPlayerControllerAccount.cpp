@@ -15,6 +15,7 @@
 #include "Stats/TDProgressionComponent.h"
 #include "Quest/TDPersonalWorldStateComponent.h"
 #include "Quest/TDQuestComponent.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "GameFramework/Pawn.h"
@@ -230,6 +231,24 @@ void ATDPlayerController::TDCharacterSelect()
 void ATDPlayerController::TDLogout()
 {
     ServerLeaveCharacter(true);
+}
+
+void ATDPlayerController::TDQuitGame()
+{
+    // 종료를 요청할 수 있는 것은 자기 화면의 주인뿐이다.
+    if (!IsLocalController())
+    {
+        return;
+    }
+
+    // 캐릭터를 고른 상태에서만 정리할 것이 있다. 로그인 화면에서는 그냥 닫는다.
+    const ATDPlayerState* State = GetPlayerState<ATDPlayerState>();
+    if (State != nullptr && State->HasSelectedCharacter())
+    {
+        ServerLeaveCharacter(true);
+    }
+
+    UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, /*bIgnorePlatformRestrictions=*/false);
 }
 
 void ATDPlayerController::ServerLeaveCharacter_Implementation(bool bLogout)

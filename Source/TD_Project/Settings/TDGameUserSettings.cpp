@@ -228,6 +228,19 @@ void UTDGameUserSettings::ApplyNonResolutionSettings()
 	ApplyColorDeficiency();
 }
 
+void UTDGameUserSettings::ApplySettings(bool bCheckForCommandLineOverrides)
+{
+	// 부모가 해상도·화질을 적용하고 ini 에 저장한다. 그 과정에서 ApplyNonResolutionSettings 도 불린다.
+	Super::ApplySettings(bCheckForCommandLineOverrides);
+
+	// 방금 적용한 화면 모드·해상도를 "사용자가 확인한 값" 으로 못박는다.
+	// 부모의 ApplySettings 는 이것을 하지 않아서, 되돌리기 기준이 옛 값으로 남는다.
+	ConfirmVideoMode();
+
+	// 확인 값도 ini 에 남아야 다음 실행에서 쓰인다. 부모의 저장은 ConfirmVideoMode 앞에서 끝났다.
+	SaveSettings();
+}
+
 void UTDGameUserSettings::ApplyAllSettings()
 {
 	ApplyAudioSettings();

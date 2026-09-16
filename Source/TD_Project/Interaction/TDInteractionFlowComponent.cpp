@@ -21,6 +21,7 @@
 #include "Widgets/SViewport.h"
 #include "World/TDNPCBase.h"
 #include "Enhance/TDEnhanceServiceComponent.h"
+#include "Option/TDOptionServiceComponent.h"
 #include "Shop/TDShopServiceComponent.h"
 
 UTDInteractionFlowComponent::UTDInteractionFlowComponent()
@@ -489,6 +490,13 @@ void UTDInteractionFlowComponent::BeginDialogueFromSource(
 		GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
 	{
 		Enhance->EndService();
+	}
+
+	// 추가 옵션 창도 같은 이유로 닫습니다.
+	if (UTDOptionServiceComponent* Option =
+		GetOwner()->FindComponentByClass<UTDOptionServiceComponent>())
+	{
+		Option->EndService();
 	}
 
 	// 상점 이용 중 다시 말을 걸면 기존 상점 세션부터 닫습니다.
@@ -1170,6 +1178,14 @@ void UTDInteractionFlowComponent::EndDialogueSession(
 				GetOwner()->FindComponentByClass<UTDEnhanceServiceComponent>())
 			{
 				Enhance->StartForNPC(CompletedNPC);
+			}
+		}
+		else if (CompletedNPC->IsOptionNPC())
+		{
+			if (UTDOptionServiceComponent* Option =
+				GetOwner()->FindComponentByClass<UTDOptionServiceComponent>())
+			{
+				Option->StartForNPC(CompletedNPC);
 			}
 		}
 		else if (CompletedNPC->IsShopNPC())

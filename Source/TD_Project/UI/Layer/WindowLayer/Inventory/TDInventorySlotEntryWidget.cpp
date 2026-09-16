@@ -16,12 +16,11 @@
 void UTDInventorySlotEntryWidget::RefreshItemTooltip()
 {
 	const bool bHasItem = IsValid(SlotListItem) && SlotListItem->bHasItem;
-	UTDItemTooltipWidget::AttachItem(this,
-		bHasItem ? SlotListItem->ItemInstance.ItemId : NAME_None,
-		bHasItem ? SlotListItem->ItemInstance.Count : 0,
+	// 개체를 통째로 넘긴다 — 강화 단계와 추가 옵션이 함께 따라간다.
+	UTDItemTooltipWidget::AttachItemInstance(this,
+		bHasItem ? SlotListItem->ItemInstance : FTDItemInstance(),
 		bHasItem ? SlotListItem->InteractionHint : FText::GetEmpty(),
-		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr,
-		bHasItem ? SlotListItem->ItemInstance.EnhanceLevel : 0);
+		bHasItem ? SlotListItem->TooltipDefinitionTable.Get() : nullptr);
 }
 
 void UTDInventorySlotEntryWidget::NativeOnMouseEnter(const FGeometry& Geometry, const FPointerEvent& Event)

@@ -7,6 +7,8 @@
 
 void UTDItemSlotVisualWidget::SetItemTooltipSource(FName ItemId, FText Hint, int32 EnhanceLevel)
 {
+	// 개체를 모르는 경로다. 앞서 붙어 있던 옵션이 다음 아이템에 새어 나가지 않게 비운다.
+	TooltipOptions.Reset();
 	TooltipEnhanceLevel = EnhanceLevel;
 	TooltipItemId = ItemId;
 	TooltipHint = Hint;
@@ -14,11 +16,27 @@ void UTDItemSlotVisualWidget::SetItemTooltipSource(FName ItemId, FText Hint, int
 	RefreshItemTooltip();
 }
 
+void UTDItemSlotVisualWidget::SetItemTooltipInstance(const FTDItemInstance& Item, FText Hint)
+{
+	TooltipOptions = Item.Options;
+	TooltipEnhanceLevel = Item.EnhanceLevel;
+	TooltipItemId = Item.ItemId;
+	TooltipHint = Hint;
+	if (TooltipItemId.IsNone()) UTDItemTooltipWidget::ClearItemTooltip(this);
+	RefreshItemTooltip();
+}
+
 void UTDItemSlotVisualWidget::RefreshItemTooltip()
 {
-	if (!TooltipItemId.IsNone())
-		UTDItemTooltipWidget::AttachItem(this, SlotVisualData.bHasItem ? TooltipItemId : NAME_None,
-			SlotVisualData.Count, TooltipHint, nullptr, TooltipEnhanceLevel);
+	if (TooltipItemId.IsNone()) return;
+
+	// 칸이 비어 있으면 ItemId 를 None 으로 넘겨 툴팁을 해제하는 기존 규칙을 그대로 따른다.
+	FTDItemInstance Item;
+	Item.ItemId = SlotVisualData.bHasItem ? TooltipItemId : NAME_None;
+	Item.Count = SlotVisualData.Count;
+	Item.EnhanceLevel = TooltipEnhanceLevel;
+	Item.Options = TooltipOptions;
+	UTDItemTooltipWidget::AttachItemInstance(this, Item, TooltipHint);
 }
 
 void UTDItemSlotVisualWidget::NativeDestruct()

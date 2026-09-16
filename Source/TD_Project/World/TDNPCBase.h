@@ -99,6 +99,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TD|NPC|Enhance")
 	bool IsEnhanceNPC() const;
 
+	/** 정상적인 대화 종료 후 추가 옵션 재설정을 제공하는 NPC인지 확인합니다. */
+	UFUNCTION(BlueprintPure, Category = "TD|NPC|Option")
+	bool IsOptionNPC() const;
+
 	/** DT_NPC에서 상점 사용이 켜져 있고 ShopId도 지정된 NPC인지 확인합니다. */
 	UFUNCTION(BlueprintPure, Category = "TD|NPC|Shop")
 	bool IsShopNPC() const;

@@ -15,6 +15,7 @@
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
 #include "Shop/TDShopStatics.h"
+#include "Option/TDOptionServiceComponent.h"
 #include "Shop/TDShopServiceComponent.h"
 #include "Stats/TDProgressionComponent.h"
 #include "EngineUtils.h"
@@ -40,6 +41,7 @@ ATDPlayerController::ATDPlayerController()
 {
     InteractionFlowComponent = CreateDefaultSubobject<UTDInteractionFlowComponent>(TEXT("InteractionFlowComponent"));
     ShopServiceComponent = CreateDefaultSubobject<UTDShopServiceComponent>(TEXT("ShopServiceComponent"));
+    OptionServiceComponent = CreateDefaultSubobject<UTDOptionServiceComponent>(TEXT("OptionServiceComponent"));
 	// 로컬 컨트롤러에서만 실제로 동작한다. 서버에 있는 남의 컨트롤러에서는
 	// 컴포넌트가 스스로 Tick 을 끈다.
 	ZoneEnvironmentComponent = CreateDefaultSubobject<UTDZoneEnvironmentComponent>(

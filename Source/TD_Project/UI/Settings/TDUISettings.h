@@ -103,6 +103,15 @@ public:
 		TSoftClassPtr<UTDWindowBaseWidget> OptionWindowClass;
 
 	/**
+	 * 거래소. 부모 클래스가 UTDMarketWindowWidget 인 WBP 를 지정한다.
+	 *
+	 * 강화·추가 옵션과 달리 NPC 세션이 없다 — 거리나 존을 따지지 않으므로
+	 * 인벤토리 창처럼 단축키로 어디서나 연다.
+	 */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Windows")
+		TSoftClassPtr<UTDWindowBaseWidget> MarketWindowClass;
+
+	/**
 	 * 창 단축키. 창 종류 → 입력 액션.
 	 *
 	 * 키를 코드에 적지 않고 입력 액션으로 받아야 설정창에서 바꿀 수 있다. 액션의

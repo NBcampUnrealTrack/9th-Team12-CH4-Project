@@ -128,6 +128,7 @@ void UTDUIManagerSubsystem::RequestMenu(ETDNavMenuType MenuType)
 	case ETDNavMenuType::System:
 	case ETDNavMenuType::Quest:
 	case ETDNavMenuType::Union:
+	case ETDNavMenuType::Market:
 		ToggleWindow(MenuType);
 		break;
 
@@ -212,6 +213,11 @@ void UTDUIManagerSubsystem::ToggleWindow(ETDNavMenuType MenuType)
 	case ETDNavMenuType::Union:
 		MenuName = TEXT("유니온");
 		SettingName = TEXT("Union Window Class");
+		break;
+
+	case ETDNavMenuType::Market:
+		MenuName = TEXT("거래소");
+		SettingName = TEXT("Market Window Class");
 		break;
 
 	default:
@@ -368,6 +374,12 @@ TSubclassOf<UTDWindowBaseWidget> UTDUIManagerSubsystem::ResolveWindowClass(
 	case ETDNavMenuType::Union:
 		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>()){
 			return UISettings->UnionWindowClass.LoadSynchronous();
+		}
+		return nullptr;
+
+	case ETDNavMenuType::Market:
+		if (const UTDUISettings* UISettings = GetDefault<UTDUISettings>()){
+			return UISettings->MarketWindowClass.LoadSynchronous();
 		}
 		return nullptr;
 

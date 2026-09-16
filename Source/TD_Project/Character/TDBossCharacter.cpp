@@ -179,6 +179,7 @@ void ATDBossCharacter::BeginFight(ATDCharacterBase* FirstTarget)
 	bFightActive = true;
 	FightStartTime = GetWorld()->GetTimeSeconds();
 	NextPatternAllowedTime = 0.f;
+	NextRetargetTime = FightStartTime + RetargetInterval;
 	PatternTarget = FirstTarget;
 	RegisterActiveBoss(true);
 
@@ -401,6 +402,50 @@ ATDCharacterBase* ATDBossCharacter::FindEnemy(bool bFarthest, float MaxRange) co
 		}
 	}
 	return Best;
+}
+
+ATDCharacterBase* ATDBossCharacter::FindRandomEnemy(float MaxRange, const ATDCharacterBase* Exclude) const
+{
+	TArray<ATDCharacterBase*> Candidates;
+	for (TActorIterator<ATDCharacterBase> It(GetWorld()); It; ++It)
+	{
+		ATDCharacterBase* Candidate = *It;
+		if (Candidate == nullptr || Candidate == this || Candidate->IsDead() ||
+			Candidate->GetGenericTeamId() == GetGenericTeamId())
+		{
+			continue;
+		}
+		if (FVector::DistSquared(GetActorLocation(), Candidate->GetActorLocation()) > FMath::Square(MaxRange))
+		{
+			continue;
+		}
+		Candidates.Add(Candidate);
+	}
+
+	// 지금 대상은 뺀다 — "교체" 인데 같은 사람이 또 뽑히면 의미가 없다. 단, 후보가 그 한 명뿐이면 유지.
+	if (Exclude != nullptr && Candidates.Num() > 1)
+	{
+		Candidates.Remove(const_cast<ATDCharacterBase*>(Exclude));
+	}
+
+	return Candidates.Num() > 0 ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)] : nullptr;
+}
+
+bool ATDBossCharacter::ShouldRetargetNow()
+{
+	if (RetargetInterval <= 0.f || !bFightActive)
+	{
+		return false;
+	}
+
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextRetargetTime)
+	{
+		return false;
+	}
+
+	NextRetargetTime = Now + RetargetInterval;
+	return true;
 }
 
 int32 ATDBossCharacter::ChoosePattern(float DistanceToTarget) const

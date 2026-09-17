@@ -32,6 +32,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "AnimSequences/PaperZDAnimSequence.h"
 #include "World/TDNPCBase.h"
@@ -333,23 +334,58 @@ void ATDPlayerCharacter::PlayBasicAttackVFX(
 	{
 		return;
 	}
+	USceneComponent* Root = GetRootComponent();
+	if (Root == nullptr)
+	{
+		return;
+	}
+
+	// 캐릭터에 붙여서 낸다. 월드 좌표에 고정하면(SpawnSystemAtLocation) 공격 직후 움직였을 때
+	// 이펙트만 그 자리에 남아 뒤로 밀려난다(2026-09-17).
+	//
+	// 붙이면 위치·회전이 부모 기준이 되므로 서버가 준 FacingRotation 대신 **캐릭터의 앞**을 쓴다.
+	// 캐릭터는 이동 방향으로 도는 설정이라(bOrientRotationToMovement) 그것이 곧 공격 방향이고,
+	// 공격 뒤에 방향을 틀면 이펙트도 같이 돌아 따라온다.
+	// **이 캐릭터는 액터가 회전하지 않는다.** 방향은 PaperZD 가 좌우 플립북으로 바꾸고
+	// 액터 Yaw 는 늘 0 이다(2026-09-17 로그로 확인). 그래서 부모의 앞(로컬 X)을 쓰면
+	// 어느 쪽을 보든 이펙트가 월드 +X 로만 나간다.
+	//
+	// 방향은 서버가 승인한 공격 방향(FacingRotation)에서 가져온다 — 판정에 쓰는 것과 같은 값이라
+	// 이펙트가 실제로 때리는 쪽을 가리킨다.
 	FVector Direction = FacingRotation.Vector().GetSafeNormal2D();
 	if (Direction.IsNearlyZero())
 	{
 		Direction = GetActorForwardVector().GetSafeNormal2D();
 	}
-	const FVector SpawnLocation = Origin
-		+ Direction * CachedBasicAttackVFXForwardOffset
+
+	const FVector WorldOffset =
+		Direction * CachedBasicAttackVFXForwardOffset
 		+ FVector::UpVector * CachedBasicAttackVFXHeightOffset;
-	const FRotator SpawnRotation =
-		(FacingRotation.Quaternion()
-			* CachedBasicAttackVFXRotationOffset.Quaternion()).Rotator();
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-		this,
+
+	const FQuat DesiredWorldRotation =
+		FacingRotation.Quaternion() * CachedBasicAttackVFXRotationOffset.Quaternion();
+
+	// 붙이면 부모의 변환이 한 번 더 곱해진다. 지금은 부모가 회전하지 않지만, 나중에 회전하게
+	// 되더라도 의도한 월드 방향이 유지되도록 부모 변환의 역을 미리 곱해 둔다.
+	const FTransform ParentToWorld = Root->GetComponentTransform();
+	const FVector RelativeLocation = ParentToWorld.InverseTransformVectorNoScale(WorldOffset);
+	const FRotator RelativeRotation =
+		(ParentToWorld.GetRotation().Inverse() * DesiredWorldRotation).Rotator();
+
+	UNiagaraComponent* Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
 		CachedBasicAttackVFX.Get(),
-		SpawnLocation,
-		SpawnRotation,
-		FVector(CachedBasicAttackVFXScale));
+		Root,
+		NAME_None,
+		RelativeLocation,
+		RelativeRotation,
+		EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy=*/true);
+
+	// 붙이는 쪽에는 크기 인자가 없어 만든 뒤에 넣는다.
+	if (Spawned != nullptr)
+	{
+		Spawned->SetRelativeScale3D(FVector(CachedBasicAttackVFXScale));
+	}
 }
 void ATDPlayerCharacter::HandleSkillActionStarted()
 {

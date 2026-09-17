@@ -145,6 +145,32 @@ public:
 	static TArray<FString> GetFrameRateLimitLabels();
 
 	/**
+	 * 창 모드 드롭다운 라벨. **인덱스가 곧 SetWindowModeByIndex 에 넣을 값이다.**
+	 *
+	 * 목록을 BP 에 손으로 적지 않는 이유는 순서 때문이다. 엔진의 EWindowMode 는
+	 * 0=전체화면 · 1=테두리없는창 · 2=창모드 인데, 드롭다운을 "창모드" 부터 채우고
+	 * 인덱스를 그대로 넘기면 창모드를 골랐는데 전체화면이 된다 — 셋이 구분되지 않는
+	 * 것처럼 보이던 증상이 이것이다(2026-09-17).
+	 *
+	 * 이 목록은 그 순서와 정확히 같다. **순서를 바꾸지 말 것.**
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	static TArray<FText> GetWindowModeLabels();
+
+	/** 위 목록의 인덱스로 창 모드를 정한다. 적용은 ApplySettings 가 한다. */
+	UFUNCTION(BlueprintCallable, Category = "TD|Settings|Video")
+	void SetWindowModeByIndex(int32 Index);
+
+	/**
+	 * 지금 창 모드의 인덱스. 설정창을 열 때 드롭다운을 실제 값에 맞추는 데 쓴다.
+	 *
+	 * **Alt+Enter 로 바꾼 것은 여기에 반영되지 않는다.** 그쪽은 엔진이 뷰포트만 바꾸고
+	 * 이 설정값은 건드리지 않기 때문이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TD|Settings|Video")
+	int32 GetWindowModeIndex() const;
+
+	/**
 	 * 화질 단계 이름. 그림자·텍스처·안티앨리어싱·시야거리가 같은 목록을 쓴다.
 	 *
 	 * 배열 인덱스가 곧 SetShadowQuality 등에 넣을 값이다(0~3).

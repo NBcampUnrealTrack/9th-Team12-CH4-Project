@@ -140,6 +140,31 @@ TArray<FString> UTDGameUserSettings::GetFrameRateLimitLabels()
 	return Labels;
 }
 
+TArray<FText> UTDGameUserSettings::GetWindowModeLabels()
+{
+	// 순서가 곧 EWindowMode 값이다. 바꾸면 드롭다운과 실제 모드가 어긋난다.
+	return {
+		NSLOCTEXT("TDSettings", "WindowModeFullscreen", "전체 화면"),          // 0
+		NSLOCTEXT("TDSettings", "WindowModeBorderless", "테두리 없는 창"),     // 1
+		NSLOCTEXT("TDSettings", "WindowModeWindowed", "창 모드")               // 2
+	};
+}
+
+void UTDGameUserSettings::SetWindowModeByIndex(int32 Index)
+{
+	// 목록 밖의 값이 들어오면 전체화면으로 떨어진다. 클램프해 두면 드롭다운이
+	// 늘거나 줄어도 엉뚱한 모드가 되지 않는다.
+	const EWindowMode::Type Mode =
+		static_cast<EWindowMode::Type>(FMath::Clamp(Index, 0, EWindowMode::Windowed));
+
+	SetFullscreenMode(Mode);
+}
+
+int32 UTDGameUserSettings::GetWindowModeIndex() const
+{
+	return static_cast<int32>(GetFullscreenMode());
+}
+
 TArray<FText> UTDGameUserSettings::GetQualityPresetNames()
 {
 	// 인덱스가 곧 SetShadowQuality 등에 넣을 값이다(0~3).
@@ -230,6 +255,12 @@ void UTDGameUserSettings::ApplyNonResolutionSettings()
 
 void UTDGameUserSettings::ApplySettings(bool bCheckForCommandLineOverrides)
 {
+	// 무엇을 적용하려 했는지 남긴다. 드롭다운에서 고른 것과 여기 찍히는 모드가 다르면
+	// UI 가 인덱스를 잘못 넘긴 것이고, 같은데 화면이 안 바뀌면 실행 환경 문제다(PIE 등).
+	const FIntPoint Resolution = GetScreenResolution();
+	UE_LOG(LogTemp, Log, TEXT("화면 설정 적용: 모드 %d(0전체·1테두리없음·2창) · 해상도 %dx%d"),
+		static_cast<int32>(GetFullscreenMode()), Resolution.X, Resolution.Y);
+
 	// 부모가 해상도·화질을 적용하고 ini 에 저장한다. 그 과정에서 ApplyNonResolutionSettings 도 불린다.
 	Super::ApplySettings(bCheckForCommandLineOverrides);
 

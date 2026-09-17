@@ -5,6 +5,7 @@
 #include "Abilities/TDAttributeSet.h"
 #include "Character/TDCharacterBase.h"
 #include "Combat/TDCombatStatics.h"
+#include "Core/TDCheatAccess.h"
 #include "Core/TDGameInstance.h"
 #include "Game/TDGameMode.h"
 #include "GameFramework/PlayerState.h"
@@ -14,6 +15,7 @@
 #include "Party/TDPartyComponent.h"
 #include "Player/TDPlayerState.h"
 #include "Settings/TDChatSettings.h"
+#include "Settings/TDZoneSettings.h"
 #include "Shop/TDShopStatics.h"
 #include "Option/TDOptionServiceComponent.h"
 #include "Shop/TDShopServiceComponent.h"
@@ -173,9 +175,49 @@ void ATDPlayerController::ClientTravelToServer_Implementation(const FString& Add
 // UFUNCTION 선언은 전처리기로 감쌀 수 없어 항상 남는다.
 // 대신 구현부를 막아 배포 빌드에서는 호출해도 아무 일이 일어나지 않는다.
 
+// ── 치트 잠금 ─────────────────────────────────────────────
+
+void ATDPlayerController::TDCheat(const FString& Key)
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// 암호는 서버가 갖고 있다. 여기서는 판단하지 않고 그대로 보낸다.
+	ServerEnableCheats(Key);
+#endif
+}
+
+void ATDPlayerController::ServerEnableCheats_Implementation(const FString& Key)
+{
+#if !UE_BUILD_SHIPPING
+	bCheatsEnabled = TDCheatAccess::VerifyKey(Key);
+
+	UE_LOG(LogTemp, Warning, TEXT("치트 요청: %s — %s"),
+		PlayerState != nullptr ? *PlayerState->GetPlayerName() : TEXT("(이름 없음)"),
+		bCheatsEnabled ? TEXT("열림") : TEXT("거부"));
+
+	// 콘솔 명령 잠금도 같이 연다. 서버가 허락한 뒤에만 열리는 것이 핵심이다.
+	ClientCheatsEnabled(bCheatsEnabled);
+#endif
+}
+
+void ATDPlayerController::ClientCheatsEnabled_Implementation(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	TDCheatAccess::SetUnlockedLocally(bEnabled);
+
+	UE_LOG(LogTemp, Warning, TEXT("치트가 %s."),
+		bEnabled ? TEXT("열렸다") : TEXT("거부됐다 — 암호를 확인할 것"));
+#endif
+}
+
 void ATDPlayerController::ServerDebugGiveItem_Implementation(FName ItemId, int32 Count)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
 	if (PlayerState == nullptr)
 	{
 		return;
@@ -193,6 +235,8 @@ void ATDPlayerController::ServerDebugGiveItem_Implementation(FName ItemId, int32
 void ATDPlayerController::ServerDebugGiveGold_Implementation(int32 Amount)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	if (PlayerState == nullptr)
 	{
 		return;
@@ -210,6 +254,8 @@ void ATDPlayerController::ServerDebugGiveGold_Implementation(int32 Amount)
 void ATDPlayerController::ServerDebugSetLevel_Implementation(int32 NewLevel)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	if (PlayerState == nullptr)
 	{
 		return;
@@ -227,6 +273,8 @@ void ATDPlayerController::ServerDebugSetLevel_Implementation(int32 NewLevel)
 void ATDPlayerController::ServerDebugSetClass_Implementation(FName NewClassId)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	if (PlayerState == nullptr)
 	{
 		return;
@@ -244,6 +292,8 @@ void ATDPlayerController::ServerDebugSetClass_Implementation(FName NewClassId)
 void ATDPlayerController::ServerDebugGiveTestCharacters_Implementation()
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 	if (TDPlayerState == nullptr)
 	{
@@ -278,6 +328,8 @@ void ATDPlayerController::ServerDebugGiveTestCharacters_Implementation()
 void ATDPlayerController::ServerDebugAddExp_Implementation(int32 Amount)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	if (PlayerState == nullptr)
 	{
 		return;
@@ -303,6 +355,8 @@ void ATDPlayerController::ServerDebugAddExp_Implementation(int32 Amount)
 void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	// AController 에 이미 Character 멤버가 있어 그 이름은 쓸 수 없다(C4458).
 	ATDCharacterBase* TargetCharacter = Cast<ATDCharacterBase>(GetPawn());
 	if (TargetCharacter == nullptr)
@@ -329,6 +383,8 @@ void ATDPlayerController::ServerDebugDamage_Implementation(float Amount)
 void ATDPlayerController::ServerDebugTravelToZone_Implementation(FGameplayTag TargetZoneId, FName EntryName)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	ATDGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATDGameMode>() : nullptr;
 	if (GameMode == nullptr)
 	{
@@ -345,6 +401,59 @@ void ATDPlayerController::ServerDebugTravelToZone_Implementation(FGameplayTag Ta
 #endif
 }
 
+void ATDPlayerController::ServerRequestUnstuck_Implementation()
+{
+	ATDGameMode* GameMode = GetWorld() != nullptr
+		? GetWorld()->GetAuthGameMode<ATDGameMode>()
+		: nullptr;
+
+	if (GameMode == nullptr)
+	{
+		return;
+	}
+
+	// 죽어 있으면 부활 흐름이 따로 있다. 시체를 마을로 옮기면 그쪽과 엉킨다.
+	const ATDCharacterBase* MyCharacter = Cast<ATDCharacterBase>(GetPawn());
+	if (MyCharacter == nullptr || MyCharacter->IsDead())
+	{
+		return;
+	}
+
+	// 연타 차단. 셀 로딩을 기다리는 중에 텔레포트가 겹치면 좋을 것이 없다.
+	const double Now = GetWorld()->GetTimeSeconds();
+	const double Remaining = (LastUnstuckTime + UnstuckCooldown) - Now;
+
+	if (Remaining > 0.0)
+	{
+		GameMode->SendSystemMessage(this, ETDChatChannel::System,
+			FString::Printf(TEXT("%.0f초 후에 다시 사용할 수 있습니다."), FMath::CeilToFloat(Remaining)));
+		return;
+	}
+
+	const FGameplayTag TownZone = GetDefault<UTDZoneSettings>()->DefaultStartZone;
+	if (!TownZone.IsValid())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("끼임 탈출: 프로젝트 세팅 TD > Zone 의 DefaultStartZone 이 비어 있다."));
+		return;
+	}
+
+	const ETDZoneTravelResult Result = GameMode->RequestZoneTravel(this, TownZone, NAME_None);
+
+	// 성공했을 때만 쿨다운을 건다. 이동하지 못했는데 기다리게 하면
+	// 정말 끼인 사람이 20초를 갇힌 채로 보내게 된다.
+	if (Result == ETDZoneTravelResult::Success)
+	{
+		LastUnstuckTime = Now;
+	}
+
+	// 눌렀는데 아무 반응이 없으면 버튼이 고장난 것으로 보인다. 결과를 반드시 알린다.
+	GameMode->SendSystemMessage(this, ETDChatChannel::System,
+		Result == ETDZoneTravelResult::Success
+			? TEXT("마을로 돌아왔습니다.")
+			: TEXT("지금은 이동할 수 없습니다. 잠시 후 다시 시도해 주세요."));
+}
+
 void ATDPlayerController::ClientZoneTravelFailed_Implementation(FGameplayTag TargetZoneId,
 	ETDZoneTravelResult Reason)
 {
@@ -359,6 +468,8 @@ void ATDPlayerController::ClientZoneTravelFailed_Implementation(FGameplayTag Tar
 void ATDPlayerController::ServerDebugPartyExp_Implementation(int32 BaseAmount)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	const ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 	UTDPartyComponent* Party = TDPlayerState ? TDPlayerState->GetPartyComponent() : nullptr;
 
@@ -396,6 +507,8 @@ void ATDPlayerController::ClientRespawnRequestResult_Implementation(bool bSuccee
 void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 	if (TDPlayerState == nullptr)
 	{
@@ -424,6 +537,8 @@ void ATDPlayerController::ServerDebugQuickStart_Implementation(int32 SlotIndex)
 void ATDPlayerController::ServerDebugLearnSkills_Implementation(int32 SkillLevel)
 {
 #if !UE_BUILD_SHIPPING
+	if (!bCheatsEnabled) return;
+
 	ATDPlayerState* TDPlayerState = GetPlayerState<ATDPlayerState>();
 	UTDProgressionComponent* Progression =
 		TDPlayerState ? TDPlayerState->GetProgressionComponent() : nullptr;

@@ -10,6 +10,7 @@
 #include "GameFramework/PlayerState.h"
 #include "Blueprint/UserWidget.h"
 #include "Chat/TDChatFilter.h"
+#include "Core/TDCheatAccess.h"
 #include "Data/TDBannedWordRow.h"
 #include "Engine/GameInstance.h"
 #include "Items/TDEnhanceStatics.h"
@@ -49,6 +50,34 @@
 #if !UE_BUILD_SHIPPING
 
 DEFINE_LOG_CATEGORY_STATIC(LogTDDebug, Log, All);
+
+namespace
+{
+	/**
+	 * 잠겨 있으면 실행하지 않는 껍데기. **모든 TD.* 명령이 이것을 거쳐 등록된다.**
+	 *
+	 * 명령 하나하나에 검사를 넣지 않는 이유는 개수 때문이다 — 59개 중 하나만 빠뜨려도
+	 * 그 명령으로 전부 우회된다. 등록하는 자리에서 감싸면 빠질 수가 없다.
+	 *
+	 * 잠금을 여는 TD.Cheat 는 컨트롤러에 있다(이 게이트를 거치지 않는다).
+	 */
+	FConsoleCommandWithWorldAndArgsDelegate Gated(
+		void (*Handler)(const TArray<FString>&, UWorld*))
+	{
+		return FConsoleCommandWithWorldAndArgsDelegate::CreateLambda(
+			[Handler](const TArray<FString>& Args, UWorld* World)
+			{
+				if (!TDCheatAccess::IsUnlockedLocally())
+				{
+					UE_LOG(LogTDDebug, Warning,
+						TEXT("치트가 잠겨 있다. TD.Cheat <암호> 로 먼저 열 것."));
+					return;
+				}
+
+				Handler(Args, World);
+			});
+	}
+}
 
 /** TD.InputDebug 가 읽고 쓰는 값. 캐릭터의 Move 핸들러가 이걸 보고 로그를 찍는다. */
 static int32 GTDInputDebugValue = 0;
@@ -2299,297 +2328,297 @@ namespace TDDebugCommands
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpStats(
 	TEXT("TD.DumpStats"),
 	TEXT("캐릭터의 모든 스탯을 출력한다. 사용법: TD.DumpStats [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpStats));
+	Gated(&TDDebugCommands::DumpStats));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSetLevel(
 	TEXT("TD.SetLevel"),
 	TEXT("레벨을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetLevel <레벨> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetLevel));
+	Gated(&TDDebugCommands::SetLevel));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDAddExp(
 	TEXT("TD.AddExp"),
 	TEXT("경험치를 지급하고 레벨업을 판정한다. 사용법: TD.AddExp <경험치> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::AddExp));
+	Gated(&TDDebugCommands::AddExp));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpSkill(
 	TEXT("TD.DumpSkill"),
 	TEXT("내 직업의 스킬 목록과 찍은 레벨을 찍는다. 사용법: TD.DumpSkill"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpSkills));
+	Gated(&TDDebugCommands::DumpSkills));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSkillUp(
 	TEXT("TD.SkillUp"),
 	TEXT("스킬을 한 단계 올린다. 사용법: TD.SkillUp <스킬ID>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillUp));
+	Gated(&TDDebugCommands::SkillUp));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSkillVFX(
 	TEXT("TD.SkillVFX"),
 	TEXT("스킬 이펙트 크기·위치를 재임포트 없이 맞춘다. 사용법: TD.SkillVFX <스킬ID> <크기> [오프셋] [이동시간] | <스킬ID> | clear"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SkillVFX));
+	Gated(&TDDebugCommands::SkillVFX));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDReroll(
 	TEXT("TD.Reroll"),
 	TEXT("추가 옵션을 다시 굴린다. 사용법: TD.Reroll <슬롯> [equip]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Reroll));
+	Gated(&TDDebugCommands::Reroll));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpOptions(
 	TEXT("TD.DumpOptions"),
 	TEXT("장착·인벤토리 아이템의 추가 옵션을 찍는다. 사용법: TD.DumpOptions"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpOptions));
+	Gated(&TDDebugCommands::DumpOptions));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDShop(
 	TEXT("TD.Shop"),
 	TEXT("상점이 파는 목록과 되팔기 값을 찍는다. 사용법: TD.Shop <상점ID>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpShop));
+	Gated(&TDDebugCommands::DumpShop));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDShopBuy(
 	TEXT("TD.ShopBuy"),
 	TEXT("상점에서 산다(사거리 검증 있음). 사용법: TD.ShopBuy <상점ID> <아이템ID> [개수=1]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShopBuy));
+	Gated(&TDDebugCommands::ShopBuy));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDShopSell(
 	TEXT("TD.ShopSell"),
 	TEXT("상점에 판다. 사용법: TD.ShopSell <상점ID> <인벤슬롯> [개수=1]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShopSell));
+	Gated(&TDDebugCommands::ShopSell));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDLearnSkills(
 	TEXT("TD.LearnSkills"),
 	TEXT("내 직업의 스킬을 전부 지정 레벨로 맞춘다(레벨 조건·포인트 무시). 사용법: TD.LearnSkills [레벨=1]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::LearnSkills));
+	Gated(&TDDebugCommands::LearnSkills));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDUseSkill(
 	TEXT("TD.UseSkill"),
 	TEXT("Q·W·E 자리의 스킬을 쓴다. 사용법: TD.UseSkill <자리1~3>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::UseSkill));
+	Gated(&TDDebugCommands::UseSkill));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpCooldown(
 	TEXT("TD.DumpCooldown"),
 	TEXT("시전 상태와 스킬 쿨타임을 찍는다. 사용법: TD.DumpCooldown"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpCooldowns));
+	Gated(&TDDebugCommands::DumpCooldowns));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpParty(
 	TEXT("TD.DumpParty"),
 	TEXT("접속자들의 파티 상태를 찍는다. 사용법: TD.DumpParty"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpParty));
+	Gated(&TDDebugCommands::DumpParty));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDPartyInvite(
 	TEXT("TD.PartyInvite"),
 	TEXT("이름으로 찾아 파티에 초대한다. 사용법: TD.PartyInvite <상대이름일부>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyInvite));
+	Gated(&TDDebugCommands::PartyInvite));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDPartyAccept(
 	TEXT("TD.PartyAccept"),
 	TEXT("받은 초대에 응답한다. 사용법: TD.PartyAccept [0=거절]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyAccept));
+	Gated(&TDDebugCommands::PartyAccept));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDPartyExp(
 	TEXT("TD.PartyExp"),
 	TEXT("처치 경험치를 파티에 분배한다(서버 전용). 사용법: TD.PartyExp <기본경험치>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyExp));
+	Gated(&TDDebugCommands::PartyExp));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDPartyLeave(
 	TEXT("TD.PartyLeave"),
 	TEXT("파티에서 나간다. 사용법: TD.PartyLeave"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::PartyLeave));
+	Gated(&TDDebugCommands::PartyLeave));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDStart(
 	TEXT("TD.Start"),
 	TEXT("테스트 캐릭터를 넣고 곧바로 선택한다. 사용법: TD.Start [슬롯=1]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickStart));
+	Gated(&TDDebugCommands::QuickStart));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDEnhance(
 	TEXT("TD.Enhance"),
 	TEXT("인벤토리 아이템을 한 단계 강화한다. 사용법: TD.Enhance <인벤슬롯>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceItem));
+	Gated(&TDDebugCommands::EnhanceItem));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceStress(
 	TEXT("TD.EnhanceStress"),
 	TEXT("확률 판정만 여러 번 굴려 분포를 본다(아이템·골드 안 씀). 사용법: TD.EnhanceStress <목표강화단수> [횟수=1000]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceStress));
+	Gated(&TDDebugCommands::EnhanceStress));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDEnhanceCurve(
 	TEXT("TD.EnhanceCurve"),
 	TEXT("착용레벨별 강화 배율을 표로 찍는다. 사용법: TD.EnhanceCurve [착용레벨]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EnhanceCurve));
+	Gated(&TDDebugCommands::EnhanceCurve));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDShowUIRoot(
 	TEXT("TD.ShowUIRoot"),
 	TEXT("UI 루트(WBP_Root)를 띄운다. 창을 열려면 먼저 이것이 있어야 한다. 사용법: TD.ShowUIRoot"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ShowUIRoot));
+	Gated(&TDDebugCommands::ShowUIRoot));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDOpenSettings(
 	TEXT("TD.OpenSettings"),
 	TEXT("설정 창을 연다(토글). 사용법: TD.OpenSettings"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::OpenSettings));
+	Gated(&TDDebugCommands::OpenSettings));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSay(
 	TEXT("TD.Say"),
 	TEXT("전체 채팅을 보낸다. 사용법: TD.Say <할 말>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Say));
+	Gated(&TDDebugCommands::Say));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSayParty(
 	TEXT("TD.SayParty"),
 	TEXT("파티 채팅을 보낸다. 사용법: TD.SayParty <할 말>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SayParty));
+	Gated(&TDDebugCommands::SayParty));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDWhisper(
 	TEXT("TD.Whisper"),
 	TEXT("귓속말을 보낸다. 사용법: TD.Whisper <상대이름> <할 말>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Whisper));
+	Gated(&TDDebugCommands::Whisper));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDChatFilter(
 	TEXT("TD.ChatFilter"),
 	TEXT("금지어 필터만 돌려 본다(채팅을 보내지 않는다). 사용법: TD.ChatFilter <문장>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::ChatFilterTest));
+	Gated(&TDDebugCommands::ChatFilterTest));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDMarketList(
 	TEXT("TD.MarketList"),
 	TEXT("아이템을 거래소에 올린다. 사용법: TD.MarketList <인벤슬롯> <가격>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketList));
+	Gated(&TDDebugCommands::MarketList));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDMarketBuy(
 	TEXT("TD.MarketBuy"),
 	TEXT("매물을 산다. 사용법: TD.MarketBuy <매물번호>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketBuy));
+	Gated(&TDDebugCommands::MarketBuy));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDMarketCancel(
 	TEXT("TD.MarketCancel"),
 	TEXT("자기 매물을 내린다. 사용법: TD.MarketCancel <매물번호>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketCancel));
+	Gated(&TDDebugCommands::MarketCancel));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDMarketSearch(
 	TEXT("TD.MarketSearch"),
 	TEXT("매물을 찾는다(결과는 한 박자 늦게 찍힌다). 사용법: TD.MarketSearch [ItemId] [페이지]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketSearch));
+	Gated(&TDDebugCommands::MarketSearch));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDMarketMine(
 	TEXT("TD.MarketMine"),
 	TEXT("내가 올린 매물을 본다. 사용법: TD.MarketMine"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::MarketMine));
+	Gated(&TDDebugCommands::MarketMine));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpMarket(
 	TEXT("TD.DumpMarket"),
 	TEXT("거래소 매물을 서버에서 직접 찍는다(서버 전용). 사용법: TD.DumpMarket"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpMarket));
+	Gated(&TDDebugCommands::DumpMarket));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpQuick(
 	TEXT("TD.DumpQuick"),
 	TEXT("퀵슬롯 6칸과 각 칸의 보유 개수를 찍는다. 사용법: TD.DumpQuick"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpQuickSlots));
+	Gated(&TDDebugCommands::DumpQuickSlots));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDQuickSet(
 	TEXT("TD.QuickSet"),
 	TEXT("퀵슬롯에 등록한다. 사용법: TD.QuickSet <슬롯> <아이템ID> [skill]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickSet));
+	Gated(&TDDebugCommands::QuickSet));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDQuickUse(
 	TEXT("TD.QuickUse"),
 	TEXT("퀵슬롯을 사용한다(키 입력과 같은 경로). 사용법: TD.QuickUse <슬롯>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickUse));
+	Gated(&TDDebugCommands::QuickUse));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDQuickClear(
 	TEXT("TD.QuickClear"),
 	TEXT("퀵슬롯을 비운다. 사용법: TD.QuickClear <슬롯>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::QuickClear));
+	Gated(&TDDebugCommands::QuickClear));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpKeys(
 	TEXT("TD.DumpKeys"),
 	TEXT("리매핑 가능한 키 목록을 찍는다. 사용법: TD.DumpKeys"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpKeys));
+	Gated(&TDDebugCommands::DumpKeys));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDRespawn(
 	TEXT("TD.Respawn"),
 	TEXT("죽었으면 되살아난다(부활 버튼과 같은 경로). 사용법: TD.Respawn"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Respawn));
+	Gated(&TDDebugCommands::Respawn));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpZone(
 	TEXT("TD.DumpZone"),
 	TEXT("현재 플레이어의 존 태그와 월드 좌표를 출력한다. 사용법: TD.DumpZone"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpZone));
+	Gated(&TDDebugCommands::DumpZone));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDZone(
 	TEXT("TD.Zone"),
 	TEXT("지정한 존으로 이동한다(레벨 제한은 그대로 적용). 사용법: TD.Zone <존태그>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::TravelToZone));
+	Gated(&TDDebugCommands::TravelToZone));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSetClass(
 	TEXT("TD.SetClass"),
 	TEXT("직업을 설정하고 성장 스탯을 갱신한다. 사용법: TD.SetClass <ClassId> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SetClass));
+	Gated(&TDDebugCommands::SetClass));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveGold(
 	TEXT("TD.GiveGold"),
 	TEXT("골드를 지급한다. 사용법: TD.GiveGold <금액>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveGold));
+	Gated(&TDDebugCommands::GiveGold));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveItem(
 	TEXT("TD.GiveItem"),
 	TEXT("아이템을 지급한다. 사용법: TD.GiveItem <ItemId> [개수] [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItem));
+	Gated(&TDDebugCommands::GiveItem));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveItemTest(
 	TEXT("TD.GiveItemTest"),
 	TEXT("테스트용 소비 아이템 4종을 한 번에 지급한다. 사용법: TD.GiveItemTest [개수=20]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveItemTest));
+	Gated(&TDDebugCommands::GiveItemTest));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpInventory(
 	TEXT("TD.DumpInventory"),
 	TEXT("인벤토리 내용을 슬롯별로 출력한다. 사용법: TD.DumpInventory [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpInventory));
+	Gated(&TDDebugCommands::DumpInventory));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDEquip(
 	TEXT("TD.Equip"),
 	TEXT("인벤토리의 장신구를 장착한다. 사용법: TD.Equip <인벤슬롯> <장착칸 0~5> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::EquipItem));
+	Gated(&TDDebugCommands::EquipItem));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDUnequip(
 	TEXT("TD.Unequip"),
 	TEXT("장착을 해제한다. 사용법: TD.Unequip <장착칸 0~5> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::UnequipItem));
+	Gated(&TDDebugCommands::UnequipItem));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDUseItem(
 	TEXT("TD.UseItem"),
 	TEXT("소비 아이템을 사용한다. 사용법: TD.UseItem <인벤슬롯> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::UseItem));
+	Gated(&TDDebugCommands::UseItem));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpEquipment(
 	TEXT("TD.DumpEquipment"),
 	TEXT("장착 상태를 출력한다. 사용법: TD.DumpEquipment [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpEquipment));
+	Gated(&TDDebugCommands::DumpEquipment));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDumpCharacters(
 	TEXT("TD.DumpCharacters"),
 	TEXT("캐릭터 선택 목록과 선택 여부를 출력한다. 사용법: TD.DumpCharacters"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::DumpCharacters));
+	Gated(&TDDebugCommands::DumpCharacters));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDGiveTestCharacters(
 	TEXT("TD.GiveTestCharacters"),
 	TEXT("테스트용 캐릭터 3개를 목록에 넣는다(서버 전용). 세이브가 붙으면 필요 없어진다."),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::GiveTestCharacters));
+	Gated(&TDDebugCommands::GiveTestCharacters));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDSelectCharacter(
 	TEXT("TD.SelectCharacter"),
 	TEXT("캐릭터를 선택하고 Pawn 을 스폰한다. 사용법: TD.SelectCharacter <슬롯번호>"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::SelectCharacter));
+	Gated(&TDDebugCommands::SelectCharacter));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDDamage(
 	TEXT("TD.Damage"),
 	TEXT("고정 수치의 피해를 직접 적용한다(공식 미경유). 사용법: TD.Damage <양> [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Damage));
+	Gated(&TDDebugCommands::Damage));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDHit(
 	TEXT("TD.Hit"),
 	TEXT("플레이어가 대상을 공격한다(스탯·공식 경유). 사용법: TD.Hit [이름필터]"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Hit));
+	Gated(&TDDebugCommands::Hit));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDBoss(
 	TEXT("TD.Boss"),
 	TEXT("보스 디버그(서버 창). 사용법: TD.Boss fight | pattern <n> | phase2 | enrage | summon | reset"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Boss));
+	Gated(&TDDebugCommands::Boss));
 
 static FAutoConsoleCommandWithWorldAndArgs GTDAttack(
 	TEXT("TD.Attack"),
 	TEXT("전방 히트박스로 공격한다(쿨타임·팀 판정 포함). 사용법: TD.Attack"),
-	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TDDebugCommands::Attack));
+	Gated(&TDDebugCommands::Attack));
 
 /**
  * 이동 입력의 축 값을 로그로 찍는다. 방향이 이상할 때 IMC 모디파이어를 확인하는 용도다.

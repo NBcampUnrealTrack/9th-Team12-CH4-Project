@@ -193,6 +193,28 @@ public:
 	// 선언까지 없애려면 CheatManager 로 옮겨야 한다 — 그쪽은 Shipping 에서 객체 자체가
 	// 만들어지지 않으므로 더 확실하다. GameMode 가 자리를 잡았으니 나중에 이관할 것.
 
+	// ── 치트 잠금 ─────────────────────────────────────────
+	//
+	// 아래 ServerDebug* 들은 클라이언트가 콘솔로 부르지만 실행은 서버에서 된다.
+	// 그래서 **서버가 그 플레이어의 권한을 따로 본다** — 콘솔 쪽 잠금(TDCheatAccess)만으로는
+	// 클라이언트를 고친 사람을 막을 수 없다.
+
+	/**
+	 * 치트를 연다. 사용법: `TD.Cheat <암호>`
+	 *
+	 * 암호는 서버 프로세스의 환경변수 TD_CHEAT_KEY 와 대조한다. 클라이언트 패키지에는
+	 * 암호가 들어 있지 않으므로 파일에서 뽑아낼 수 없다.
+	 */
+	UFUNCTION(Exec)
+	void TDCheat(const FString& Key);
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnableCheats(const FString& Key);
+
+	/** 서버가 허락했음을 알려 콘솔 명령 잠금까지 함께 연다. */
+	UFUNCTION(Client, Reliable)
+	void ClientCheatsEnabled(bool bEnabled);
+
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(FName ItemId, int32 Count);
 
@@ -282,6 +304,27 @@ public:
 	/** 서버 전용 호출. 해당 클라이언트에게만 간다. */
 	UFUNCTION(Client, Reliable)
 	void ClientZoneTravelFailed(FGameplayTag TargetZoneId, ETDZoneTravelResult Reason);
+
+	/**
+	 * 끼임 탈출. 지형에 박혀 움직일 수 없을 때 마을로 돌아간다.
+	 *
+	 * 목적지는 프로젝트 세팅(TD > Zone)의 DefaultStartZone 이다 — 처음 접속할 때 서는 곳과
+	 * 같은 자리라, 마을을 옮겨도 여기를 고칠 일이 없다.
+	 *
+	 * 치트(TD.Zone)와 달리 배포 빌드에도 들어간다. 이동 자체는 RequestZoneTravel 을 거치므로
+	 * 입장 레벨·도착 지점 검증이 그대로 적용된다.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "TD|World")
+	void ServerRequestUnstuck();
+
+	/**
+	 * 끼임 탈출을 다시 쓸 수 있을 때까지의 간격(초).
+	 *
+	 * 연타하면 셀 로딩을 기다리는 도중에 텔레포트가 겹친다 — 0.16초 간격으로 세 번
+	 * 들어온 적이 있다(2026-09-17). 끼임을 푸는 용도라 자주 누를 일도 없다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TD|World", meta = (ClampMin = "0"))
+	float UnstuckCooldown = 20.f;
 
 	// ── 부활 ──────────────────────────────────────────────
 
@@ -568,6 +611,17 @@ protected:
     virtual void Destroyed() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 private:
+    /**
+     * 이 플레이어에게 치트 권한이 있는가. **서버 전용이며 복제하지 않는다.**
+     *
+     * 복제하면 클라이언트가 값을 고쳐 열 수 있다. 클라이언트 쪽 잠금은 별도로
+     * TDCheatAccess 가 들고 있고, 그쪽은 서버가 ClientCheatsEnabled 로 켜 준다.
+     */
+    bool bCheatsEnabled = false;
+
+    /** 끼임 탈출을 마지막으로 쓴 서버 시각. 서버 전용이라 복제하지 않는다. */
+    double LastUnstuckTime = -BIG_NUMBER;
+
     UPROPERTY(Replicated) FGuid DummyAccountId;
     friend class UTDBackendSaveSubsystem;
     friend class FTDBackendControllerTest;

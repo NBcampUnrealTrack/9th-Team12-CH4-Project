@@ -194,18 +194,15 @@ void ATDPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ATDPlayerController::BeginPlay()
 {
     Super::BeginPlay();
-#if !UE_BUILD_SHIPPING
     if (IsLocalController() && bStartAccountFlowOnBeginPlay)
     {
         // 기존 UI 테스트 맵의 즉시 캐릭터 선택이 먼저 끝나도록 다음 틱에서 검사한다.
         GetWorldTimerManager().SetTimerForNextTick(this, &ATDPlayerController::TDLoginScreen);
     }
-#endif
 }
 
 void ATDPlayerController::TDLoginScreen()
 {
-#if !UE_BUILD_SHIPPING
     if (ULocalPlayer* Local = GetLocalPlayer())
     {
         TSubclassOf<UTDLoginWidget> WidgetClass = DummyLoginWidgetClass;
@@ -215,7 +212,6 @@ void ATDPlayerController::TDLoginScreen()
         }
         if (WidgetClass) Local->GetSubsystem<UTDUIManagerSubsystem>()->StartAccountFlow(WidgetClass);
     }
-#endif
 }
 
 void ATDPlayerController::TDSave()

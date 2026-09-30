@@ -2,10 +2,24 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/TDAttributeSet.h"
+#include "Components/CapsuleComponent.h"                    
 #include "Core/TDGameplayTags.h"
+#include "Data/TDDropTableRow.h"
 #include "Data/TDMonsterRow.h"
 #include "Engine/DataTable.h"
+#include "Items/TDInventoryComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "Stats/TDProgressionComponent.h"                   
 #include "Stats/TDStatComponent.h"
+#include "Components/WidgetComponent.h"
+#include "UI/Combat/TDEnemyHealthBarWidget.h"
+#include "Net/UnrealNetwork.h"
+#include "Party/TDPartyComponent.h"
+#include "Player/TDPlayerState.h"
+#include "Quest/TDQuestComponent.h"
+#include "Settings/TDDropSettings.h"
 
 ATDEnemyBase::ATDEnemyBase()
 {
@@ -25,6 +39,9 @@ ATDEnemyBase::ATDEnemyBase()
 	// 기본값(Disabled)으로 두면 배치한 몬스터가 아무것도 하지 않아 AI 담당이 매번 BP 에서 켜야 한다.
 	// AIControllerClass 는 여기서 지정하지 않는다 — C++ 에서 블루프린트를 참조하면 경로가 코드에 박힌다.
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	
+	// 피격 경직. GetHit 몽타주 길이에 맞춰 BP 클래스 디폴트에서 조절한다.
+	HitStaggerDuration = 0.35f;
 }
 
 UTDStatComponent* ATDEnemyBase::GetStatComponent() const
@@ -51,6 +68,108 @@ void ATDEnemyBase::BeginPlay()
 	// 레벨에 배치된 몬스터는 에디터에서 지정한 MonsterId/Level 로 시작한다.
 	// 스포너가 만드는 몬스터는 InitializeFromDefinition 이 먼저 불려 값이 이미 채워져 있다.
 	ApplyDefinition();
+
+	SetupHealthBar();
+
+	// 피격음. 데디 서버는 소리를 낼 곳이 없어 아예 구독하지 않는다.
+	// 체력바와 달리 위젯 컴포넌트가 없는 몬스터도 소리는 나야 하므로 따로 건다.
+	if (!IsRunningDedicatedServer())
+	{
+		OnDamaged.AddUniqueDynamic(this, &ATDEnemyBase::HandleDamagedForSound);
+	}
+}
+
+// ── 인스턴스(그룹 전용 몬스터) ────────────────────────────
+
+bool ATDEnemyBase::IsVisibleToGroup(const AActor* Other) const
+{
+	// 주인이 없는 몬스터는 공용이다. 보스방과 레벨에 직접 배치한 몬스터가 여기 해당한다.
+	if (!OwnerGroupId.IsValid())
+	{
+		return true;
+	}
+
+	// 상대가 무엇으로 오든(컨트롤러·Pawn·PlayerState) 그 사람의 PlayerState 를 찾는다.
+	const APlayerState* State = nullptr;
+
+	if (const APawn* Pawn = Cast<APawn>(Other))
+	{
+		State = Pawn->GetPlayerState();
+	}
+	else if (const AController* AsController = Cast<AController>(Other))
+	{
+		State = AsController->PlayerState;
+	}
+	else
+	{
+		State = Cast<APlayerState>(Other);
+	}
+
+	const ATDPlayerState* TDState = Cast<ATDPlayerState>(State);
+
+	// 플레이어가 아닌 것(다른 몬스터 등)은 그룹을 따지지 않는다. 몬스터끼리는 서로 적이 아니라
+	// 어차피 팀 판정에서 걸러지고, 여기서 막으면 보스의 소환수가 주인을 못 찾는다.
+	if (TDState == nullptr)
+	{
+		return true;
+	}
+
+	return TDState->GetInstanceGroupId() == OwnerGroupId;
+}
+
+void ATDEnemyBase::SetMoveIgnoredByPawn(APawn* Pawn, bool bIgnore)
+{
+	if (!HasAuthority() || Pawn == nullptr)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* MyCapsule = GetCapsuleComponent();
+	UPrimitiveComponent* PawnRoot = Cast<UPrimitiveComponent>(Pawn->GetRootComponent());
+
+	if (MyCapsule == nullptr || PawnRoot == nullptr)
+	{
+		return;
+	}
+
+	// 이동하는 쪽이 자기 목록을 본다. 한쪽만 걸면 반대 방향에서 여전히 막힌다.
+	MyCapsule->IgnoreActorWhenMoving(Pawn, bIgnore);
+	PawnRoot->IgnoreActorWhenMoving(this, bIgnore);
+}
+
+bool ATDEnemyBase::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
+	const FVector& SrcLocation) const
+{
+	// 남의 몬스터는 애초에 보내지 않는다. 거리·가시성 같은 나머지 규칙은 엔진 것을 그대로 쓴다.
+	if (!IsVisibleToGroup(RealViewer))
+	{
+		return false;
+	}
+
+	return Super::IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
+}
+
+void ATDEnemyBase::HandleDamagedForSound(AActor* Attacker, float Damage, bool bCritical)
+{
+	if (MonsterTable == nullptr || MonsterId.IsNone())
+	{
+		return;
+	}
+
+	// 재생할 때 조회한다. MonsterId 는 복제로 오는 값이라 BeginPlay 시점에는 아직 비어 있을 수 있다.
+	const FTDMonsterRow* Row =
+		MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("ATDEnemyBase::HandleDamagedForSound"), false);
+
+	USoundBase* Sound = Row != nullptr ? Row->HitSFX.LoadSynchronous() : nullptr;
+	if (Sound == nullptr)
+	{
+		return;   // 피격음을 지정하지 않은 몬스터 — 오류가 아니다
+	}
+
+	// 몬스터에 붙여서 낸다. 죽어서 시체가 사라지면 소리도 함께 끊긴다(스킬 SFX 와 같은 방식).
+	UGameplayStatics::SpawnSoundAttached(
+		Sound, GetRootComponent(), NAME_None, FVector::ZeroVector,
+		EAttachLocation::SnapToTarget, /*bStopWhenAttachedToDestroyed=*/true);
 }
 
 void ATDEnemyBase::UpdateVitalAttributes()
@@ -126,6 +245,323 @@ void ATDEnemyBase::ApplyDefinition()
 
 	StatComponent->SetBaseValue(DamageTag, Row->BaseDamage.GetValueAtLevel(LevelAsFloat));
 
+	// 보상도 같은 행에서 레벨 스케일로 읽어둔다. 죽는 시점엔 테이블을 다시 열지 않는다.
+	ExpReward = FMath::RoundToInt(Row->ExpReward.GetValueAtLevel(LevelAsFloat));
+
+	GoldMinReward = FMath::RoundToInt(Row->GoldMin.GetValueAtLevel(LevelAsFloat));
+	GoldMaxReward = FMath::RoundToInt(Row->GoldMax.GetValueAtLevel(LevelAsFloat));
+
+	DropTableId = Row->DropTableId;
+
+	// 공격자의 보스 추가 피해가 이 대상에게 붙을지 정하는 값이다.
+	bIsBoss = Row->bIsBoss;
+
+	// 시트에서 상하한이 뒤집혀 들어와도 난수가 깨지지 않게 한다.
+	if (GoldMaxReward < GoldMinReward)
+	{
+		Swap(GoldMinReward, GoldMaxReward);
+	}
+
 	//  어트리뷰트에 스탯을 옮겨서 클라이언트가 볼 수 있도록 한다.
 	UpdateVitalAttributes();
+}
+
+void ATDEnemyBase::HandleDeath()
+{
+	// 부모가 bIsDead 를 세우고 OnDeath 를 브로드캐스트한다. AI 정지는 그 구독자 몫이다.
+	Super::HandleDeath();
+
+	// 시체는 길을 막지도, 맞지도 않는다. 히트 판정(ECC_Pawn 질의)에서도 이걸로 빠진다.
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	// 파괴는 서버 권한. 복제로 클라이언트에서도 함께 사라진다.
+	//
+	// 골드도 아이템도 바닥에 떨구지 않고 GrantRewards 에서 즉시 지급한다.
+	// 드랍 액터는 습득 판정·복제·소유권(파티 우선 시간)·수명이 전부 따로 필요한데,
+	// 보물상자도 인벤토리에 직접 넣는 방식이라 이쪽이 프로젝트 안에서 일관된다.
+	if (HasAuthority())
+	{
+		SetLifeSpan(CorpseLifetime);
+	}
+	
+}
+
+void ATDEnemyBase::GrantRewards(
+	ATDCharacterBase* Killer)
+{
+	if (!HasAuthority()
+		|| bRewardsGranted
+		|| Killer == nullptr)
+	{
+		return;
+	}
+
+	bRewardsGranted = true;
+
+	ATDPlayerState* KillerPlayerState = nullptr;
+
+	/**
+	 * 일반 플레이어 캐릭터인 경우.
+	 */
+	KillerPlayerState =
+		Killer->GetPlayerState<ATDPlayerState>();
+
+	/**
+	 * 향후 펫·소환수인 경우:
+	 * 소환수의 Controller가 플레이어 컨트롤러라면 그 PlayerState를 사용한다.
+	 */
+	if (KillerPlayerState == nullptr)
+	{
+		if (AController* KillerController =
+			Killer->GetController())
+		{
+			KillerPlayerState =
+				KillerController
+					->GetPlayerState<ATDPlayerState>();
+		}
+	}
+
+	/**
+	 * 소환수 Owner가 플레이어 캐릭터인 경우도 확인한다.
+	 */
+	if (KillerPlayerState == nullptr)
+	{
+		AActor* OwnerActor = Killer->GetOwner();
+
+		if (ACharacter* OwnerCharacter =
+			Cast<ACharacter>(OwnerActor))
+		{
+			KillerPlayerState =
+				OwnerCharacter
+					->GetPlayerState<ATDPlayerState>();
+		}
+	}
+
+	if (KillerPlayerState == nullptr)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("몬스터 '%s': 처치자 PlayerState를 찾지 못했다."),
+			*MonsterId.ToString());
+		return;
+	}
+
+	/**
+	 * 경험치는 기존 파티 분배 경로를 사용한다.
+	 *
+	 * 골드도 같은 경로지만 규칙이 다르다 — 경험치는 각자 전액에 인원 보너스까지 붙고,
+	 * 골드는 인원수로 나눈다. 골드는 경제라 같은 방식으로 주면 파티를 맺는 것만으로
+	 * 돈이 불어난다. 자세한 이유는 AwardKillGold 주석에 있다.
+	 */
+	if (UTDPartyComponent* Party =
+		KillerPlayerState->GetPartyComponent())
+	{
+		Party->AwardKillExp(ExpReward);
+
+		if (GoldMaxReward > 0)
+		{
+			Party->AwardKillGold(FMath::RandRange(GoldMinReward, GoldMaxReward));
+		}
+	}
+
+	GrantDrops(KillerPlayerState);
+
+	/**
+	 * 퀘스트는 같은 존의 살아 있는 파티원만 받는다.
+	 * 거리는 검사하지 않으며 실제 공격 참여 여부도 검사하지 않는다.
+	 */
+	const FGameplayTag KillZone =
+		KillerPlayerState->GetCurrentZoneId();
+
+	UTDPartyComponent* KillerParty =
+		KillerPlayerState->GetPartyComponent();
+
+	const TArray<ATDPlayerState*> Members =
+		KillerParty
+			? KillerParty->GetPartyMembers()
+			: TArray<ATDPlayerState*>{
+				KillerPlayerState
+			};
+
+	for (ATDPlayerState* Member : Members)
+	{
+		if (Member == nullptr
+			|| Member->GetCurrentZoneId()
+				!= KillZone)
+		{
+			continue;
+		}
+
+		const ATDCharacterBase* MemberCharacter =
+			Cast<ATDCharacterBase>(
+				Member->GetPawn());
+
+		/**
+		 * 접속은 했지만 캐릭터가 없거나,
+		 * 사망 상태인 파티원은 진행도를 받지 않는다.
+		 */
+		if (MemberCharacter == nullptr
+			|| MemberCharacter->IsDead())
+		{
+			continue;
+		}
+
+		if (UTDQuestComponent* Quest =
+			Member->GetQuestComponent())
+		{
+			Quest->ReportMonsterKilled(
+				MonsterId);
+		}
+	}
+}
+
+void ATDEnemyBase::GrantDrops(ATDPlayerState* KillerPlayerState)
+{
+	if (DropTableId.IsNone() || KillerPlayerState == nullptr)
+	{
+		return;
+	}
+
+	const UTDDropSettings* Settings = UTDDropSettings::Get();
+	const UDataTable* DropTable = Settings ? Settings->DropTable.LoadSynchronous() : nullptr;
+
+	if (DropTable == nullptr)
+	{
+		// 몬스터는 목록을 가리키는데 테이블이 없다. 설정을 빠뜨린 것이라 한 번은 알린다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("드롭: 프로젝트 세팅 > TD > Drop 의 DropTable 이 비어 있어 '%s' 가 아무것도 떨구지 않았다."),
+			*MonsterId.ToString());
+		return;
+	}
+
+	/**
+	 * 받는 사람은 파티장이다.
+	 *
+	 * 파티장이 다른 존에 있으면 처치자 본인이 받는다 — 골드가 존으로 거르는 것과 같은
+	 * 이유로, 사냥에 참여하지 않은 쪽으로 아이템이 새어나가지 않게 한다.
+	 */
+	ATDPlayerState* Receiver = KillerPlayerState;
+
+	if (const UTDPartyComponent* Party = KillerPlayerState->GetPartyComponent())
+	{
+		ATDPlayerState* Leader = Party->GetPartyLeader();
+
+		if (Leader != nullptr
+			&& Leader->GetCurrentZoneId() == KillerPlayerState->GetCurrentZoneId())
+		{
+			Receiver = Leader;
+		}
+	}
+
+	UTDInventoryComponent* Inventory = Receiver->GetInventoryComponent();
+	if (Inventory == nullptr)
+	{
+		return;
+	}
+
+	TArray<FTDDropTableRow*> Rows;
+	DropTable->GetAllRows<FTDDropTableRow>(TEXT("ATDEnemyBase::GrantDrops"), Rows);
+
+	// 줄마다 따로 굴린다. 아무것도 안 나오는 것이 보통이고, 운이 좋으면 여럿이 함께 나온다.
+	for (const FTDDropTableRow* Row : Rows)
+	{
+		if (Row == nullptr || Row->DropTableId != DropTableId || Row->ItemId.IsNone())
+		{
+			continue;
+		}
+
+		if (FMath::FRand() >= Row->Chance)
+		{
+			continue;
+		}
+
+		const int32 Count = FMath::RandRange(Row->MinCount, FMath::Max(Row->MinCount, Row->MaxCount));
+
+		if (!Inventory->AddItem(Row->ItemId, Count))
+		{
+			// 자리가 없으면 여기서 사라진다. 바닥에 떨구는 액터가 없어 되돌릴 곳이 없다.
+			UE_LOG(LogTemp, Warning,
+				TEXT("드롭: 인벤토리가 가득 차 '%s' %d개를 주지 못했다."),
+				*Row->ItemId.ToString(), Count);
+		}
+	}
+}
+
+void ATDEnemyBase::MulticastOnSense_Implementation()
+{
+	OnSensed.Broadcast();
+}
+
+void ATDEnemyBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ATDEnemyBase, MonsterId);
+}
+
+void ATDEnemyBase::SetupHealthBar()
+{
+	// 데디 서버는 화면이 없다. UI 연결은 그리는 머신(클라·리슨 서버)에서만.
+	if (IsRunningDedicatedServer())
+	{
+		return;
+	}
+
+	UWidgetComponent* WidgetComp = FindComponentByClass<UWidgetComponent>();
+	if (WidgetComp == nullptr)
+	{
+		return;   // 위젯 컴포넌트가 없는 몬스터는 체력바 없이 동작한다 — 오류 아님
+	}
+
+	// BeginPlay 시점엔 위젯이 아직 안 만들어졌을 수 있다. 명시적으로 만들게 한다.
+	WidgetComp->InitWidget();
+
+	HealthBarWidget = Cast<UTDEnemyHealthBarWidget>(WidgetComp->GetUserWidgetObject());
+	if (HealthBarWidget == nullptr || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 트리거 연결: 체력·최대체력 복제가 도착할 때마다 위젯을 갱신한다.
+	// 선우님 원칙 그대로 — 서버가 계산, 복제가 전달, 클라가 표시. RPC 없음.
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		UTDAttributeSet::GetHealthAttribute()).AddUObject(this, &ATDEnemyBase::HandleVitalChangedForUI);
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		UTDAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ATDEnemyBase::HandleVitalChangedForUI);
+
+	// 초기값. 복제가 아직 안 왔으면 임시값(1/1)이 잠깐 보이지만, 첫 복제가 델리게이트로 바로 고쳐준다.
+	HandleVitalChangedForUI(FOnAttributeChangeData());
+
+	// 거리 스케일링(선우님 위젯). 따라다닐 액터를 알려줘야 카메라 거리 계산이 시작된다.
+	// 위젯은 자기가 누구 머리 위에 있는지 모른다 — 알려주는 건 소유자인 몬스터 몫.
+	HealthBarWidget->SetTargetActor(this);
+	
+	if (MonsterTable != nullptr && !MonsterId.IsNone())
+	{
+		if (const FTDMonsterRow* Row = MonsterTable->FindRow<FTDMonsterRow>(MonsterId, TEXT("HealthBar")))
+		{
+			HealthBarWidget->SetMonsterName(Row->DisplayName);
+		}
+	}
+}
+
+void ATDEnemyBase::HandleVitalChangedForUI(const FOnAttributeChangeData& Data)
+{
+	if (HealthBarWidget == nullptr || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 크리 여부는 어트리뷰트에 없어 일단 false — 크리 강조는 선우님과 협의 후(OnHit 편승안).
+	HealthBarWidget->SetHealth(
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetHealthAttribute()),
+		AbilitySystemComponent->GetNumericAttribute(UTDAttributeSet::GetMaxHealthAttribute()),
+		false);
 }

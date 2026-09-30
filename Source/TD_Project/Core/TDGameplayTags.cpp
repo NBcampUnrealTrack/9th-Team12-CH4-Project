@@ -5,7 +5,6 @@
 
 namespace TDTags
 {
-
 	// ── 스탯 관련 ────────────────────────────────────────────
 
 	// ── 공격 ──────────────────────────────────────────────
@@ -69,6 +68,31 @@ namespace TDTags
 		"체력을 Value 만큼 회복한다.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_RestoreMana, "Item.Effect.RestoreMana",
 		"마나를 Value 만큼 회복한다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_GainExp, "Item.Effect.GainExp",
+		"경험치를 Value 만큼 얻는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_LevelUp, "Item.Effect.LevelUp",
+		"Value 레벨 미만이면 즉시 1레벨업, 그 이상이면 Value 레벨 한 구간만큼의 경험치만 얻는다.");
+
+
+	// ── 스킬 ──────────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_ForwardBox, "Skill.Shape.ForwardBox",
+		"전방의 상자 범위. 몸에서 Range 만큼 앞으로 뻗고 Width 만큼 좌우로 넓다. 평타보다 길게 잡는 것이 보통이다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_SelfRadius, "Skill.Shape.SelfRadius",
+		"시전자를 중심으로 한 원. Range 가 반경이며 Width 는 쓰지 않는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Shape_Self, "Skill.Shape.Self",
+		"대상을 찾지 않고 시전자에게만 적용한다. 회복과 버프용.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Damage, "Skill.Effect.Damage",
+		"피해를 준다. Value 는 피해량이 아니라 **공격력 배율**이다 — 1.5 면 공격력의 150%.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Heal, "Skill.Effect.Heal",
+		"체력을 Value 만큼 회복한다. 이쪽은 배율이 아니라 절대값이다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_RestoreMana, "Skill.Effect.RestoreMana",
+		"마나를 Value 만큼 회복한다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Buff, "Skill.Effect.Buff",
+		"StatTag 를 Op 로 Value 만큼, Duration 초 동안 올린다. 장비와 같은 스탯 소스를 쓰고 시간만 붙는다.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Effect_Invulnerable, "Skill.Effect.Invulnerable",
+		"Duration 초 동안 피해를 받지 않는다. Value 는 쓰지 않는다.");
 
 
 	// ── 존(맵) ────────────────────────────────────────────
@@ -79,6 +103,7 @@ namespace TDTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field01, "Zone.Region1.Field01", "지역1 사냥터 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field02, "Zone.Region1.Field02", "지역1 사냥터 2");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field03, "Zone.Region1.Field03", "지역1 사냥터 3");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Field04, "Zone.Region1.Field04", "지역1 사냥터 4");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss, "Zone.Region1.Boss", "지역1 보스 구역 (하위 방들의 상위 태그)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room01, "Zone.Region1.Boss.Room01", "지역1 보스방 1");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Zone_Region1_Boss_Room02, "Zone.Region1.Boss.Room02", "지역1 보스방 2");
@@ -104,4 +129,205 @@ namespace TDTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Equipment, "Source.Equipment",
 		"장착 중인 장신구와 세트 효과에서 온 모디파이어.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Skill, "Source.Skill",
+		"찍어 둔 패시브 스킬에서 온 모디파이어.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Union, "Source.Union",
+		"계정의 캐릭터 구성(유니온)에서 온 모디파이어. 직업별 최고 레벨로 정해진다.");
+	
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_Boss, "Source.Boss",
+	"보스 페이즈·분노 강화. 보스 자신이 걸고 리셋 때 걷는다.");
+	
+	
+	// ── 퀘스트 ────────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Main,
+		"Quest.Type.Main",
+		"메인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Type_Sub,
+		"Quest.Type.Sub",
+		"서브 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Active,
+		"Quest.State.Active",
+		"진행 중인 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_ReadyToTurnIn,
+		"Quest.State.ReadyToTurnIn",
+		"목표를 달성하여 완료 보고할 수 있는 퀘스트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_State_Completed,
+		"Quest.State.Completed",
+		"보상까지 받은 완료 퀘스트");
+
+	// ── 대화 작업 ─────────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_AcceptQuest,
+		"Dialogue.Action.AcceptQuest",
+		"대화 진행 시 퀘스트 수락");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_TurnInQuest,
+		"Dialogue.Action.TurnInQuest",
+		"대화 진행 시 퀘스트 완료 및 보상 지급");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_ReportQuestEvent,
+		"Dialogue.Action.ReportQuestEvent",
+		"대화 진행 시 퀘스트 목표 진행");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Dialogue_Action_CompleteDialogueQuest,
+		"Dialogue.Action.CompleteDialogueQuest",
+		"대화 목표를 진행하고 같은 입력에서 퀘스트 완료와 보상 지급까지 처리");
+	
+	// ── 퀘스트 진행 단계 ──────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Accepted,
+		"Quest.Main.Prologue01.Accepted",
+		"메인 퀘스트 Prologue01을 수락하여 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Ready,
+		"Quest.Main.Prologue01.Ready",
+		"메인 퀘스트 Prologue01의 목표를 달성하여 완료 보고 가능한 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Main_Prologue01_Completed,
+		"Quest.Main.Prologue01.Completed",
+		"메인 퀘스트 Prologue01의 보상까지 받은 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Accepted,
+		"Quest.Sub.HelpVillage01.Accepted",
+		"서브 퀘스트 HelpVillage01을 수락하여 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Ready,
+		"Quest.Sub.HelpVillage01.Ready",
+		"서브 퀘스트 HelpVillage01의 목표를 달성하여 완료 보고 가능한 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_HelpVillage01_Completed,
+		"Quest.Sub.HelpVillage01.Completed",
+		"서브 퀘스트 HelpVillage01의 보상까지 받은 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_Treasure01_Accepted,
+		"Quest.Sub.Treasure01.Accepted",
+		"개인 보물상자 테스트용 퀘스트를 수락한 상태");
+
+	// ── 퀘스트 이벤트 ─────────────────────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_GoHojin,
+		"Quest.Event.Talk.GoHojin",
+		"고호진 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_KimSoohyun,
+		"Quest.Event.Talk.KimSoohyun",
+		"김수현 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_KimHeejin,
+		"Quest.Event.Talk.KimHeejin",
+		"김희진 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_ParkJihoon,
+		"Quest.Event.Talk.ParkJihoon",
+		"박지훈 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_SeoAhyoung,
+		"Quest.Event.Talk.SeoAhyoung",
+		"서아영 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_LeeKyungjun,
+		"Quest.Event.Talk.LeeKyungjun",
+		"이경준 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_JangGoeun,
+		"Quest.Event.Talk.JangGoeun",
+		"장고은 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_HanSuhyun,
+		"Quest.Event.Talk.HanSuhyun",
+		"한수현 NPC와 필요한 대화를 완료한 이벤트");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_HongJongwoo,
+		"Quest.Event.Talk.HongJongwoo",
+		"홍종우 NPC와 필요한 대화를 완료한 이벤트");
+	
+	// ── 테스트 서브 퀘스트 진행 단계 ───────────────────────
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Accepted,
+		"Quest.Sub.GoblinHunt01.Accepted",
+		"고블린 사냥 서브 퀘스트를 진행 중인 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Ready,
+		"Quest.Sub.GoblinHunt01.Ready",
+		"고블린 사냥을 완료하고 장고은에게 보고할 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_GoblinHunt01_Completed,
+		"Quest.Sub.GoblinHunt01.Completed",
+		"고블린 사냥 서브 퀘스트 완료 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Accepted,
+		"Quest.Sub.LunchMenu01.Accepted",
+		"점심 메뉴 추천을 받아야 하는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Ready,
+		"Quest.Sub.LunchMenu01.Ready",
+		"점심 메뉴 추천을 받고 돌아갈 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu01_Completed,
+		"Quest.Sub.LunchMenu01.Completed",
+		"점심 메뉴 추천 서브 퀘스트 완료 상태");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Accepted,
+		"Quest.Sub.LunchMenu02.Accepted",
+		"서아영에게 점심 메뉴 추천을 받아야 하는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Ready,
+		"Quest.Sub.LunchMenu02.Ready",
+		"서아영의 추천을 듣고 고호진에게 보고할 수 있는 상태");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Sub_LunchMenu02_Completed,
+		"Quest.Sub.LunchMenu02.Completed",
+		"서아영 점심 메뉴 추천 서브 퀘스트 완료 상태");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+	Quest_Event_Talk_N1,
+	"Quest.Event.Talk.N1",
+	"N1과 반지 퀘스트 대화 완료");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Quest_Event_Talk_N2,
+		"Quest.Event.Talk.N2",
+		"N2와 반지 퀘스트 대화 완료");
 }

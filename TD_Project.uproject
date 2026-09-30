@@ -13,12 +13,21 @@
 			]
 		},
 		{
+			"Name": "TD_ProjectPreLoad",
+			"Type": "Runtime",
+			"LoadingPhase": "PostSplashScreen"
+		},
+		{
 			"Name": "TD_ProjectEditor",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [
+		{
+			"Name": "ModelViewViewModel",
+			"Enabled": true
+		},
 		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,
@@ -37,6 +46,21 @@
 		},
 		{
 			"Name": "CommonUI",
+			"Enabled": true
+		},
+		{
+			"Name": "AudioModulation",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "CascadeToNiagaraConverter",
 			"Enabled": true
 		}
 	]

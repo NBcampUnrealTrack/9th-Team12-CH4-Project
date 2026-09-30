@@ -1,0 +1,12 @@
+﻿Name,ItemId,EffectTag,Value
+Healing_Low,HPotion_Low,Item.Effect.RestoreHealth,150
+Healing_Mid,HPotion_Mid,Item.Effect.RestoreHealth,500
+Healing_High,HPotion_High,Item.Effect.RestoreHealth,1000
+Mana_Low,MPotion_Low,Item.Effect.RestoreMana,160
+Mana_Mid,MPotion_Mid,Item.Effect.RestoreMana,480
+Mana_High,MPotion_High,Item.Effect.RestoreMana,960
+Exp_Low,ExpPotion_Low,Item.Effect.GainExp,500
+Exp_Mid,ExpPotion_Mid,Item.Effect.GainExp,5000
+Ticket_Low,LevelTicket_Low,Item.Effect.LevelUp,30
+Ticket_Mid,LevelTicket_Mid,Item.Effect.LevelUp,40
+Inv_Expand,InvExpand,Item.Effect.ExpandInventory,5

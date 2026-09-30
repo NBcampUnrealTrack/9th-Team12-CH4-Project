@@ -8,6 +8,11 @@
 /** 존이 바뀌었을 때. 서버·클라이언트 양쪽에서 불린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnZoneChanged, FGameplayTag, NewZoneId);
 
+class ATDBossCharacter;
+
+/** 전투 중인 보스가 바뀌었을 때. nullptr 면 전투 끝. 서버·클라이언트 양쪽에서 불린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTDOnActiveBossChanged, ATDBossCharacter*, NewBoss);
+
 /**
  * 모든 클라이언트가 알아야 하는 월드 상태.
  *
@@ -26,7 +31,14 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/**
-	 * 현재 존. Zone.Region1.Field01 처럼 계층을 가진다.
+	 * **월드 전체에 하나뿐인** 존 상태. 낮과 밤, 서버 이벤트처럼 모두에게 같은 것만 담는다.
+	 *
+	 * 플레이어가 지금 어느 존에 있는지는 여기가 아니라 `ATDPlayerState::CurrentZoneId` 다.
+	 * 좌표 텔레포트를 고른 이유가 "각자 다른 존에 있는 구조"이므로(D47),
+	 * 그것을 월드에 하나뿐인 값으로 표현하면 A 가 필드로 갈 때 마을에 있는 B 의
+	 * 음악까지 바뀐다.
+	 *
+	 * 지금은 사용처가 없다. 지우지 않는 이유는 월드 단위 상태가 생기면 다시 필요해서다.
 	 *
 	 * 지역 단위로 묻고 싶으면 상위 태그로 비교하면 된다.
 	 *   GetZoneId().MatchesTag(TDTags::Zone_Region1.GetTag())
@@ -39,6 +51,19 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "TD|World")
 	FTDOnZoneChanged OnZoneChanged;
+	
+	/**
+	* 지금 전투 중인 보스. 보스 체력바·타이틀 같은 HUD 가 "누구를 보여줄지" 여기서 받는다.
+	* 보스가 BeginFight 에 등록하고 사망·리셋에 해제한다. 늦게 접속해도 복제로 받는다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "TD|Boss")
+	ATDBossCharacter* GetActiveBoss() const { return ActiveBoss; }
+
+	/** 서버 전용. 보스 클래스가 부른다. */
+	void SetActiveBoss(ATDBossCharacter* NewBoss);
+
+	UPROPERTY(BlueprintAssignable, Category = "TD|Boss")
+	FTDOnActiveBossChanged OnActiveBossChanged;
 
 private:
 	UFUNCTION()
@@ -46,4 +71,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_ZoneId)
 	FGameplayTag ZoneId;
+	
+	UFUNCTION()
+	void OnRep_ActiveBoss();
+
+	UPROPERTY(ReplicatedUsing = OnRep_ActiveBoss)
+	TObjectPtr<ATDBossCharacter> ActiveBoss;
 };

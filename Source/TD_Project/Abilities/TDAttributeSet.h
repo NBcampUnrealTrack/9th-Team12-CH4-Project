@@ -63,6 +63,20 @@ public:
 	FGameplayAttributeData MaxMana;
 	ATTRIBUTE_ACCESSORS(UTDAttributeSet, MaxMana)
 
+	// ── 데미지 수신 (메타 어트리뷰트) ─────────────────────
+
+	/**
+	 * 이번 피격의 데미지가 잠시 담기는 우편함.
+	 * 복제하지 않는다 — 서버가 PostGameplayEffectExecute 에서 소비하고 바로 비우며,
+	 * 클라이언트에는 결과인 Health 만 가면 된다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "TD|Attributes|Meta")
+	FGameplayAttributeData IncomingDamage;
+	ATTRIBUTE_ACCESSORS(UTDAttributeSet, IncomingDamage)
+
+	/** GameplayEffect 실행 직후(서버 전용). IncomingDamage 를 Health 에 반영한다. */
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
+	
 protected:
 	// OnRep 은 GAMEPLAYATTRIBUTE_REPNOTIFY 를 불러야 예측 보정이 올바르게 동작한다.
 

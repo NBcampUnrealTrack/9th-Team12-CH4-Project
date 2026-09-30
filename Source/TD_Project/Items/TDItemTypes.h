@@ -8,6 +8,31 @@
 class UActorComponent;
 
 /**
+ * 강화 요청 한 번의 결과. UI 에 그대로 돌려준다.
+ *
+ * `ETDEnhanceOutcome`(TDEnhanceStatics.h)과 다른 열거형인 이유는 성격이 다르기 때문이다.
+ * 그쪽은 "주사위를 굴린 결과"(성공/하락/변화없음)이고, 이쪽은 "요청 자체가 성립했는가"
+ * 까지 포함한다 — 골드가 모자라거나 이미 최고 레벨이면 주사위를 굴리지도 않는다.
+ * ETDZoneTravelResult 와 같은 이유로 문구가 아니라 enum 이다 — UI 가 문구를 정한다.
+ */
+UENUM(BlueprintType)
+enum class ETDEnhanceResult : uint8
+{
+	Success			UMETA(DisplayName = "성공"),
+	Downgraded		UMETA(DisplayName = "하락"),
+	FailedNoChange	UMETA(DisplayName = "실패"),
+
+	/** 이 레벨을 넘는 시도는 테이블에 없다. */
+	MaxLevelReached	UMETA(DisplayName = "최대 강화"),
+
+	NotEnoughGold	UMETA(DisplayName = "골드 부족"),
+	ItemNotFound	UMETA(DisplayName = "아이템 없음"),
+
+	/** DT_Enhance 가 지정되지 않았거나 해당 레벨 행이 없다. 데이터 누락이라 플레이어 잘못이 아니다. */
+	InternalError	UMETA(DisplayName = "내부 오류")
+};
+
+/**
  * 장신구에 굴려진 추가 옵션 하나.
  *
  * 어떤 범위에서 굴렸는지는 DT_OptionDefinition 에 있고, 여기에는 결과만 담긴다.
@@ -19,10 +44,10 @@ struct FTDItemOption
 	GENERATED_BODY()
 
 	/** DT_OptionDefinition 의 RowName. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	FName OptionId;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	float Value = 0.f;
 
 	bool operator==(const FTDItemOption& Other) const
@@ -44,18 +69,18 @@ struct FTDItemInstance : public FFastArraySerializerItem
 	GENERATED_BODY()
 
 	/** DT_ItemDefinition 의 RowName. 이름이 길어도 FName 자체는 8바이트다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item", meta=(GetOptions="TD_Project.TDAccountDummyData.GetItemOptions"))
 	FName ItemId;
 
 	/** 인벤토리에서의 자리. 배열 순서와 무관하며 UI 는 이 값으로 그린다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	int32 SlotIndex = INDEX_NONE;
 
 	/** 스택 수량. 겹칠 수 없는 아이템은 항상 1이다. */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	int32 Count = 1;
 
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	int32 EnhanceLevel = 0;
 
 	/**
@@ -65,7 +90,7 @@ struct FTDItemInstance : public FFastArraySerializerItem
 	 * 올라간 뒤에는 DT_OptionPool 에서 그 등급의 옵션만 뽑히므로, 같은 반지라도
 	 * 개체마다 붙는 옵션의 격이 달라진다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	FGameplayTag OptionRarity;
 
 	/**
@@ -74,7 +99,7 @@ struct FTDItemInstance : public FFastArraySerializerItem
 	 * 필드를 미리 두는 이유는 저장 형식 때문이다. 나중에 추가하면 SaveVersion 을 올리고
 	 * 옛 데이터를 변환하는 분기를 만들어야 하지만, 지금 넣으면 비용이 없다.
 	 */
-	UPROPERTY(BlueprintReadOnly, Category = "TD|Item")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TD|Item")
 	TArray<FTDItemOption> Options;
 
 	bool IsValid() const { return !ItemId.IsNone() && Count > 0; }

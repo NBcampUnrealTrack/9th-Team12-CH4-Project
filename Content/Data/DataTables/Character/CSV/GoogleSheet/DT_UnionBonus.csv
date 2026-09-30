@@ -1,0 +1,10 @@
+﻿Name,ClassId,RequiredLevel,StatTag,Op,Value
+Warrior_30,Warrior,30,Stat.Resource.Health.Max,Increased,0.03
+Warrior_40,Warrior,40,Stat.Resource.Health.Max,Increased,0.03
+Warrior_50,Warrior,50,Stat.Resource.Health.Max,Increased,0.04
+Archer_30,Archer,30,Stat.Offense.CritChance,Added,0.02
+Archer_40,Archer,40,Stat.Offense.CritChance,Added,0.02
+Archer_50,Archer,50,Stat.Offense.CritChance,Added,0.03
+Mage_30,Mage,30,Stat.Utility.CooldownRecoveryRate,Added,0.03
+Mage_40,Mage,40,Stat.Utility.CooldownRecoveryRate,Added,0.03
+Mage_50,Mage,50,Stat.Utility.CooldownRecoveryRate,Added,0.04

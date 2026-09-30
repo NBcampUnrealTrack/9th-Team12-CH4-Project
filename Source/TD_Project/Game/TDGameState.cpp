@@ -1,12 +1,14 @@
 #include "Game/TDGameState.h"
 
 #include "Net/UnrealNetwork.h"
+#include "Character/TDBossCharacter.h"
 
 void ATDGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ATDGameState, ZoneId);
+	DOREPLIFETIME(ATDGameState, ActiveBoss);
 }
 
 void ATDGameState::SetZoneId(FGameplayTag NewZoneId)
@@ -28,4 +30,19 @@ void ATDGameState::SetZoneId(FGameplayTag NewZoneId)
 void ATDGameState::OnRep_ZoneId()
 {
 	OnZoneChanged.Broadcast(ZoneId);
+}
+
+void ATDGameState::SetActiveBoss(ATDBossCharacter* NewBoss)
+{
+	if (!HasAuthority() || ActiveBoss == NewBoss)
+	{
+		return;
+	}
+	ActiveBoss = NewBoss;
+	OnActiveBossChanged.Broadcast(ActiveBoss);   // 서버는 OnRep 이 안 불린다
+}
+
+void ATDGameState::OnRep_ActiveBoss()
+{
+	OnActiveBossChanged.Broadcast(ActiveBoss);
 }

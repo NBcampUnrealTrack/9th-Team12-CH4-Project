@@ -109,6 +109,43 @@ bool UTDStatComponent::RemoveSource(const FTDStatSourceHandle& Handle)
 	return true;
 }
 
+FTDStatSourceHandle UTDStatComponent::AddTimedSource(FGameplayTag SourceTag,
+	TArray<FTDStatModifier> Modifiers, float Duration)
+{
+	if (Duration <= 0.f)
+	{
+		return FTDStatSourceHandle();
+	}
+
+	const FTDStatSourceHandle Handle = AddSource(SourceTag, MoveTemp(Modifiers));
+	if (!Handle.IsValid())
+	{
+		return Handle;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		// 타이머를 걸 곳이 없으면 영영 안 걷힌다. 붙이지 않는 편이 낫다.
+		RemoveSource(Handle);
+		return FTDStatSourceHandle();
+	}
+
+	// 핸들마다 타이머가 하나씩 생긴다. 버프가 동시에 여럿 걸릴 수 있어 핸들 하나로는 모자란다.
+	// 걷히면 맵에서도 지워지므로 쌓이지 않는다.
+	FTimerHandle& Timer = TimedSourceTimers.Add(Handle);
+
+	World->GetTimerManager().SetTimer(Timer,
+		FTimerDelegate::CreateWeakLambda(this, [this, Handle]()
+		{
+			RemoveSource(Handle);
+			TimedSourceTimers.Remove(Handle);
+		}),
+		Duration, /*bLoop=*/false);
+
+	return Handle;
+}
+
 FTDStatSourceHandle UTDStatComponent::ReplaceSource(const FTDStatSourceHandle& OldHandle,
 	FGameplayTag SourceTag, TArray<FTDStatModifier> Modifiers)
 {

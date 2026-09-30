@@ -2,6 +2,7 @@
 
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "Character/TDCharacterBase.h"
 
 UTDAttributeSet::UTDAttributeSet()
 {
@@ -69,4 +70,43 @@ void UTDAttributeSet::OnRep_Mana(const FGameplayAttributeData& OldValue)
 void UTDAttributeSet::OnRep_MaxMana(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UTDAttributeSet, MaxMana, OldValue);
+}
+
+void UTDAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	// 이 훅은 모든 어트리뷰트 변경마다 불린다. 데미지 우편함일 때만 처리한다.
+	if (Data.EvaluatedData.Attribute != GetIncomingDamageAttribute())
+	{
+		return;
+	}
+
+	// 우편함을 비우고 값을 꺼낸다. 남겨두면 다음 피격에 합산되는 사고가 난다.
+	const float Damage = GetIncomingDamage();
+	SetIncomingDamage(0.f);
+
+	if (Damage <= 0.f)
+	{
+		return;
+	}
+
+	SetHealth(FMath::Clamp(GetHealth() - Damage, 0.f, GetMaxHealth()));
+
+	if (GetHealth() > 0.f)
+	{
+		return;
+	}
+
+	// 체력 0 — 월드의 캐릭터(Avatar)에게 사망을 알린다.
+	// Avatar 인 이유: 플레이어의 ASC 는 PlayerState 에 있지만 죽는 것은 월드의 캐릭터다.
+	// HandleDeath 의 bIsDead 가드가 중복 호출을 막아준다.
+	AActor* Avatar = Data.Target.AbilityActorInfo.IsValid()
+		? Data.Target.AbilityActorInfo->AvatarActor.Get()
+		: nullptr;
+
+	if (ATDCharacterBase* Character = Cast<ATDCharacterBase>(Avatar))
+	{
+		Character->HandleDeath();
+	}
 }

@@ -3,6 +3,8 @@
 #include "AbilitySystemGlobals.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Settings/TDGameUserSettings.h"
+#include "UObject/UObjectGlobals.h"
 
 void UTDGameInstance::Init()
 {
@@ -10,6 +12,56 @@ void UTDGameInstance::Init()
 
 	// 서버·클라이언트 양쪽에서 한 번씩 불려야 한다.
 	UAbilitySystemGlobals::Get().InitGlobalData();
+
+	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
+		this, &UTDGameInstance::HandlePostLoadMap);
+}
+
+void UTDGameInstance::Shutdown()
+{
+	// 게임 인스턴스와 수명이 같긴 하지만, 전역 델리게이트에 건 것은 명시적으로 뗀다.
+	// 남겨두면 종료 순서에 따라 파괴된 객체를 부르게 될 수 있다.
+	if (PostLoadMapHandle.IsValid())
+	{
+		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+		PostLoadMapHandle.Reset();
+	}
+
+	Super::Shutdown();
+}
+
+void UTDGameInstance::HandlePostLoadMap(UWorld* LoadedWorld)
+{
+	// 데디케이티드 서버에는 화면도 소리도 없다. 옵션은 클라이언트만의 것이다.
+	if (IsDedicatedServerInstance())
+	{
+		return;
+	}
+
+	if (UTDGameUserSettings* Settings = UTDGameUserSettings::Get())
+	{
+		Settings->ApplyAllSettings();
+	}
+	else
+	{
+		// GameUserSettingsClassName 이 DefaultEngine.ini 에 없으면 엔진 기본 클래스가 쓰여
+		// 캐스팅이 실패한다. 그 경우 볼륨·접근성 옵션이 통째로 동작하지 않는다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("옵션: UTDGameUserSettings 를 가져오지 못했다. "
+			     "DefaultEngine.ini 의 GameUserSettingsClassName 을 확인할 것."));
+	}
+
+	// PIE 는 기존 테스트 흐름을 유지한다. 패키징된 클라이언트와 독립형 실행에서만
+	// 첫 로컬 월드가 준비된 뒤 기본 서버로 한 번 접속한다. ClientTravel 이후에는
+	// NetMode 가 NM_Client 가 되므로 맵 로드 델리게이트가 다시 불려도 재접속하지 않는다.
+	if (bAutoConnectOnStartup &&
+		!bAutoConnectAttempted &&
+		LoadedWorld != nullptr &&
+		LoadedWorld->WorldType == EWorldType::Game &&
+		LoadedWorld->GetNetMode() == NM_Standalone)
+	{
+		bAutoConnectAttempted = ConnectToServer(DefaultServerAddress);
+	}
 }
 
 bool UTDGameInstance::ConnectToServer(const FString& Address)
